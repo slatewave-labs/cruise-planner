@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Clock, DollarSign, Backpack, ShieldCheck, Share2, Loader2, MapPin } from 'lucide-react';
+import { ArrowLeft, Clock, Backpack, ShieldCheck, Share2, Loader2, MapPin, Coins } from 'lucide-react';
 import axios from 'axios';
 import MapView from '../components/MapView';
 import WeatherCard from '../components/WeatherCard';
 import ActivityCard from '../components/ActivityCard';
+import { getCurrencySymbol, cachePlan, getCachedPlan } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -12,19 +13,37 @@ export default function DayPlanView() {
   const { planId } = useParams();
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fromCache, setFromCache] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}/api/plans/${planId}`)
-      .then(res => setPlan(res.data))
-      .catch(() => alert('Failed to load plan'))
-      .finally(() => setLoading(false));
+    // Try cache first
+    const cached = getCachedPlan(planId);
+    if (cached) {
+      setPlan(cached);
+      setFromCache(true);
+      setLoading(false);
+      // Still fetch fresh in background to sync
+      axios.get(`${API}/api/plans/${planId}`)
+        .then(res => {
+          setPlan(res.data);
+          cachePlan(res.data);
+        })
+        .catch(() => { /* cached version is fine */ });
+    } else {
+      axios.get(`${API}/api/plans/${planId}`)
+        .then(res => {
+          setPlan(res.data);
+          cachePlan(res.data);
+        })
+        .catch(() => alert('Failed to load plan'))
+        .finally(() => setLoading(false));
+    }
   }, [planId]);
 
   const handleExportMap = () => {
     if (!plan?.plan?.activities?.length) return;
     const acts = plan.plan.activities.filter(a => a.latitude && a.longitude);
     if (acts.length === 0) return;
-    // Create Google Maps directions URL
     const origin = `${plan.plan.activities[0].latitude},${plan.plan.activities[0].longitude}`;
     const dest = origin;
     const waypoints = acts.slice(1).map(a => `${a.latitude},${a.longitude}`).join('|');
@@ -52,6 +71,8 @@ export default function DayPlanView() {
   const dayPlan = plan.plan;
   const activities = dayPlan.activities || [];
   const hasParseError = dayPlan.parse_error;
+  const currencyCode = plan.preferences?.currency || 'GBP';
+  const currencySymbol = getCurrencySymbol(currencyCode);
 
   return (
     <div className="px-4 md:px-8 py-8 max-w-5xl mx-auto" data-testid="day-plan-view">
@@ -63,6 +84,13 @@ export default function DayPlanView() {
         <ArrowLeft className="w-4 h-4" />
         Back to Trip
       </Link>
+
+      {fromCache && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-blue-700 flex items-center gap-2" data-testid="cached-plan-badge">
+          <span className="font-semibold">Loaded from saved cache</span>
+          <span className="text-blue-400">— no API call used</span>
+        </div>
+      )}
 
       {hasParseError ? (
         <div className="bg-warning/10 border border-warning/30 rounded-2xl p-6 mb-6">
@@ -94,9 +122,9 @@ export default function DayPlanView() {
               </div>
             </div>
             <div className="bg-white rounded-xl border border-stone-200 p-4 flex items-center gap-3">
-              <DollarSign className="w-5 h-5 text-accent" />
+              <Coins className="w-5 h-5 text-accent" />
               <div>
-                <p className="text-xs text-stone-400">Est. Cost</p>
+                <p className="text-xs text-stone-400">Est. Cost ({currencyCode})</p>
                 <p className="font-mono font-bold text-primary" data-testid="total-cost">{dayPlan.total_estimated_cost}</p>
               </div>
             </div>
@@ -136,7 +164,7 @@ export default function DayPlanView() {
           <h2 className="font-heading text-xl font-bold text-primary mb-4">Your Itinerary</h2>
           <div className="mb-8">
             {activities.map((activity, i) => (
-              <ActivityCard key={i} activity={activity} isLast={i === activities.length - 1} />
+              <ActivityCard key={i} activity={activity} isLast={i === activities.length - 1} currencySymbol={currencySymbol} />
             ))}
           </div>
 
