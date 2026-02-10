@@ -202,7 +202,7 @@ export default function TripDetail() {
                   <div className="mt-4 pt-3 border-t border-stone-100" data-testid={`port-cached-plans-${index}`}>
                     <p className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2 flex items-center gap-1">
                       <HardDrive className="w-3 h-3" />
-                      Saved Plans ({portPlans.length})
+                      Your Plans ({portPlans.length})
                     </p>
                     <div className="space-y-1.5">
                       {portPlans.map((cp) => (
