@@ -92,6 +92,7 @@ export default function PortPlanner() {
     activity_level: 'moderate',
     transport_mode: 'mixed',
     budget: 'low',
+    currency: 'GBP',
   });
 
   useEffect(() => {
