@@ -166,6 +166,7 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
         "longitude": longitude,
         "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode,windspeed_10m_max",
         "timezone": "auto",
+        "temperature_unit": "celsius",
     }
     if date:
         params["start_date"] = date
