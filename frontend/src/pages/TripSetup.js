@@ -95,9 +95,9 @@ export default function TripSetup() {
     try {
       let savedTripId = tripId;
       if (isEdit) {
-        await axios.put(`${API}/api/trips/${tripId}`, { ship_name: shipName, cruise_line: cruiseLine });
+        await api.put(`${API}/api/trips/${tripId}`, { ship_name: shipName, cruise_line: cruiseLine });
       } else {
-        const res = await axios.post(`${API}/api/trips`, { ship_name: shipName, cruise_line: cruiseLine });
+        const res = await api.post(`${API}/api/trips`, { ship_name: shipName, cruise_line: cruiseLine });
         savedTripId = res.data.trip_id;
       }
 
