@@ -50,7 +50,7 @@ const sections = [
     description: 'General terms for using the ShoreExplorer application.',
     terms: [
       'ShoreExplorer is provided "as is" without warranty of any kind.',
-      'Travel plans are AI-generated suggestions. Always verify locally.',
+      'Travel plans are automatically generated suggestions. Always verify locally.',
       'Users are responsible for their own safety and travel decisions.',
       'Activity costs, availability, and booking URLs may change without notice.',
       'ShoreExplorer does not process payments or handle bookings directly.',
