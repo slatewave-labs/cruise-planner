@@ -212,6 +212,25 @@ export default function PortPlanner() {
           selected={prefs.budget}
           onSelect={updatePref}
         />
+
+        {/* Currency Selector */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Coins className="w-5 h-5 text-accent" />
+            <h3 className="font-heading text-lg font-bold text-primary">Currency</h3>
+          </div>
+          <select
+            value={prefs.currency}
+            onChange={(e) => updatePref('currency', e.target.value)}
+            className="w-full sm:w-64 h-14 rounded-xl bg-stone-50 border border-stone-200 px-4 text-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition appearance-none cursor-pointer"
+            data-testid="currency-select"
+          >
+            {currencies.map((c) => (
+              <option key={c.code} value={c.code}>{c.label}</option>
+            ))}
+          </select>
+          <p className="text-xs text-stone-400 mt-1.5">All cost estimates in your plan will use this currency</p>
+        </div>
       </div>
 
       <button
