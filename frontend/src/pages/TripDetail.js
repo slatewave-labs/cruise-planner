@@ -28,7 +28,7 @@ export default function TripDetail() {
     }
 
     // Fetch from server (either to replace cache or as primary)
-    axios.get(`${API}/api/trips/${tripId}`)
+    api.get(`${API}/api/trips/${tripId}`)
       .then(res => {
         setTrip(res.data);
         setFromCache(false);
