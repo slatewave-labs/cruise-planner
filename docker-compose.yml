@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  # MongoDB Atlas M0 is used for production
+  # This local MongoDB is for development/testing only
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=shoreexplorer
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017}
+      - DB_NAME=${DB_NAME:-shoreexplorer}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - mongodb
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:8001}
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
+networks:
+  app-network:
+    driver: bridge
