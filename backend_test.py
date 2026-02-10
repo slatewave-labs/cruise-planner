@@ -595,6 +595,7 @@ class ShoreExplorerAPITester:
             # Test sequence
             tests = [
                 ("Health Check", self.test_health_endpoint),
+                ("DEVICE PRIVACY ISOLATION", self.test_device_privacy_isolation),
                 ("Port Search & Regions", self.test_port_search_endpoints),
                 ("Trip CRUD Operations", self.test_trip_crud),
                 ("Port Management", self.test_port_management),
