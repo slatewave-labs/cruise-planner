@@ -23,7 +23,7 @@ export default function DayPlanView() {
       setFromCache(true);
       setLoading(false);
       // Still fetch fresh in background to sync
-      axios.get(`${API}/api/plans/${planId}`)
+      api.get(`${API}/api/plans/${planId}`)
         .then(res => {
           setPlan(res.data);
           cachePlan(res.data);
