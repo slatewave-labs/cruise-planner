@@ -325,6 +325,8 @@ class ShoreExplorerAPITester:
             self.log("No test trip/port available for plan generation", "FAIL")
             return False
 
+        device_id = self.device_a
+
         # Test 1: Basic plan generation with default currency (GBP)
         plan_data = {
             "trip_id": self.test_trip_id,
@@ -339,7 +341,7 @@ class ShoreExplorerAPITester:
         }
         
         self.log("Starting AI plan generation with GBP currency (expecting budget exceeded error)...", "INFO")
-        success, response = self.run_test("Generate Plan with Currency", "POST", "api/plans/generate", [200, 503], plan_data, timeout=45)
+        success, response = self.run_test("Generate Plan with Currency", "POST", "api/plans/generate", [200, 503], plan_data, timeout=45, device_id=device_id)
         
         if not success:
             return False
@@ -348,7 +350,7 @@ class ShoreExplorerAPITester:
         for currency in ["EUR", "USD"]:
             plan_data["preferences"]["currency"] = currency
             self.log(f"Testing plan generation with {currency} currency (expecting budget exceeded)...", "INFO")
-            success, response = self.run_test(f"Generate Plan with {currency}", "POST", "api/plans/generate", [200, 503], plan_data, timeout=45)
+            success, response = self.run_test(f"Generate Plan with {currency}", "POST", "api/plans/generate", [200, 503], plan_data, timeout=45, device_id=device_id)
             if not success:
                 return False
         
