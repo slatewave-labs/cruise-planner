@@ -44,7 +44,7 @@ export default function TripSetup() {
   useEffect(() => {
     if (isEdit) {
       setLoading(true);
-      axios.get(`${API}/api/trips/${tripId}`)
+      api.get(`${API}/api/trips/${tripId}`)
         .then(res => {
           setShipName(res.data.ship_name);
           setCruiseLine(res.data.cruise_line || '');
