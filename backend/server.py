@@ -89,9 +89,10 @@ def list_regions():
 # --- Trip CRUD ---
 
 @app.post("/api/trips")
-def create_trip(data: TripInput):
+def create_trip(data: TripInput, x_device_id: str = Header()):
     trip = {
         "trip_id": str(uuid.uuid4()),
+        "device_id": x_device_id,
         "ship_name": data.ship_name,
         "cruise_line": data.cruise_line or "",
         "ports": [],
@@ -102,29 +103,29 @@ def create_trip(data: TripInput):
     return serialize_doc(trip)
 
 @app.get("/api/trips")
-def list_trips(skip: int = 0, limit: int = 100):
-    trips = list(trips_col.find({}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit))
+def list_trips(x_device_id: str = Header(), skip: int = 0, limit: int = 100):
+    trips = list(trips_col.find({"device_id": x_device_id}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit))
     return trips
 
 @app.get("/api/trips/{trip_id}")
-def get_trip(trip_id: str):
-    trip = trips_col.find_one({"trip_id": trip_id}, {"_id": 0})
+def get_trip(trip_id: str, x_device_id: str = Header()):
+    trip = trips_col.find_one({"trip_id": trip_id, "device_id": x_device_id}, {"_id": 0})
     if not trip:
         raise HTTPException(404, "Trip not found")
     return trip
 
 @app.put("/api/trips/{trip_id}")
-def update_trip(trip_id: str, data: TripUpdate):
+def update_trip(trip_id: str, data: TripUpdate, x_device_id: str = Header()):
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = trips_col.update_one({"trip_id": trip_id}, {"$set": updates})
+    result = trips_col.update_one({"trip_id": trip_id, "device_id": x_device_id}, {"$set": updates})
     if result.matched_count == 0:
         raise HTTPException(404, "Trip not found")
     return trips_col.find_one({"trip_id": trip_id}, {"_id": 0})
 
 @app.delete("/api/trips/{trip_id}")
-def delete_trip(trip_id: str):
-    result = trips_col.delete_one({"trip_id": trip_id})
+def delete_trip(trip_id: str, x_device_id: str = Header()):
+    result = trips_col.delete_one({"trip_id": trip_id, "device_id": x_device_id})
     if result.deleted_count == 0:
         raise HTTPException(404, "Trip not found")
     plans_col.delete_many({"trip_id": trip_id})
