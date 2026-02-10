@@ -1,7 +1,7 @@
 import React from 'react';
-import { Clock, MapPin, DollarSign, ExternalLink, ArrowRight } from 'lucide-react';
+import { Clock, MapPin, Coins, ExternalLink, ArrowRight } from 'lucide-react';
 
-export default function ActivityCard({ activity, isLast }) {
+export default function ActivityCard({ activity, isLast, currencySymbol }) {
   return (
     <div className="relative" data-testid={`activity-card-${activity.order}`}>
       {/* Timeline connector */}
@@ -41,7 +41,7 @@ export default function ActivityCard({ activity, isLast }) {
             )}
             {activity.cost_estimate && (
               <div className="flex items-center gap-1 text-stone-500">
-                <DollarSign className="w-3.5 h-3.5" />
+                <Coins className="w-3.5 h-3.5" />
                 <span>{activity.cost_estimate}</span>
               </div>
             )}
