@@ -1,0 +1,10 @@
+{
+  "short_name": "ShoreExplorer",
+  "name": "ShoreExplorer - Cruise Port Planner",
+  "icons": [],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0F172A",
+  "background_color": "#F5F5F4",
+  "description": "Plan your perfect day ashore at every cruise port of call"
+}
