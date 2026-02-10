@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Clock, Backpack, ShieldCheck, Share2, Loader2, MapPin, Coins } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 import MapView from '../components/MapView';
 import WeatherCard from '../components/WeatherCard';
 import ActivityCard from '../components/ActivityCard';
