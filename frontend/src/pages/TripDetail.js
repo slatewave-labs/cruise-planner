@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Ship, MapPin, Calendar, Clock, Compass, Edit, Trash2, Loader2, ArrowRight, HardDrive, FileText } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 import { cacheTrip, getCachedTrip, removeCachedTrip, getCachedPlansForPort, getCachedPlansForTrip, getCurrencySymbol } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
