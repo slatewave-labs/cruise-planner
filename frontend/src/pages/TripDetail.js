@@ -46,7 +46,7 @@ export default function TripDetail() {
   const handleDelete = async () => {
     if (!window.confirm('Delete this trip and all associated plans?')) return;
     try {
-      await axios.delete(`${API}/api/trips/${tripId}`);
+      await api.delete(`${API}/api/trips/${tripId}`);
       removeCachedTrip(tripId);
       navigate('/trips');
     } catch {
