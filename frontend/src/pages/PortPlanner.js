@@ -258,7 +258,7 @@ export default function PortPlanner() {
             data-testid="currency-select"
           >
             {currencies.map((c) => (
-              <option key={c.code} value={c.code}>{c.label}</option>
+              <option key={c.code} value={c.code}>{c.code} ({c.symbol})</option>
             ))}
           </select>
           <p className="text-xs text-stone-400 mt-1.5">All cost estimates in your plan will use this currency</p>
