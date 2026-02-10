@@ -126,7 +126,7 @@ export default function TripDetail() {
       {fromCache && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-6 text-sm text-blue-700 flex items-center gap-2" data-testid="trip-cache-badge">
           <HardDrive className="w-4 h-4 shrink-0" />
-          <span><strong>Loaded from local cache</strong> — trip data available offline</span>
+          <span><strong>Available offline</strong> — your trip details are saved on this device</span>
         </div>
       )}
 
