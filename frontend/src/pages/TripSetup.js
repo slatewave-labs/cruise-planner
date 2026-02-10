@@ -33,7 +33,7 @@ export default function TripSetup() {
     try {
       const params = { q: query || '', limit: 15 };
       if (region) params.region = region;
-      const res = await axios.get(`${API}/api/ports/search`, { params });
+      const res = await api.get(`${API}/api/ports/search`, { params });
       setSuggestions(res.data);
     } catch {
       setSuggestions([]);
