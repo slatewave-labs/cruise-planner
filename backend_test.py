@@ -363,6 +363,8 @@ class ShoreExplorerAPITester:
             self.log("No test trip/port available for budget error testing", "FAIL")
             return False
 
+        device_id = self.device_a
+
         plan_data = {
             "trip_id": self.test_trip_id,
             "port_id": self.test_port_id,
@@ -378,7 +380,8 @@ class ShoreExplorerAPITester:
         self.log("Testing budget exceeded error handling...", "INFO")
         
         try:
-            response = self.session.post(f"{self.base_url}/api/plans/generate", json=plan_data, timeout=45)
+            headers = {'Content-Type': 'application/json', 'X-Device-Id': device_id}
+            response = requests.post(f"{self.base_url}/api/plans/generate", json=plan_data, headers=headers, timeout=45)
             
             if response.status_code == 503:
                 # Check error message contains budget information
