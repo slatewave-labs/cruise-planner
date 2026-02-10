@@ -27,7 +27,7 @@ class ShoreExplorerAPITester:
     def log(self, message, status="INFO"):
         print(f"[{status}] {message}")
 
-    def run_test(self, name, method, endpoint, expected_status=200, data=None, timeout=30):
+    def run_test(self, name, method, endpoint, expected_status=200, data=None, timeout=30, device_id=None):
         """Run a single API test"""
         url = f"{self.base_url}/{endpoint}"
         self.tests_run += 1
@@ -40,15 +40,20 @@ class ShoreExplorerAPITester:
         else:
             expected_codes = expected_status
         
+        # Set device ID header if provided
+        headers = {'Content-Type': 'application/json'}
+        if device_id:
+            headers['X-Device-Id'] = device_id
+            
         try:
             if method == 'GET':
-                response = self.session.get(url, timeout=timeout)
+                response = requests.get(url, headers=headers, timeout=timeout)
             elif method == 'POST':
-                response = self.session.post(url, json=data, timeout=timeout)
+                response = requests.post(url, json=data, headers=headers, timeout=timeout)
             elif method == 'PUT':
-                response = self.session.put(url, json=data, timeout=timeout)
+                response = requests.put(url, json=data, headers=headers, timeout=timeout)
             elif method == 'DELETE':
-                response = self.session.delete(url, timeout=timeout)
+                response = requests.delete(url, headers=headers, timeout=timeout)
             else:
                 self.log(f"Unknown method: {method}", "ERROR")
                 return False, {}
