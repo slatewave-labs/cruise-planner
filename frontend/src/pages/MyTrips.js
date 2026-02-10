@@ -70,7 +70,7 @@ export default function MyTrips() {
       {!serverOnline && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-6 flex items-center gap-2 text-sm text-amber-700" data-testid="offline-banner">
           <WifiOff className="w-4 h-4 shrink-0" />
-          <span><strong>Offline mode</strong> — showing locally saved trips. Some features may be limited.</span>
+          <span><strong>Offline mode</strong> — showing your saved trips. Some features may be limited until you reconnect.</span>
         </div>
       )}
 
