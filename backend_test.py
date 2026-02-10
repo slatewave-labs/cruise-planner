@@ -31,6 +31,12 @@ class ShoreExplorerAPITester:
         
         self.log(f"Testing {name}...")
         
+        # Handle both single status code and list of acceptable codes
+        if isinstance(expected_status, int):
+            expected_codes = [expected_status]
+        else:
+            expected_codes = expected_status
+        
         try:
             if method == 'GET':
                 response = self.session.get(url, timeout=timeout)
@@ -44,7 +50,7 @@ class ShoreExplorerAPITester:
                 self.log(f"Unknown method: {method}", "ERROR")
                 return False, {}
 
-            success = response.status_code == expected_status
+            success = response.status_code in expected_codes
             if success:
                 self.tests_passed += 1
                 self.log(f"✅ {name} - Status: {response.status_code}", "PASS")
@@ -53,7 +59,7 @@ class ShoreExplorerAPITester:
                 except json.JSONDecodeError:
                     return success, {"response_text": response.text}
             else:
-                self.log(f"❌ {name} - Expected {expected_status}, got {response.status_code}", "FAIL")
+                self.log(f"❌ {name} - Expected {expected_codes}, got {response.status_code}", "FAIL")
                 self.log(f"Response: {response.text}", "ERROR")
                 return False, {}
 
