@@ -346,7 +346,8 @@ class ShoreExplorerAPITester:
                 ("Trip CRUD Operations", self.test_trip_crud),
                 ("Port Management", self.test_port_management),
                 ("Weather API Proxy", self.test_weather_api),
-                ("AI Plan Generation", self.test_plan_generation),
+                ("AI Plan Generation with Currency", self.test_plan_generation),
+                ("Budget Exceeded Error Handling", self.test_budget_exceeded_error_handling),
                 ("Plan Listing", self.test_plan_listing),
             ]
 
