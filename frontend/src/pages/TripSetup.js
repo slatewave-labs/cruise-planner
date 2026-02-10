@@ -1,24 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Ship, Plus, Trash2, MapPin, Calendar, Clock, ArrowRight, Loader2 } from 'lucide-react';
+import { Ship, Plus, Trash2, MapPin, Calendar, Clock, ArrowRight, Loader2, Search, Globe } from 'lucide-react';
 import axios from 'axios';
 
 const API = process.env.REACT_APP_BACKEND_URL;
-
-const popularPorts = [
-  { name: 'Barcelona', country: 'Spain', lat: 41.3784, lng: 2.1925 },
-  { name: 'Cozumel', country: 'Mexico', lat: 20.4318, lng: -86.9194 },
-  { name: 'Nassau', country: 'Bahamas', lat: 25.0480, lng: -77.3554 },
-  { name: 'Santorini', country: 'Greece', lat: 36.3932, lng: 25.4615 },
-  { name: 'Dubrovnik', country: 'Croatia', lat: 42.6507, lng: 18.0944 },
-  { name: 'St. Thomas', country: 'US Virgin Islands', lat: 18.3358, lng: -64.9307 },
-  { name: 'Civitavecchia (Rome)', country: 'Italy', lat: 42.0930, lng: 11.7966 },
-  { name: 'Mykonos', country: 'Greece', lat: 37.4467, lng: 25.3289 },
-  { name: 'Juneau', country: 'Alaska, USA', lat: 58.3005, lng: -134.4197 },
-  { name: 'Crete (Heraklion)', country: 'Greece', lat: 35.3387, lng: 25.1442 },
-  { name: 'Marseille', country: 'France', lat: 43.2965, lng: 5.3698 },
-  { name: 'Palma de Mallorca', country: 'Spain', lat: 39.5696, lng: 2.6502 },
-];
 
 export default function TripSetup() {
   const navigate = useNavigate();
