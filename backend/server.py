@@ -208,8 +208,8 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
 # --- Day Plan Generation (Gemini 3 Flash) ---
 
 @app.post("/api/plans/generate")
-async def generate_plan(data: GeneratePlanInput):
-    trip = trips_col.find_one({"trip_id": data.trip_id}, {"_id": 0})
+async def generate_plan(data: GeneratePlanInput, x_device_id: str = Header()):
+    trip = trips_col.find_one({"trip_id": data.trip_id, "device_id": x_device_id}, {"_id": 0})
     if not trip:
         raise HTTPException(404, "Trip not found")
     port = next((p for p in trip["ports"] if p["port_id"] == data.port_id), None)
