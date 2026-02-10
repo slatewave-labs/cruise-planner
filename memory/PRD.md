@@ -6,10 +6,11 @@ Build a cruise port of call planner as a responsive PWA (MVP Android, port to iO
 ## Architecture
 - **Frontend**: React PWA (responsive, mobile-first) on port 3000
 - **Backend**: FastAPI (Python) on port 8001
-- **Database**: MongoDB
-- **AI**: Gemini 3 Flash via Emergent Universal Key
+- **Database**: MongoDB (local or MongoDB Atlas M0)
+- **AI**: Google Gemini 2.0 Flash via Google Gemini API
 - **Weather**: Open-Meteo API (free, no key needed)
 - **Maps**: Leaflet + OpenStreetMap (free), Google Maps export for navigation
+- **Deployment**: AWS with Docker, MongoDB Atlas M0 (free tier)
 - **Infrastructure**: TODO scaffolds for GitHub Actions CI/CD, feature flags, monitoring, blue/green deployment
 
 ## User Personas
@@ -36,7 +37,7 @@ Build a cruise port of call planner as a responsive PWA (MVP Android, port to iO
 - Trip CRUD (create, read, update, delete)
 - Port management (add, update, delete within trips)
 - Weather proxy (Open-Meteo API integration)
-- AI day plan generation (Gemini 3 Flash)
+- AI day plan generation (Google Gemini 2.0 Flash)
 - Plan CRUD (save, retrieve, list, delete)
 
 ### Frontend Pages

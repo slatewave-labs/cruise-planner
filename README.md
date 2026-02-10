@@ -59,7 +59,7 @@ You will also need one API key:
 
 | Key | What It's For | How to Get It |
 |-----|--------------|---------------|
-| **Emergent LLM Key** | Powers the AI that generates your day plans (Google Gemini 3 Flash) | Provided by the Emergent platform. Go to your Emergent profile > Universal Key. If you don't have one, you can sign up at [emergentagent.com](https://emergentagent.com) |
+| **Google Gemini API Key** | Powers the AI that generates your day plans (Google Gemini 2.0 Flash) | Go to [Google AI Studio](https://aistudio.google.com/apikey), sign in with your Google account, and click "Create API Key". Free tier: 15 requests/minute, 1500 requests/day. |
 
 > **No other API keys are needed.** The weather service (Open-Meteo) and maps (OpenStreetMap) are completely free and require no sign-up.
 
@@ -173,7 +173,7 @@ You'll know it's working when you see `(venv)` at the beginning of your terminal
 #### 3c. Install Python packages
 
 ```bash
-pip install fastapi uvicorn pymongo python-dotenv httpx pydantic emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+pip install -r requirements.txt
 ```
 
 #### 3d. Create the backend environment file
@@ -185,7 +185,7 @@ You need to create a file called `.env` inside the `backend` folder. This file t
 cat > .env << 'EOF'
 MONGO_URL=mongodb://localhost:27017
 DB_NAME=shoreexplorer
-EMERGENT_LLM_KEY=your-emergent-key-here
+GOOGLE_API_KEY=your-google-api-key-here
 EOF
 ```
 
@@ -195,7 +195,7 @@ EOF
    ```
    MONGO_URL=mongodb://localhost:27017
    DB_NAME=shoreexplorer
-   EMERGENT_LLM_KEY=your-emergent-key-here
+   GOOGLE_API_KEY=your-google-api-key-here
    ```
 3. Save the file as `.env` (not `.env.txt`) inside the `backend` folder
    - In the "Save as type" dropdown, select "All Files"
@@ -205,16 +205,16 @@ EOF
 
 | Variable | What to Put | Example |
 |----------|------------|---------|
-| `MONGO_URL` | The address of your MongoDB database. If you installed MongoDB locally with defaults, **leave this as-is**. | `mongodb://localhost:27017` |
+| `MONGO_URL` | The address of your MongoDB database. If you installed MongoDB locally with defaults, **leave this as-is**. For MongoDB Atlas, use your connection string. | `mongodb://localhost:27017` or `mongodb+srv://user:pass@cluster.mongodb.net/` |
 | `DB_NAME` | The name of the database. **Leave this as-is** unless you want a custom name. | `shoreexplorer` |
-| `EMERGENT_LLM_KEY` | Your Emergent Universal API key. Replace `your-emergent-key-here` with your actual key. | `sk-emergent-abc123def456` |
+| `GOOGLE_API_KEY` | Your Google Gemini API key. Replace `your-google-api-key-here` with your actual key from Google AI Studio. | `AIzaSyC...` |
 
-> **Where do I get my Emergent LLM Key?**
-> 1. Log in to your Emergent account at [emergentagent.com](https://emergentagent.com)
-> 2. Go to your **Profile** page
-> 3. Find the **Universal Key** section
-> 4. Copy your key and paste it into the `.env` file
-> 5. If your balance is low, click **Add Balance** to top it up (each AI plan generation costs a fraction of a cent)
+> **Where do I get my Google API Key?**
+> 1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+> 2. Sign in with your Google account
+> 3. Click **"Create API Key"**
+> 4. Copy your key (starts with `AIza...`) and paste it into the `.env` file
+> 5. Free tier limits: 15 requests per minute, 1 million tokens per minute, 1500 requests per day
 
 ---
 
@@ -310,9 +310,9 @@ Here is a complete reference of every environment variable the app uses:
 
 | Variable | Required | Description | Default for Local Dev |
 |----------|----------|-------------|----------------------|
-| `MONGO_URL` | Yes | MongoDB connection string. Points to your database. | `mongodb://localhost:27017` |
+| `MONGO_URL` | Yes | MongoDB connection string. Points to your database. Use `mongodb://localhost:27017` for local or Atlas connection string for cloud. | `mongodb://localhost:27017` |
 | `DB_NAME` | Yes | Name of the MongoDB database to use. | `shoreexplorer` |
-| `EMERGENT_LLM_KEY` | Yes | API key for AI plan generation (Gemini 3 Flash via Emergent). Without this, the "Generate Day Plan" feature will not work. | *(You must provide your own key)* |
+| `GOOGLE_API_KEY` | Yes | Google Gemini API key for AI plan generation. Without this, the "Generate Day Plan" feature will not work. Get it from [Google AI Studio](https://aistudio.google.com/apikey). | *(You must provide your own key)* |
 
 ### Frontend (`frontend/.env`)
 
@@ -371,10 +371,11 @@ sudo systemctl start mongod
 **Windows:**
 MongoDB should run as a service automatically. If not, search for "Services" in the Start menu, find "MongoDB Server", and click "Start".
 
-### "EMERGENT_LLM_KEY" errors or AI plan generation fails
+### "GOOGLE_API_KEY" errors or AI plan generation fails
 - Double-check that your key is correct in `backend/.env`
 - Make sure there are no extra spaces or quotes around the key
-- Check your Emergent account balance (Profile > Universal Key > Add Balance)
+- Verify your key is valid at [Google AI Studio](https://aistudio.google.com/apikey)
+- Check that you haven't exceeded the free tier limits (15 requests/minute, 1500 requests/day)
 
 ### Frontend shows a blank page
 - Make sure the backend is running first (Terminal 1)
@@ -452,7 +453,7 @@ shoreexplorer/
 |---------|---------|------|-----------------|
 | **Open-Meteo** | Weather forecasts | Free | No |
 | **OpenStreetMap + Leaflet** | Interactive maps | Free | No |
-| **Google Gemini 3 Flash** (via Emergent) | AI day plan generation | Pay-per-use (fractions of a cent per plan) | Yes (Emergent Universal Key) |
+| **Google Gemini 2.0 Flash** | AI day plan generation | Free tier (15 req/min, 1500 req/day) | Yes (Google API Key) |
 | **Google Maps** (export only) | Route navigation export | Free (opens in user's browser) | No |
 
 Full terms and conditions for each service are available in the app at the **Terms** page.
@@ -461,8 +462,17 @@ Full terms and conditions for each service are available in the app at the **Ter
 
 ## Infrastructure & Deployment
 
+This application has been migrated from the Emergent platform to run on AWS with MongoDB Atlas M0.
+
+**Quick Deployment Options:**
+
+1. **Docker Compose** (Local/VPS) - See root `docker-compose.yml`
+2. **AWS Deployment** - See `infra/deployment/AWS-DEPLOYMENT.md` for complete guide
+3. **Production Infrastructure** - See scaffolds below
+
 The `infra/` folder contains **scaffold files** (marked with TODO comments) for production infrastructure. These are ready to be picked up and completed:
 
+- **`infra/deployment/AWS-DEPLOYMENT.md`** - Complete AWS deployment guide with MongoDB Atlas M0 setup
 - **`infra/github-actions/ci.yml`** - CI pipeline with unit tests, integration tests (PACT), and E2E tests (Playwright)
 - **`infra/github-actions/cd.yml`** - CD pipeline with blue/green deployment to beta and production
 - **`infra/feature-flags/config.json`** - Feature flag configuration with 0-100% rollout settings per environment
