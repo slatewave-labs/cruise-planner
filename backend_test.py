@@ -177,14 +177,18 @@ class ShoreExplorerAPITester:
         
         self.log("✅ DEVICE PRIVACY ISOLATION WORKING CORRECTLY", "PASS")
         return True
+    def test_trip_crud(self):
         """Test complete trip CRUD operations"""
+        # Use device A for main CRUD tests
+        device_id = self.device_a
+        
         # 1. Create trip
         trip_data = {
             "ship_name": f"Test Ship {uuid.uuid4().hex[:8]}",
             "cruise_line": "Test Cruise Line"
         }
         
-        success, response = self.run_test("Create Trip", "POST", "api/trips", 200, trip_data)
+        success, response = self.run_test("Create Trip", "POST", "api/trips", 200, trip_data, device_id=device_id)
         if not success:
             return False
         
@@ -194,7 +198,7 @@ class ShoreExplorerAPITester:
             return False
 
         # 2. List trips
-        success, response = self.run_test("List Trips", "GET", "api/trips")
+        success, response = self.run_test("List Trips", "GET", "api/trips", device_id=device_id)
         if not success:
             return False
         
@@ -204,7 +208,7 @@ class ShoreExplorerAPITester:
             return False
 
         # 3. Get specific trip
-        success, response = self.run_test("Get Trip", "GET", f"api/trips/{self.test_trip_id}")
+        success, response = self.run_test("Get Trip", "GET", f"api/trips/{self.test_trip_id}", device_id=device_id)
         if not success:
             return False
         
@@ -218,7 +222,7 @@ class ShoreExplorerAPITester:
             "cruise_line": "Updated Cruise Line"
         }
         
-        success, response = self.run_test("Update Trip", "PUT", f"api/trips/{self.test_trip_id}", 200, updated_data)
+        success, response = self.run_test("Update Trip", "PUT", f"api/trips/{self.test_trip_id}", 200, updated_data, device_id=device_id)
         if not success:
             return False
 
