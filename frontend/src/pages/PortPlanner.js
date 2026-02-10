@@ -6,22 +6,7 @@ import CURRENCIES, { cachePlan, getCachedPlansForPort, getCurrencySymbol } from 
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
-const currencies = [
-  { code: 'GBP', label: 'GBP (£)', symbol: '£' },
-  { code: 'USD', label: 'USD ($)', symbol: '$' },
-  { code: 'EUR', label: 'EUR (€)', symbol: '€' },
-  { code: 'AUD', label: 'AUD (A$)', symbol: 'A$' },
-  { code: 'CAD', label: 'CAD (C$)', symbol: 'C$' },
-  { code: 'NZD', label: 'NZD (NZ$)', symbol: 'NZ$' },
-  { code: 'CHF', label: 'CHF (Fr)', symbol: 'Fr' },
-  { code: 'JPY', label: 'JPY (¥)', symbol: '¥' },
-  { code: 'NOK', label: 'NOK (kr)', symbol: 'kr' },
-  { code: 'SEK', label: 'SEK (kr)', symbol: 'kr' },
-  { code: 'DKK', label: 'DKK (kr)', symbol: 'kr' },
-  { code: 'SGD', label: 'SGD (S$)', symbol: 'S$' },
-  { code: 'ZAR', label: 'ZAR (R)', symbol: 'R' },
-  { code: 'AED', label: 'AED (د.إ)', symbol: 'د.إ' },
-];
+const currencies = CURRENCIES;
 
 const options = {
   party_type: [
