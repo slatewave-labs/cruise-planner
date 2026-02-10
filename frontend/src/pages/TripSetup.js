@@ -222,8 +222,10 @@ export default function TripSetup() {
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <div className="relative">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Port Name</label>
+                  <div className="relative sm:col-span-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 block flex items-center gap-1">
+                      <Search className="w-3.5 h-3.5" /> Search Port
+                    </label>
                     <input
                       type="text"
                       value={port.name}
@@ -231,27 +233,67 @@ export default function TripSetup() {
                         updatePort(index, 'name', e.target.value);
                         setShowPortSuggestions(index);
                         setPortSearch(e.target.value);
+                        if (debounceRef.current) clearTimeout(debounceRef.current);
+                        debounceRef.current = setTimeout(() => {
+                          searchPorts(e.target.value, selectedRegion);
+                        }, 250);
                       }}
-                      onFocus={() => { setShowPortSuggestions(index); setPortSearch(port.name); }}
-                      onBlur={() => setTimeout(() => setShowPortSuggestions(null), 200)}
-                      placeholder="e.g. Barcelona"
-                      className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 text-base focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
+                      onFocus={() => {
+                        setShowPortSuggestions(index);
+                        setPortSearch(port.name);
+                        searchPorts(port.name || '', selectedRegion);
+                      }}
+                      onBlur={() => setTimeout(() => setShowPortSuggestions(null), 250)}
+                      placeholder="Type to search 350+ cruise ports worldwide..."
+                      className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 pr-10 text-base focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
                       data-testid={`port-name-${index}`}
                     />
-                    {showPortSuggestions === index && filteredSuggestions.length > 0 && (
-                      <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-xl border border-stone-200 shadow-lg max-h-48 overflow-y-auto">
-                        {filteredSuggestions.slice(0, 6).map((s, si) => (
-                          <button
-                            key={si}
-                            type="button"
-                            onMouseDown={() => selectSuggested(index, s)}
-                            className="w-full text-left px-4 py-3 hover:bg-sand-100 text-sm flex items-center gap-2 transition"
-                          >
-                            <MapPin className="w-3.5 h-3.5 text-accent shrink-0" />
-                            <span className="font-medium">{s.name}</span>
-                            <span className="text-stone-400 text-xs">{s.country}</span>
-                          </button>
-                        ))}
+                    {searchLoading && showPortSuggestions === index && (
+                      <Loader2 className="absolute right-3 top-9 w-4 h-4 animate-spin text-stone-400" />
+                    )}
+                    {showPortSuggestions === index && (
+                      <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-xl border border-stone-200 shadow-lg max-h-64 overflow-y-auto">
+                        {/* Region filter */}
+                        <div className="sticky top-0 bg-white border-b border-stone-100 px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Globe className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                            <select
+                              value={selectedRegion}
+                              onChange={(e) => {
+                                setSelectedRegion(e.target.value);
+                                searchPorts(portSearch, e.target.value);
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              className="text-xs bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 flex-1 outline-none"
+                              data-testid={`region-filter-${index}`}
+                            >
+                              <option value="">All Regions</option>
+                              {regions.map(r => (
+                                <option key={r} value={r}>{r}</option>
+                              ))}
+                            </select>
+                            <span className="text-[10px] text-stone-400 whitespace-nowrap">{filteredSuggestions.length} results</span>
+                          </div>
+                        </div>
+                        {filteredSuggestions.length > 0 ? (
+                          filteredSuggestions.map((s, si) => (
+                            <button
+                              key={si}
+                              type="button"
+                              onMouseDown={() => selectSuggested(index, s)}
+                              className="w-full text-left px-4 py-3 hover:bg-sand-100 text-sm flex items-center gap-2 transition border-b border-stone-50 last:border-0"
+                            >
+                              <MapPin className="w-3.5 h-3.5 text-accent shrink-0" />
+                              <span className="font-medium">{s.name}</span>
+                              <span className="text-stone-400 text-xs">{s.country}</span>
+                              <span className="text-stone-300 text-[10px] ml-auto">{s.region}</span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-4 py-3 text-sm text-stone-400">
+                            {portSearch ? 'No ports found — you can still type any name manually' : 'Type to search...'}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
