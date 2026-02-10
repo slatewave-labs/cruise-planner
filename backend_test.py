@@ -484,6 +484,7 @@ class ShoreExplorerAPITester:
             # Test sequence
             tests = [
                 ("Health Check", self.test_health_endpoint),
+                ("Port Search & Regions", self.test_port_search_endpoints),
                 ("Trip CRUD Operations", self.test_trip_crud),
                 ("Port Management", self.test_port_management),
                 ("Weather API Proxy", self.test_weather_api),
