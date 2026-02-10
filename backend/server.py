@@ -337,6 +337,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 
     plan = {
         "plan_id": str(uuid.uuid4()),
+        "device_id": x_device_id,
         "trip_id": data.trip_id,
         "port_id": data.port_id,
         "port_name": port["name"],
@@ -351,15 +352,15 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     return plan
 
 @app.get("/api/plans/{plan_id}")
-def get_plan(plan_id: str):
-    plan = plans_col.find_one({"plan_id": plan_id}, {"_id": 0})
+def get_plan(plan_id: str, x_device_id: str = Header()):
+    plan = plans_col.find_one({"plan_id": plan_id, "device_id": x_device_id}, {"_id": 0})
     if not plan:
         raise HTTPException(404, "Plan not found")
     return plan
 
 @app.get("/api/plans")
-def list_plans(trip_id: Optional[str] = None, port_id: Optional[str] = None, skip: int = 0, limit: int = 100):
-    query = {}
+def list_plans(x_device_id: str = Header(), trip_id: Optional[str] = None, port_id: Optional[str] = None, skip: int = 0, limit: int = 100):
+    query = {"device_id": x_device_id}
     if trip_id:
         query["trip_id"] = trip_id
     if port_id:
@@ -368,8 +369,8 @@ def list_plans(trip_id: Optional[str] = None, port_id: Optional[str] = None, ski
     return plans
 
 @app.delete("/api/plans/{plan_id}")
-def delete_plan(plan_id: str):
-    result = plans_col.delete_one({"plan_id": plan_id})
+def delete_plan(plan_id: str, x_device_id: str = Header()):
+    result = plans_col.delete_one({"plan_id": plan_id, "device_id": x_device_id})
     if result.deleted_count == 0:
         raise HTTPException(404, "Plan not found")
     return {"message": "Plan deleted"}
