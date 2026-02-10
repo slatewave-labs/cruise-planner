@@ -313,13 +313,13 @@ def get_plan(plan_id: str):
     return plan
 
 @app.get("/api/plans")
-def list_plans(trip_id: Optional[str] = None, port_id: Optional[str] = None):
+def list_plans(trip_id: Optional[str] = None, port_id: Optional[str] = None, skip: int = 0, limit: int = 100):
     query = {}
     if trip_id:
         query["trip_id"] = trip_id
     if port_id:
         query["port_id"] = port_id
-    plans = list(plans_col.find(query, {"_id": 0}))
+    plans = list(plans_col.find(query, {"_id": 0}).sort("generated_at", -1).skip(skip).limit(limit))
     return plans
 
 @app.delete("/api/plans/{plan_id}")
