@@ -125,10 +125,7 @@ export default function TripSetup() {
     }
   };
 
-  const filteredSuggestions = popularPorts.filter(p =>
-    p.name.toLowerCase().includes(portSearch.toLowerCase()) ||
-    p.country.toLowerCase().includes(portSearch.toLowerCase())
-  );
+  const filteredSuggestions = suggestions;
 
   if (loading) {
     return (
