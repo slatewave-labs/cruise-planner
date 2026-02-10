@@ -95,7 +95,7 @@ export default function DayPlanView() {
       {hasParseError ? (
         <div className="bg-warning/10 border border-warning/30 rounded-2xl p-6 mb-6">
           <p className="font-bold text-warning mb-2">Plan Generation Note</p>
-          <p className="text-sm text-stone-600">The AI response could not be fully structured. Here is the raw output:</p>
+          <p className="text-sm text-stone-600">The response could not be fully structured. Here is the raw output:</p>
           <pre className="mt-3 text-sm bg-white rounded-xl p-4 overflow-x-auto whitespace-pre-wrap">{dayPlan.raw_response}</pre>
         </div>
       ) : (
