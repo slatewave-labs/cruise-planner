@@ -573,13 +573,15 @@ class ShoreExplorerAPITester:
         """Clean up test data"""
         self.log("Cleaning up test data...", "INFO")
         
+        device_id = self.device_a
+        
         # Delete test plan
         if self.test_plan_id:
-            self.run_test("Delete Plan", "DELETE", f"api/plans/{self.test_plan_id}")
+            self.run_test("Delete Plan", "DELETE", f"api/plans/{self.test_plan_id}", device_id=device_id)
         
         # Delete test trip (this should also delete associated ports and plans)
         if self.test_trip_id:
-            self.run_test("Delete Trip", "DELETE", f"api/trips/{self.test_trip_id}")
+            self.run_test("Delete Trip", "DELETE", f"api/trips/{self.test_trip_id}", device_id=device_id)
 
     def run_all_tests(self):
         """Run all backend API tests"""
