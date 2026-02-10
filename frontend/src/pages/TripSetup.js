@@ -112,9 +112,9 @@ export default function TripSetup() {
           departure: port.departure,
         };
         if (port.port_id && !port.port_id.startsWith('temp-')) {
-          await axios.put(`${API}/api/trips/${savedTripId}/ports/${port.port_id}`, portData);
+          await api.put(`${API}/api/trips/${savedTripId}/ports/${port.port_id}`, portData);
         } else {
-          await axios.post(`${API}/api/trips/${savedTripId}/ports`, portData);
+          await api.post(`${API}/api/trips/${savedTripId}/ports`, portData);
         }
       }
 
