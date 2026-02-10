@@ -1,0 +1,65 @@
+{
+  "// TODO": "Feature Flags Configuration - Integrate with a feature flag service (LaunchDarkly, Unleash, or Flagsmith)",
+  "// NOTE": "For MVP, this is a static config. Replace with a proper feature flag service for production.",
+  "environments": {
+    "local": {
+      "description": "Local development - all features enabled",
+      "flags": {
+        "ai_day_plan_generation": { "enabled": true, "rollout_percentage": 100 },
+        "weather_integration": { "enabled": true, "rollout_percentage": 100 },
+        "map_export_google": { "enabled": true, "rollout_percentage": 100 },
+        "cruise_ship_api_lookup": { "enabled": false, "rollout_percentage": 0, "// TODO": "Enable when cruise ship API is integrated" },
+        "google_maps_native": { "enabled": false, "rollout_percentage": 0, "// TODO": "Enable when Google Maps API key is provided" },
+        "offline_mode": { "enabled": false, "rollout_percentage": 0, "// TODO": "Implement service worker caching" },
+        "multi_language": { "enabled": false, "rollout_percentage": 0 }
+      }
+    },
+    "beta": {
+      "description": "Beta production - controlled feature rollout",
+      "flags": {
+        "ai_day_plan_generation": { "enabled": true, "rollout_percentage": 100 },
+        "weather_integration": { "enabled": true, "rollout_percentage": 100 },
+        "map_export_google": { "enabled": true, "rollout_percentage": 50, "// NOTE": "Gradual rollout" },
+        "cruise_ship_api_lookup": { "enabled": false, "rollout_percentage": 0 },
+        "google_maps_native": { "enabled": false, "rollout_percentage": 0 },
+        "offline_mode": { "enabled": false, "rollout_percentage": 0 },
+        "multi_language": { "enabled": false, "rollout_percentage": 0 }
+      }
+    },
+    "production": {
+      "description": "Public production - stable features only",
+      "flags": {
+        "ai_day_plan_generation": { "enabled": true, "rollout_percentage": 100 },
+        "weather_integration": { "enabled": true, "rollout_percentage": 100 },
+        "map_export_google": { "enabled": true, "rollout_percentage": 100 },
+        "cruise_ship_api_lookup": { "enabled": false, "rollout_percentage": 0 },
+        "google_maps_native": { "enabled": false, "rollout_percentage": 0 },
+        "offline_mode": { "enabled": false, "rollout_percentage": 0 },
+        "multi_language": { "enabled": false, "rollout_percentage": 0 }
+      }
+    }
+  },
+  "recommended_services": {
+    "// TODO": "Choose and integrate one of these feature flag services:",
+    "options": [
+      {
+        "name": "Unleash",
+        "url": "https://www.getunleash.io/",
+        "notes": "Open-source, self-hosted option available. Free tier for small teams.",
+        "cost": "Free (self-hosted) / $80/mo (managed)"
+      },
+      {
+        "name": "Flagsmith",
+        "url": "https://flagsmith.com/",
+        "notes": "Open-source with generous free tier. Supports percentage rollouts.",
+        "cost": "Free tier: 50K requests/mo"
+      },
+      {
+        "name": "LaunchDarkly",
+        "url": "https://launchdarkly.com/",
+        "notes": "Industry standard. More expensive but most feature-rich.",
+        "cost": "Starts at $10/mo per seat"
+      }
+    ]
+  }
+}
