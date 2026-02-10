@@ -19,7 +19,7 @@ EXPOSE 8001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c "import httpx; httpx.get('http://localhost:8001/api/health')" || exit 1
+  CMD python -c "import httpx; exit(0 if httpx.get('http://localhost:8001/api/health').status_code == 200 else 1)" || exit 1
 
 # Run the application
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]

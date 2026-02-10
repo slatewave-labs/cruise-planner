@@ -49,7 +49,7 @@ This guide covers deploying ShoreExplorer to AWS using a lean, cost-effective ar
 2. Click "Create" → "Shared Cluster"
 3. Select:
    - **Provider**: AWS
-   - **Region**: Choose closest to your application (e.g., us-east-1)
+   - **Region**: Choose the region where you plan to deploy your application or closest to your target users (e.g., us-east-1 for US East Coast)
    - **Tier**: M0 Sandbox (Free)
    - **Cluster Name**: shoreexplorer-cluster
 4. Click "Create Cluster"
@@ -97,9 +97,9 @@ The application will auto-create collections, but you can pre-create them:
 
 1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
 2. Sign in with your Google account
-3. Click "Create API Key"
-4. Copy the API key (format: `AIza...`)
-5. **Free tier limits**: 15 requests/minute, 1 million tokens/minute, 1500 requests/day
+3. Click **"Create API Key"**
+4. Copy your key (starts with `AIza...`) and paste it into the `.env` file
+5. Free tier limits: 15 requests per minute, 1500 requests per day (verify current limits at [Google AI Studio](https://aistudio.google.com/apikey))
 
 ## Step 3: Deployment Options
 

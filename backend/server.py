@@ -308,7 +308,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     client = genai.Client(api_key=api_key)
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.0-flash-exp",  # Use "gemini-1.5-flash" for stable production version
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 system_instruction="You are an expert cruise port day planner. You always respond with valid JSON only, no markdown formatting.",
