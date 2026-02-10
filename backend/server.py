@@ -267,7 +267,12 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 }}"""
 
     from emergentintegrations.llm.chat import LlmChat, UserMessage
+    import json
+
     api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        raise HTTPException(503, "AI service not configured. Please set EMERGENT_LLM_KEY in backend/.env")
+
     session_id = f"plan-{data.trip_id}-{data.port_id}-{uuid.uuid4().hex[:8]}"
     chat = LlmChat(
         api_key=api_key,
@@ -276,9 +281,17 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     ).with_model("gemini", "gemini-3-flash-preview")
 
     user_msg = UserMessage(text=prompt)
-    response_text = await chat.send_message(user_msg)
+    try:
+        response_text = await chat.send_message(user_msg)
+    except Exception as e:
+        error_msg = str(e)
+        if "budget" in error_msg.lower() or "exceeded" in error_msg.lower():
+            raise HTTPException(
+                503,
+                "AI service budget has been exceeded. Please top up your Emergent Universal Key balance at Profile > Universal Key > Add Balance."
+            )
+        raise HTTPException(503, f"AI service temporarily unavailable: {error_msg}")
 
-    import json
     try:
         clean = response_text.strip()
         if clean.startswith("```"):
