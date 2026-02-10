@@ -94,6 +94,7 @@ export default function PortPlanner() {
 
   const handleGenerate = async () => {
     setGenerating(true);
+    setError(null);
     try {
       const res = await axios.post(`${API}/api/plans/generate`, {
         trip_id: tripId,
@@ -102,7 +103,8 @@ export default function PortPlanner() {
       });
       navigate(`/plans/${res.data.plan_id}`);
     } catch (err) {
-      alert('Failed to generate plan: ' + (err.response?.data?.detail || err.message));
+      const detail = err.response?.data?.detail || err.message;
+      setError(detail);
     } finally {
       setGenerating(false);
     }
