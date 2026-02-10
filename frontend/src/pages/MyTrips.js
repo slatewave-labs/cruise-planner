@@ -140,18 +140,18 @@ export default function MyTrips() {
                     {trip._source === 'server' ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-success bg-success/10 rounded-full px-2 py-0.5" data-testid={`trip-synced-badge-${i}`}>
                         <Wifi className="w-2.5 h-2.5" />
-                        Synced
+                        Up to date
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-blue-600 bg-blue-50 rounded-full px-2 py-0.5" data-testid={`trip-cached-badge-${i}`}>
                         <HardDrive className="w-2.5 h-2.5" />
-                        Saved locally
+                        Saved on device
                       </span>
                     )}
                     {planCount > 0 && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-primary bg-sand-100 rounded-full px-2 py-0.5">
                         <FileText className="w-2.5 h-2.5" />
-                        Plans cached
+                        {planCount} plan{planCount !== 1 ? 's' : ''} ready
                       </span>
                     )}
                   </div>
