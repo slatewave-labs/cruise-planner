@@ -181,7 +181,7 @@ class ShoreExplorerAPITester:
         return True
 
     def test_weather_api(self):
-        """Test weather proxy endpoint"""
+        """Test weather proxy endpoint with Celsius temperature verification"""
         # Test with Barcelona coordinates
         success, response = self.run_test(
             "Weather API", 
@@ -193,9 +193,19 @@ class ShoreExplorerAPITester:
         if success:
             # Check if response has expected weather data structure
             daily = response.get("daily", {})
+            daily_units = response.get("daily_units", {})
+            
             if daily and any(key in daily for key in ["temperature_2m_max", "temperature_2m_min"]):
                 self.log("✅ Weather API returned valid data structure", "PASS")
-                return True
+                
+                # Verify temperature units are in Celsius
+                temp_unit = daily_units.get("temperature_2m_max", "")
+                if "°C" in temp_unit:
+                    self.log("✅ Weather API returns temperatures in Celsius (°C)", "PASS")
+                    return True
+                else:
+                    self.log(f"❌ Weather API temperature unit is '{temp_unit}', expected '°C'", "FAIL")
+                    return False
             else:
                 self.log("Weather API response missing expected data fields", "FAIL")
                 return False
