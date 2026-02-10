@@ -69,6 +69,7 @@ export default function PortPlanner() {
   const [trip, setTrip] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(null);
   const [prefs, setPrefs] = useState({
     party_type: 'couple',
     activity_level: 'moderate',
