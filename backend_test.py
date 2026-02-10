@@ -235,6 +235,8 @@ class ShoreExplorerAPITester:
             self.log("No test trip available for port testing", "FAIL")
             return False
 
+        device_id = self.device_a
+
         # 1. Add port to trip
         port_data = {
             "name": "Barcelona",
@@ -245,7 +247,7 @@ class ShoreExplorerAPITester:
             "departure": "2024-06-15T18:00:00"
         }
         
-        success, response = self.run_test("Add Port", "POST", f"api/trips/{self.test_trip_id}/ports", 200, port_data)
+        success, response = self.run_test("Add Port", "POST", f"api/trips/{self.test_trip_id}/ports", 200, port_data, device_id=device_id)
         if not success:
             return False
         
@@ -255,7 +257,7 @@ class ShoreExplorerAPITester:
             return False
 
         # 2. Get trip with ports
-        success, response = self.run_test("Get Trip with Ports", "GET", f"api/trips/{self.test_trip_id}")
+        success, response = self.run_test("Get Trip with Ports", "GET", f"api/trips/{self.test_trip_id}", device_id=device_id)
         if not success:
             return False
         
@@ -279,7 +281,7 @@ class ShoreExplorerAPITester:
             "departure": "2024-06-15T19:00:00"
         }
         
-        success, response = self.run_test("Update Port", "PUT", f"api/trips/{self.test_trip_id}/ports/{self.test_port_id}", 200, updated_port_data)
+        success, response = self.run_test("Update Port", "PUT", f"api/trips/{self.test_trip_id}/ports/{self.test_port_id}", 200, updated_port_data, device_id=device_id)
         if not success:
             return False
 
