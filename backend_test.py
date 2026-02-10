@@ -414,13 +414,15 @@ class ShoreExplorerAPITester:
             self.log("No test trip available for plan listing", "FAIL")
             return False
 
+        device_id = self.device_a
+
         # Test list all plans
-        success, response = self.run_test("List All Plans", "GET", "api/plans")
+        success, response = self.run_test("List All Plans", "GET", "api/plans", device_id=device_id)
         if not success:
             return False
 
         # Test list plans by trip
-        success, response = self.run_test("List Plans by Trip", "GET", f"api/plans?trip_id={self.test_trip_id}")
+        success, response = self.run_test("List Plans by Trip", "GET", f"api/plans?trip_id={self.test_trip_id}", device_id=device_id)
         if success:
             self.log("✅ Plan listing endpoints working", "PASS")
             return True
