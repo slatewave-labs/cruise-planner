@@ -200,6 +200,7 @@ async def generate_plan(data: GeneratePlanInput):
                 "longitude": port["longitude"],
                 "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode,windspeed_10m_max",
                 "timezone": "auto",
+                "temperature_unit": "celsius",
             }
             if arrival_date:
                 params["start_date"] = arrival_date
