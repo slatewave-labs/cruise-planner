@@ -218,6 +218,7 @@ async def generate_plan(data: GeneratePlanInput):
         weather_summary = f"Temperature: {d.get('temperature_2m_min', ['?'])[0]}°C - {d.get('temperature_2m_max', ['?'])[0]}°C, Precipitation: {d.get('precipitation_sum', ['?'])[0]}mm, Wind: {d.get('windspeed_10m_max', ['?'])[0]}km/h"
 
     prefs = data.preferences
+    currency = prefs.currency or "GBP"
     prompt = f"""You are a cruise port day planner. Create a detailed day plan for a cruise passenger visiting {port['name']}, {port['country']}.
 
 CRUISE DETAILS:
@@ -231,22 +232,25 @@ TRAVELER PREFERENCES:
 - Activity level: {prefs.activity_level}
 - Transport mode: {prefs.transport_mode}
 - Budget: {prefs.budget}
+- Preferred currency: {currency}
 
-REQUIREMENTS:
+IMPORTANT RULES:
 1. Create a circular route starting and ending at the cruise ship terminal/port area
 2. Ensure return to ship at least 1 hour before scheduled departure
 3. Include realistic travel times between activities
 4. Consider weather conditions in activity selection
-5. For paid activities, include estimated costs in local currency and approximate USD equivalent
-6. Include 5-8 activities appropriate for the preferences
-7. For each activity with costs, include a relevant booking/info URL if known
+5. ALL temperatures must be in Celsius (°C) — never use Fahrenheit
+6. ALL cost estimates must be shown in {currency} — use the {currency} symbol/code
+7. The "total_estimated_cost" must also be in {currency}
+8. Include 5-8 activities appropriate for the preferences
+9. For each activity with costs, include a relevant booking/info URL if known
 
 Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {{
   "plan_title": "string - catchy title for the day",
   "summary": "string - 2-3 sentence overview",
   "return_by": "string - recommended time to be back at ship",
-  "total_estimated_cost": "string - estimated total cost per person",
+  "total_estimated_cost": "string - estimated total cost per person in {currency}",
   "activities": [
     {{
       "order": 1,
@@ -258,7 +262,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
       "start_time": "string - HH:MM format",
       "end_time": "string - HH:MM format",
       "duration_minutes": number,
-      "cost_estimate": "string - e.g. Free, ~$10 USD",
+      "cost_estimate": "string - e.g. Free, ~{currency} 8",
       "booking_url": "string or null - URL for booking/info",
       "transport_to_next": "string - how to get to next activity",
       "travel_time_to_next": "string - estimated travel time",
