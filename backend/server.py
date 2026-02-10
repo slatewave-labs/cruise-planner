@@ -3,11 +3,12 @@ import uuid
 import httpx
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from pymongo import MongoClient
+from ports_data import CRUISE_PORTS
 
 load_dotenv()
 
