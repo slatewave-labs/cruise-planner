@@ -286,7 +286,7 @@ export default function PortPlanner() {
 
       {generating && (
         <p className="text-center text-sm text-stone-400 mt-3">
-          This may take 15-30 seconds as AI crafts your personalised itinerary...
+          This may take 15-30 seconds while we craft your personalised itinerary...
         </p>
       )}
 
