@@ -96,7 +96,7 @@ export default function Landing() {
             Ready to Explore?
           </h2>
           <p className="text-white/70 mb-8 max-w-md mx-auto">
-            Create your first trip and let AI plan the perfect day at each port of call.
+            Create your first trip and get the perfect day planned at each port of call.
           </p>
           <Link
             to="/trips/new"
