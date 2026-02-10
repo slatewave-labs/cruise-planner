@@ -134,7 +134,7 @@ export default function TripDetail() {
       {cachedPlans.length > 0 && (
         <div className="bg-success/5 border border-success/20 rounded-xl px-4 py-3 mb-6 flex items-center gap-2 text-sm text-success" data-testid="trip-plans-cached-summary">
           <FileText className="w-4 h-4 shrink-0" />
-          <span><strong>{cachedPlans.length} day plan{cachedPlans.length !== 1 ? 's' : ''} saved locally</strong> — viewable without using API budget</span>
+          <span><strong>{cachedPlans.length} day plan{cachedPlans.length !== 1 ? 's' : ''} saved on this device</strong> — view anytime, even without internet</span>
         </div>
       )}
 
