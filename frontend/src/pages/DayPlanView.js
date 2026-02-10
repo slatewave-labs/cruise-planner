@@ -87,8 +87,8 @@ export default function DayPlanView() {
 
       {fromCache && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-blue-700 flex items-center gap-2" data-testid="cached-plan-badge">
-          <span className="font-semibold">Loaded from saved cache</span>
-          <span className="text-blue-400">— no API call used</span>
+          <span className="font-semibold">Loaded instantly from your saved plans</span>
+          <span className="text-blue-400">— ready to go, even offline</span>
         </div>
       )}
 
