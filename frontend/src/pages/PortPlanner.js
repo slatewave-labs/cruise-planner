@@ -174,7 +174,7 @@ export default function PortPlanner() {
         <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm mb-6" data-testid="cached-plans-section">
           <div className="flex items-center gap-2 mb-4">
             <History className="w-5 h-5 text-success" />
-            <h2 className="font-heading text-lg font-bold text-primary">Previously Generated Plans</h2>
+            <h2 className="font-heading text-lg font-bold text-primary">Your Previous Plans</h2>
             <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full font-semibold">Ready to view</span>
           </div>
           <p className="text-sm text-stone-400 mb-3">Your previously generated plans for this port — tap to view instantly.</p>
