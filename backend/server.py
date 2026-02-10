@@ -42,6 +42,7 @@ class PlanPreferences(BaseModel):
     activity_level: str = Field(description="light, moderate, active, intensive")
     transport_mode: str = Field(description="walking, public_transport, taxi, mixed")
     budget: str = Field(description="free, low, medium, high")
+    currency: str = Field(default="GBP", description="Currency code e.g. GBP, USD, EUR")
 
 class GeneratePlanInput(BaseModel):
     trip_id: str
