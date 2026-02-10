@@ -17,7 +17,29 @@ export default function TripSetup() {
   const [loading, setLoading] = useState(false);
   const [showPortSuggestions, setShowPortSuggestions] = useState(null);
   const [portSearch, setPortSearch] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [regions, setRegions] = useState([]);
+  const [selectedRegion, setSelectedRegion] = useState('');
+  const debounceRef = useRef(null);
 
+  useEffect(() => {
+    axios.get(`${API}/api/ports/regions`).then(res => setRegions(res.data)).catch(() => {});
+  }, []);
+
+  const searchPorts = useCallback(async (query, region) => {
+    setSearchLoading(true);
+    try {
+      const params = { q: query || '', limit: 15 };
+      if (region) params.region = region;
+      const res = await axios.get(`${API}/api/ports/search`, { params });
+      setSuggestions(res.data);
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
   useEffect(() => {
     if (isEdit) {
       setLoading(true);
