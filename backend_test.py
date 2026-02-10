@@ -88,7 +88,95 @@ class ShoreExplorerAPITester:
             self.log("Health endpoint failed or returned incorrect response", "FAIL")
             return False
 
-    def test_trip_crud(self):
+    def test_device_privacy_isolation(self):
+        """Test critical privacy fix - device isolation"""
+        self.log("Testing device privacy isolation (CRITICAL PRIVACY TEST)...", "INFO")
+        
+        # Test 1: Create trip with Device A
+        trip_data_a = {
+            "ship_name": f"Device A Ship {uuid.uuid4().hex[:8]}",
+            "cruise_line": "Device A Cruise"
+        }
+        
+        success, response_a = self.run_test("Create Trip Device A", "POST", "api/trips", 200, trip_data_a, device_id=self.device_a)
+        if not success:
+            return False
+        trip_id_a = response_a.get("trip_id")
+        
+        # Test 2: Create trip with Device B  
+        trip_data_b = {
+            "ship_name": f"Device B Ship {uuid.uuid4().hex[:8]}",
+            "cruise_line": "Device B Cruise"
+        }
+        
+        success, response_b = self.run_test("Create Trip Device B", "POST", "api/trips", 200, trip_data_b, device_id=self.device_b)
+        if not success:
+            return False
+        trip_id_b = response_b.get("trip_id")
+        
+        # Test 3: Device A should only see Device A trips
+        success, trips_a = self.run_test("List Trips Device A", "GET", "api/trips", device_id=self.device_a)
+        if not success:
+            return False
+            
+        device_a_trip_ids = [trip.get("trip_id") for trip in trips_a]
+        if trip_id_a not in device_a_trip_ids:
+            self.log("❌ Device A cannot see its own trip", "FAIL")
+            return False
+            
+        if trip_id_b in device_a_trip_ids:
+            self.log("❌ PRIVACY VIOLATION: Device A can see Device B's trip!", "FAIL")
+            return False
+        
+        # Test 4: Device B should only see Device B trips
+        success, trips_b = self.run_test("List Trips Device B", "GET", "api/trips", device_id=self.device_b)
+        if not success:
+            return False
+            
+        device_b_trip_ids = [trip.get("trip_id") for trip in trips_b]
+        if trip_id_b not in device_b_trip_ids:
+            self.log("❌ Device B cannot see its own trip", "FAIL")
+            return False
+            
+        if trip_id_a in device_b_trip_ids:
+            self.log("❌ PRIVACY VIOLATION: Device B can see Device A's trip!", "FAIL")
+            return False
+            
+        # Test 5: Device A cannot access Device B's trip directly
+        success, _ = self.run_test("Device A Access Device B Trip", "GET", f"api/trips/{trip_id_b}", 404, device_id=self.device_a)
+        if not success:
+            self.log("❌ Device A should get 404 when accessing Device B's trip", "FAIL")
+            return False
+            
+        # Test 6: Device B cannot access Device A's trip directly  
+        success, _ = self.run_test("Device B Access Device A Trip", "GET", f"api/trips/{trip_id_a}", 404, device_id=self.device_b)
+        if not success:
+            self.log("❌ Device B should get 404 when accessing Device A's trip", "FAIL")
+            return False
+            
+        # Test 7: Device A cannot delete Device B's trip
+        success, _ = self.run_test("Device A Delete Device B Trip", "DELETE", f"api/trips/{trip_id_b}", 404, device_id=self.device_a)
+        if not success:
+            self.log("❌ Device A should get 404 when deleting Device B's trip", "FAIL")
+            return False
+            
+        # Test 8: Test endpoints without X-Device-Id header (should fail with 422)
+        success, _ = self.run_test("Create Trip No Device ID", "POST", "api/trips", 422, trip_data_a)
+        if not success:
+            self.log("❌ Endpoints should require X-Device-Id header", "FAIL")
+            return False
+            
+        success, _ = self.run_test("List Trips No Device ID", "GET", "api/trips", 422)
+        if not success:
+            self.log("❌ Endpoints should require X-Device-Id header", "FAIL")
+            return False
+        
+        # Cleanup test trips
+        self.run_test("Cleanup Device A Trip", "DELETE", f"api/trips/{trip_id_a}", device_id=self.device_a)
+        self.run_test("Cleanup Device B Trip", "DELETE", f"api/trips/{trip_id_b}", device_id=self.device_b)
+        
+        self.log("✅ DEVICE PRIVACY ISOLATION WORKING CORRECTLY", "PASS")
+        return True
         """Test complete trip CRUD operations"""
         # 1. Create trip
         trip_data = {
