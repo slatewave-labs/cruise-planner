@@ -80,6 +80,7 @@ export default function PortPlanner() {
     budget: 'low',
     currency: 'GBP',
   });
+  const [cachedPlans, setCachedPlans] = useState([]);
 
   useEffect(() => {
     axios.get(`${API}/api/trips/${tripId}`)
@@ -90,6 +91,9 @@ export default function PortPlanner() {
       })
       .catch(() => alert('Failed to load trip'))
       .finally(() => setLoading(false));
+    // Load any previously cached plans for this port
+    const cached = getCachedPlansForPort(tripId, portId);
+    setCachedPlans(cached);
   }, [tripId, portId]);
 
   const updatePref = (name, value) => {
@@ -105,6 +109,8 @@ export default function PortPlanner() {
         port_id: portId,
         preferences: prefs,
       });
+      // Cache the plan locally
+      cachePlan(res.data);
       navigate(`/plans/${res.data.plan_id}`);
     } catch (err) {
       const detail = err.response?.data?.detail || err.message;
