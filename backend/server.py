@@ -77,8 +77,8 @@ def create_trip(data: TripInput):
     return serialize_doc(trip)
 
 @app.get("/api/trips")
-def list_trips():
-    trips = list(trips_col.find({}, {"_id": 0}))
+def list_trips(skip: int = 0, limit: int = 100):
+    trips = list(trips_col.find({}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit))
     return trips
 
 @app.get("/api/trips/{trip_id}")
