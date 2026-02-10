@@ -302,7 +302,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
-        raise HTTPException(503, "AI service not configured. Please set EMERGENT_LLM_KEY in backend/.env")
+        raise HTTPException(503, "Plan generation is not configured. Please contact the administrator.")
 
     session_id = f"plan-{data.trip_id}-{data.port_id}-{uuid.uuid4().hex[:8]}"
     chat = LlmChat(
@@ -319,9 +319,9 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         if "budget" in error_msg.lower() or "exceeded" in error_msg.lower():
             raise HTTPException(
                 503,
-                "AI service budget has been exceeded. Please top up your Emergent Universal Key balance at Profile > Universal Key > Add Balance."
+                "The plan generation service is temporarily at capacity. Please try again shortly."
             )
-        raise HTTPException(503, f"AI service temporarily unavailable: {error_msg}")
+        raise HTTPException(503, f"Plan generation is temporarily unavailable. Please try again in a moment.")
 
     try:
         clean = response_text.strip()
