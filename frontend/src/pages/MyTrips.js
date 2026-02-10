@@ -15,7 +15,7 @@ export default function MyTrips() {
   useEffect(() => {
     const cachedTrips = getAllCachedTrips();
 
-    axios.get(`${API}/api/trips`)
+    api.get(`${API}/api/trips`)
       .then(res => {
         const serverTrips = res.data;
         setServerOnline(true);
