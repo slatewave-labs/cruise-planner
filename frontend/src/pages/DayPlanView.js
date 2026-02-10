@@ -30,7 +30,7 @@ export default function DayPlanView() {
         })
         .catch(() => { /* cached version is fine */ });
     } else {
-      axios.get(`${API}/api/plans/${planId}`)
+      api.get(`${API}/api/plans/${planId}`)
         .then(res => {
           setPlan(res.data);
           cachePlan(res.data);
