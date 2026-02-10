@@ -220,6 +220,16 @@ export default function PortPlanner() {
           This may take 15-30 seconds as AI crafts your personalised itinerary...
         </p>
       )}
+
+      {error && (
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-2xl p-5 flex items-start gap-3" data-testid="plan-error-message">
+          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-red-700 mb-1">Plan Generation Failed</p>
+            <p className="text-sm text-red-600">{error}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
