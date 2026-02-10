@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Users, Activity, Car, DollarSign, Sparkles, Loader2, ArrowLeft, MapPin } from 'lucide-react';
+import { Users, Activity, Car, DollarSign, Sparkles, Loader2, ArrowLeft, MapPin, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 
 const API = process.env.REACT_APP_BACKEND_URL;
