@@ -120,7 +120,7 @@ export default function TripSetup() {
 
       // Fetch the complete saved trip and cache it locally
       try {
-        const savedTrip = await axios.get(`${API}/api/trips/${savedTripId}`);
+        const savedTrip = await api.get(`${API}/api/trips/${savedTripId}`);
         cacheTrip(savedTrip.data);
       } catch { /* cache miss is non-critical */ }
 
