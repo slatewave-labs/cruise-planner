@@ -319,6 +319,147 @@ class ShoreExplorerAPITester:
             return True
         return False
 
+    def test_port_search_endpoints(self):
+        """Test the new port search functionality"""
+        self.log("Testing new port search endpoints...", "INFO")
+        
+        # Test 1: Get regions list
+        success, response = self.run_test("Get Port Regions", "GET", "api/ports/regions")
+        if not success:
+            return False
+        
+        if not isinstance(response, list):
+            self.log("Regions endpoint should return a list", "FAIL")
+            return False
+        
+        if len(response) < 20:  # Should have ~23 regions
+            self.log(f"Expected ~23 regions, got {len(response)}", "FAIL")
+            return False
+        
+        # Check for specific expected regions
+        expected_regions = ["Caribbean", "Western Mediterranean", "Alaska", "Northern Europe"]
+        for region in expected_regions:
+            if region not in response:
+                self.log(f"Missing expected region: {region}", "FAIL")
+                return False
+        
+        self.log(f"✅ Found {len(response)} regions including expected regions", "PASS")
+        
+        # Test 2: Default port search (no params - should return first 20 ports)
+        success, response = self.run_test("Port Search - Default", "GET", "api/ports/search")
+        if not success:
+            return False
+        
+        if not isinstance(response, list):
+            self.log("Port search should return a list", "FAIL")
+            return False
+        
+        if len(response) != 20:  # Default limit is 20
+            self.log(f"Expected 20 ports, got {len(response)}", "FAIL")
+            return False
+        
+        # Check port structure
+        first_port = response[0] if response else {}
+        required_fields = ["name", "country", "region", "lat", "lng"]
+        for field in required_fields:
+            if field not in first_port:
+                self.log(f"Port missing required field: {field}", "FAIL")
+                return False
+        
+        self.log("✅ Default port search returns 20 ports with correct structure", "PASS")
+        
+        # Test 3: Search for Barcelona
+        success, response = self.run_test("Port Search - Barcelona", "GET", "api/ports/search?q=barcelona")
+        if not success:
+            return False
+        
+        barcelona_found = any(port.get("name", "").lower() == "barcelona" and 
+                            port.get("country", "").lower() == "spain" 
+                            for port in response)
+        
+        if not barcelona_found:
+            self.log("Barcelona, Spain not found in search results", "FAIL")
+            return False
+        
+        self.log("✅ Barcelona search returns Barcelona, Spain", "PASS")
+        
+        # Test 4: Search for Alaska ports
+        success, response = self.run_test("Port Search - Alaska", "GET", "api/ports/search?q=alaska")
+        if not success:
+            return False
+        
+        alaska_ports = ["Juneau", "Ketchikan", "Skagway", "Sitka"]
+        found_alaska_ports = [port.get("name") for port in response 
+                            if any(ap in port.get("name", "") for ap in alaska_ports)]
+        
+        if len(found_alaska_ports) < 2:
+            self.log(f"Expected multiple Alaska ports, found: {found_alaska_ports}", "FAIL")
+            return False
+        
+        self.log(f"✅ Alaska search returns Alaska ports: {found_alaska_ports}", "PASS")
+        
+        # Test 5: Search by Caribbean region
+        success, response = self.run_test("Port Search - Caribbean Region", "GET", "api/ports/search?region=Caribbean")
+        if not success:
+            return False
+        
+        if len(response) < 10:  # Should have many Caribbean ports
+            self.log(f"Expected many Caribbean ports, got {len(response)}", "FAIL")
+            return False
+        
+        # All results should be Caribbean
+        non_caribbean = [port for port in response if port.get("region") != "Caribbean"]
+        if non_caribbean:
+            self.log(f"Found non-Caribbean ports in Caribbean search: {[p.get('name') for p in non_caribbean]}", "FAIL")
+            return False
+        
+        caribbean_names = [port.get("name") for port in response[:5]]  # Show first 5
+        self.log(f"✅ Caribbean region filter returns Caribbean ports: {caribbean_names}...", "PASS")
+        
+        # Test 6: Search for Dubai
+        success, response = self.run_test("Port Search - Dubai", "GET", "api/ports/search?q=dubai")
+        if not success:
+            return False
+        
+        dubai_found = any(port.get("name", "").lower() == "dubai" and 
+                         "emirates" in port.get("country", "").lower() 
+                         for port in response)
+        
+        if not dubai_found:
+            self.log("Dubai, UAE not found in search results", "FAIL")
+            return False
+        
+        self.log("✅ Dubai search returns Dubai, UAE", "PASS")
+        
+        # Test 7: Search for Sydney
+        success, response = self.run_test("Port Search - Sydney", "GET", "api/ports/search?q=sydney")
+        if not success:
+            return False
+        
+        sydney_found = any(port.get("name", "").lower() == "sydney" and 
+                          port.get("country", "").lower() == "australia" 
+                          for port in response)
+        
+        if not sydney_found:
+            self.log("Sydney, Australia not found in search results", "FAIL")
+            return False
+        
+        self.log("✅ Sydney search returns Sydney, Australia", "PASS")
+        
+        # Test 8: Test limit parameter
+        success, response = self.run_test("Port Search - Limit 5", "GET", "api/ports/search?limit=5")
+        if not success:
+            return False
+        
+        if len(response) != 5:
+            self.log(f"Expected 5 ports with limit=5, got {len(response)}", "FAIL")
+            return False
+        
+        self.log("✅ Limit parameter works correctly", "PASS")
+        
+        self.log("🎉 All port search tests passed!", "PASS")
+        return True
+
     def cleanup(self):
         """Clean up test data"""
         self.log("Cleaning up test data...", "INFO")
