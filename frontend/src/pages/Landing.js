@@ -7,7 +7,7 @@ const features = [
   { icon: Ship, title: 'Your Cruise, Your Plan', desc: 'Enter your ship and port schedule, and we handle the rest.' },
   { icon: Sun, title: 'Weather-Smart', desc: 'Real-time weather data ensures your day plan suits the conditions.' },
   { icon: MapPin, title: 'Circular Routes', desc: 'Adventures that start and end at your ship, with time to spare.' },
-  { icon: Compass, title: 'AI-Powered', desc: 'Personalised itineraries crafted by AI based on your preferences.' },
+  { icon: Compass, title: 'Personalised Plans', desc: 'Tailored itineraries crafted around your preferences, schedule, and style.' },
 ];
 
 export default function Landing() {
