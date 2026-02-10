@@ -25,7 +25,7 @@ export default function TripSetup() {
   const debounceRef = useRef(null);
 
   useEffect(() => {
-    axios.get(`${API}/api/ports/regions`).then(res => setRegions(res.data)).catch(() => {});
+    api.get(`${API}/api/ports/regions`).then(res => setRegions(res.data)).catch(() => {});
   }, []);
 
   const searchPorts = useCallback(async (query, region) => {
