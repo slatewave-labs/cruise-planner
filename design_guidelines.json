@@ -1,0 +1,151 @@
+{
+  "identity": {
+    "name": "ShoreExplorer",
+    "mission": "To be the most trusted, accessible, and premium cruise port companion for travelers aged 30-70.",
+    "tone": "Reliable, Relaxed, Premium, Adventurous",
+    "emotional_archetype": "Organic & Earthy (Trust, Calm, Ocean)",
+    "design_philosophy": "Digital Concierge - clearer than a map, friendlier than a schedule."
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Playfair Display, serif",
+      "usage": "Use for H1, H2, H3. Expressive, high-contrast serif.",
+      "weights": ["400 (Regular)", "700 (Bold)"],
+      "strategy": "Large, editorial sizes. H1 should be at least 2.5rem on mobile."
+    },
+    "body": {
+      "font_family": "Plus Jakarta Sans, sans-serif",
+      "usage": "All UI text, paragraphs, labels, buttons.",
+      "weights": ["400 (Regular)", "500 (Medium)", "600 (SemiBold)", "700 (Bold)"],
+      "strategy": "High x-height for legibility. Base size 16px minimum (1rem)."
+    },
+    "mono": {
+      "font_family": "JetBrains Mono, monospace",
+      "usage": "Time slots, flight numbers, coordinates, prices.",
+      "strategy": "Use sparingly for data density."
+    }
+  },
+  "colors": {
+    "palette": {
+      "primary": {
+        "DEFAULT": "#0F172A",
+        "foreground": "#F8FAFC",
+        "description": "Deep Ocean Indigo. Use for primary text, solid buttons, footer."
+      },
+      "secondary": {
+        "DEFAULT": "#F5F5F4",
+        "foreground": "#1C1917",
+        "description": "Warm Sand / Stone. MAIN BACKGROUND COLOR. Avoid pure white #FFFFFF for large areas."
+      },
+      "accent": {
+        "DEFAULT": "#F43F5E",
+        "foreground": "#FFFFFF",
+        "description": "Sunset Coral. Use for CTAs, 'Book Now', High Priority alerts."
+      },
+      "muted": {
+        "DEFAULT": "#E7E5E4",
+        "foreground": "#57534E",
+        "description": "Warm Grey. Use for secondary backgrounds, borders."
+      },
+      "success": {
+        "DEFAULT": "#0D9488",
+        "foreground": "#FFFFFF",
+        "description": "Teal. Use for 'On Time', 'Confirmed', Safe routes."
+      },
+      "warning": {
+        "DEFAULT": "#D97706",
+        "foreground": "#FFFFFF",
+        "description": "Amber. Use for 'Departing Soon', 'Weather Alert'."
+      }
+    },
+    "dark_mode_strategy": {
+      "background": "#020617",
+      "surface": "#0F172A",
+      "text_primary": "#F8FAFC",
+      "text_secondary": "#94A3B8",
+      "accent_adjustment": "Keep Coral, but ensure 4.5:1 contrast against dark bg."
+    }
+  },
+  "layout_strategy": {
+    "spacing": {
+      "base": "1rem (16px)",
+      "container_padding": "p-6 md:p-8 lg:p-12",
+      "section_gap": "gap-8 md:gap-16",
+      "touch_target": "min-h-[48px] min-w-[48px] for all interactive elements (CRITICAL for seniors)."
+    },
+    "grid_system": {
+      "mobile": "Single column stack. 100% width cards.",
+      "tablet": "2-column bento grid.",
+      "desktop": "12-column grid. Main content 8 cols, Sidebar 4 cols.",
+      "max_width": "max-w-7xl mx-auto"
+    },
+    "z_index_layers": {
+      "map": 0,
+      "overlays": 10,
+      "navigation": 40,
+      "modals": 50,
+      "toasts": 100
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "rounded-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg hover:shadow-xl transition-all active:scale-95",
+      "secondary": "rounded-full bg-white border-2 border-primary/10 text-primary hover:bg-secondary transition-colors",
+      "ghost": "rounded-lg hover:bg-primary/5 text-primary font-medium"
+    },
+    "cards": {
+      "style": "bg-white rounded-2xl border border-stone-200 shadow-sm hover:shadow-md transition-shadow",
+      "postcard_variant": "p-4 bg-white rotate-1 hover:rotate-0 transition-transform duration-300 shadow-lg border-8 border-white",
+      "usage": "Itinerary items, Port details."
+    },
+    "inputs": {
+      "style": "h-14 rounded-xl bg-stone-50 border-stone-200 focus:ring-2 focus:ring-primary/20 focus:border-primary text-lg",
+      "labels": "text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2 block"
+    }
+  },
+  "accessibility_rules": {
+    "contrast": "AA Large minimum (3:1) for headlines, AA (4.5:1) for body.",
+    "touch_targets": "ALL buttons must be at least 48px height.",
+    "font_sizing": "Allow dynamic type scaling. Don't fix heights in pixels.",
+    "screen_readers": "All images need descriptive alt text. Icons need aria-hidden or aria-label.",
+    "motion": "Respect prefers-reduced-motion. Disable parallax for these users."
+  },
+  "visual_assets": {
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 2px (bold). Rounded linecaps.",
+      "installation": "yarn add lucide-react"
+    },
+    "images": {
+      "hero_cruise": "https://images.unsplash.com/photo-1639369480706-ffda22f88dec?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjV8MHwxfHNlYXJjaHwxfHxjcnVpc2UlMjBzaGlwJTIwdHJvcGljYWwlMjBvY2VhbnxlbnwwfHx8fDE3NzA3MjY4MjN8MA&ixlib=rb-4.1.0&q=85",
+      "hero_mediterranean": "https://images.unsplash.com/photo-1760643618317-6bd18c506e1a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHw0fHxtZWRpdGVycmFuZWFuJTIwY29hc3RhbCUyMHZpbGxhZ2UlMjBjbGlmZnxlbnwwfHx8fDE3NzA3MjY4MjR8MA&ixlib=rb-4.1.0&q=85",
+      "lifestyle_senior": "https://images.unsplash.com/photo-17648166647003-1846f0496150?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHw0fHxlbGRlcmx5JTIwY291cGxlJTIwaGFwcHklMjB0cmF2ZWx8ZW58MHx8fHwxNzcwNzI2ODI1fDA&ixlib=rb-4.1.0&q=85",
+      "lifestyle_family": "https://images.unsplash.com/photo-1764751024398-7ab5913c6e02?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjV8MHwxfHNlYXJjaHwyfHx0cm9waWNhbCUyMGJlYWNoJTIwZmFtaWx5JTIwcGxheWluZ3xlbnwwfHx8fDE3NzA3MjY4MjZ8MA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "project_structure_guidelines": {
+    "frontend": "/app/frontend",
+    "backend": "/app/backend",
+    "components": "/app/frontend/src/components",
+    "pages": "/app/frontend/src/pages",
+    "styles": "/app/frontend/src/styles"
+  },
+  "instructions_to_main_agent": [
+    "Initialize a Vite React project with Tailwind CSS.",
+    "Install 'shadcn-ui' but CUSTOMIZE the base styles to match the 'Warm Sand' theme defined above.",
+    "Do NOT use default 'Inter' font. Install '@fontsource/playfair-display' and '@fontsource/plus-jakarta-sans'.",
+    "Ensure 'mobile-first' responsiveness. Test all layouts at 375px width.",
+    "Use 'framer-motion' for subtle page transitions (fade-in, slide-up).",
+    "For the Map, use 'react-map-gl' or 'leaflet' (react-leaflet) with a custom muted tile style.",
+    "Integrate 'lucide-react' for all icons.",
+    "Create a 'Layout' component that handles the PWA specific needs (bottom nav for mobile, top nav for desktop)."
+  ],
+  "universal_guidelines": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN."
+  ]
+}
