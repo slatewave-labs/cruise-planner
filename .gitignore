@@ -3,4 +3,6 @@
 *.env.*
 -e 
 # Node modules
-frontend/node_modules/*
+frontend/node_modules*
+# Pycache
+backend/__pycache__*
