@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Ship, MapPin, Calendar, Plus, Loader2, Anchor, HardDrive, FileText, Wifi, WifiOff } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 import { motion } from 'framer-motion';
 import { getAllCachedTrips, cacheTrip, getCachedPlanCountForTrip } from '../utils';
 
