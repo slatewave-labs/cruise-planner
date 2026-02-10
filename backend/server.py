@@ -63,6 +63,29 @@ def serialize_doc(doc):
 def health():
     return {"status": "ok", "service": "ShoreExplorer API"}
 
+# --- Port Search ---
+
+@app.get("/api/ports/search")
+def search_ports(q: str = Query("", min_length=0), region: Optional[str] = None, limit: int = Query(20, le=50)):
+    query = q.lower().strip()
+    results = []
+    for port in CRUISE_PORTS:
+        if region and port["region"].lower() != region.lower():
+            continue
+        if query:
+            searchable = f"{port['name']} {port['country']} {port['region']}".lower()
+            if query not in searchable:
+                continue
+        results.append(port)
+        if len(results) >= limit:
+            break
+    return results
+
+@app.get("/api/ports/regions")
+def list_regions():
+    regions = sorted(set(p["region"] for p in CRUISE_PORTS))
+    return regions
+
 # --- Trip CRUD ---
 
 @app.post("/api/trips")
