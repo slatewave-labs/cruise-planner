@@ -20,6 +20,9 @@ class ShoreExplorerAPITester:
         self.tests_passed = 0
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
+        # Generate unique device IDs for privacy testing
+        self.device_a = str(uuid.uuid4())
+        self.device_b = str(uuid.uuid4())
 
     def log(self, message, status="INFO"):
         print(f"[{status}] {message}")
