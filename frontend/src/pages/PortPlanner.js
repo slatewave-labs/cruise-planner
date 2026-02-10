@@ -104,7 +104,7 @@ export default function PortPlanner() {
     setGenerating(true);
     setError(null);
     try {
-      const res = await axios.post(`${API}/api/plans/generate`, {
+      const res = await api.post(`${API}/api/plans/generate`, {
         trip_id: tripId,
         port_id: portId,
         preferences: prefs,
