@@ -169,6 +169,46 @@ export default function PortPlanner() {
         </div>
       )}
 
+      {/* Previously Generated Plans */}
+      {cachedPlans.length > 0 && (
+        <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm mb-6" data-testid="cached-plans-section">
+          <div className="flex items-center gap-2 mb-4">
+            <History className="w-5 h-5 text-success" />
+            <h2 className="font-heading text-lg font-bold text-primary">Previously Generated Plans</h2>
+            <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full font-semibold">Saved locally</span>
+          </div>
+          <p className="text-sm text-stone-400 mb-3">These plans are cached in your browser — view them without using any API budget.</p>
+          <div className="space-y-2">
+            {cachedPlans.map((cp) => (
+              <Link
+                key={cp.plan_id}
+                to={`/plans/${cp.plan_id}`}
+                className="flex items-center justify-between bg-sand-50 rounded-xl p-3 border border-stone-100 hover:border-accent/30 hover:bg-accent/5 transition group"
+                data-testid={`cached-plan-${cp.plan_id}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm text-primary group-hover:text-accent transition truncate">
+                    {cp.plan?.plan_title || 'Generated Plan'}
+                  </p>
+                  <div className="flex items-center gap-3 text-xs text-stone-400 mt-0.5">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {new Date(cp.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {cp.preferences?.currency && (
+                      <span>{getCurrencySymbol(cp.preferences.currency)} {cp.preferences.currency}</span>
+                    )}
+                    <span>{cp.preferences?.party_type}</span>
+                    <span>{cp.preferences?.activity_level}</span>
+                  </div>
+                </div>
+                <span className="text-accent text-sm font-semibold shrink-0 ml-3">View</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm mb-6">
         <h2 className="font-heading text-xl font-bold text-primary mb-6">Your Preferences</h2>
 
