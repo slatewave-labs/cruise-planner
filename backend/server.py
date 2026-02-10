@@ -134,8 +134,8 @@ def delete_trip(trip_id: str, x_device_id: str = Header()):
 # --- Port Management ---
 
 @app.post("/api/trips/{trip_id}/ports")
-def add_port(trip_id: str, data: PortInput):
-    trip = trips_col.find_one({"trip_id": trip_id})
+def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
+    trip = trips_col.find_one({"trip_id": trip_id, "device_id": x_device_id})
     if not trip:
         raise HTTPException(404, "Trip not found")
     port = {
@@ -148,13 +148,13 @@ def add_port(trip_id: str, data: PortInput):
         "departure": data.departure,
     }
     trips_col.update_one(
-        {"trip_id": trip_id},
+        {"trip_id": trip_id, "device_id": x_device_id},
         {"$push": {"ports": port}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
     )
     return port
 
 @app.put("/api/trips/{trip_id}/ports/{port_id}")
-def update_port(trip_id: str, port_id: str, data: PortInput):
+def update_port(trip_id: str, port_id: str, data: PortInput, x_device_id: str = Header()):
     port_update = {
         "ports.$.name": data.name,
         "ports.$.country": data.country,
@@ -165,7 +165,7 @@ def update_port(trip_id: str, port_id: str, data: PortInput):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     result = trips_col.update_one(
-        {"trip_id": trip_id, "ports.port_id": port_id},
+        {"trip_id": trip_id, "device_id": x_device_id, "ports.port_id": port_id},
         {"$set": port_update}
     )
     if result.matched_count == 0:
@@ -173,9 +173,9 @@ def update_port(trip_id: str, port_id: str, data: PortInput):
     return {"message": "Port updated"}
 
 @app.delete("/api/trips/{trip_id}/ports/{port_id}")
-def delete_port(trip_id: str, port_id: str):
+def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
     result = trips_col.update_one(
-        {"trip_id": trip_id},
+        {"trip_id": trip_id, "device_id": x_device_id},
         {"$pull": {"ports": {"port_id": port_id}}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
     )
     if result.matched_count == 0:
