@@ -24,22 +24,23 @@ export default CURRENCIES;
 
 // --- Local Plan Cache ---
 
-const CACHE_KEY = 'shoreexplorer_plans';
+const PLAN_CACHE_KEY = 'shoreexplorer_plans';
+const TRIP_CACHE_KEY = 'shoreexplorer_trips';
 
 export function cachePlan(plan) {
   try {
-    const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+    const cache = JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) || '{}');
     cache[plan.plan_id] = {
       data: plan,
       cached_at: new Date().toISOString(),
     };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify(cache));
   } catch { /* localStorage full or unavailable */ }
 }
 
 export function getCachedPlan(planId) {
   try {
-    const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+    const cache = JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) || '{}');
     return cache[planId]?.data || null;
   } catch {
     return null;
@@ -48,7 +49,7 @@ export function getCachedPlan(planId) {
 
 export function getCachedPlansForPort(tripId, portId) {
   try {
-    const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+    const cache = JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) || '{}');
     return Object.values(cache)
       .filter(entry => entry.data?.trip_id === tripId && entry.data?.port_id === portId)
       .sort((a, b) => new Date(b.cached_at) - new Date(a.cached_at))
@@ -58,8 +59,77 @@ export function getCachedPlansForPort(tripId, portId) {
   }
 }
 
+export function getCachedPlansForTrip(tripId) {
+  try {
+    const cache = JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) || '{}');
+    return Object.values(cache)
+      .filter(entry => entry.data?.trip_id === tripId)
+      .sort((a, b) => new Date(b.cached_at) - new Date(a.cached_at))
+      .map(entry => entry.data);
+  } catch {
+    return [];
+  }
+}
+
 export function clearPlanCache() {
   try {
-    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(PLAN_CACHE_KEY);
   } catch { /* ignore */ }
+}
+
+// --- Local Trip Cache ---
+
+export function cacheTrip(trip) {
+  try {
+    const cache = JSON.parse(localStorage.getItem(TRIP_CACHE_KEY) || '{}');
+    cache[trip.trip_id] = {
+      data: trip,
+      cached_at: new Date().toISOString(),
+    };
+    localStorage.setItem(TRIP_CACHE_KEY, JSON.stringify(cache));
+  } catch { /* localStorage full or unavailable */ }
+}
+
+export function getCachedTrip(tripId) {
+  try {
+    const cache = JSON.parse(localStorage.getItem(TRIP_CACHE_KEY) || '{}');
+    return cache[tripId]?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+export function getAllCachedTrips() {
+  try {
+    const cache = JSON.parse(localStorage.getItem(TRIP_CACHE_KEY) || '{}');
+    return Object.values(cache)
+      .sort((a, b) => new Date(b.cached_at) - new Date(a.cached_at))
+      .map(entry => ({ ...entry.data, _cached_at: entry.cached_at }));
+  } catch {
+    return [];
+  }
+}
+
+export function removeCachedTrip(tripId) {
+  try {
+    const cache = JSON.parse(localStorage.getItem(TRIP_CACHE_KEY) || '{}');
+    delete cache[tripId];
+    localStorage.setItem(TRIP_CACHE_KEY, JSON.stringify(cache));
+    // Also remove associated plans
+    const planCache = JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) || '{}');
+    const updated = {};
+    for (const [k, v] of Object.entries(planCache)) {
+      if (v.data?.trip_id !== tripId) updated[k] = v;
+    }
+    localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify(updated));
+  } catch { /* ignore */ }
+}
+
+export function getCachedPlanCountForTrip(tripId) {
+  try {
+    const cache = JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) || '{}');
+    return Object.values(cache).filter(entry => entry.data?.trip_id === tripId).length;
+  } catch {
+    return 0;
+  }
 }
