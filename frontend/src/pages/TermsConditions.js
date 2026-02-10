@@ -14,10 +14,10 @@ const sections = [
     url: 'https://open-meteo.com/en/terms',
   },
   {
-    title: 'Google Gemini AI (via Emergent)',
-    description: 'Day plans are generated using Google Gemini 3 Flash, a large language model by Google. The integration is managed through the Emergent platform.',
+    title: 'Google Gemini (Plan Generation)',
+    description: 'Day plans are generated using Google Gemini technology. The integration is managed through the Emergent platform.',
     terms: [
-      'AI-generated content is provided as suggestions only and should not be relied upon as definitive travel advice.',
+      'Generated content is provided as suggestions only and should not be relied upon as definitive travel advice.',
       'Users should independently verify all activity details, costs, opening hours, and safety information.',
       'Google Gemini is subject to Google\'s Terms of Service and Acceptable Use Policy.',
       'Generated plans may contain inaccuracies regarding locations, prices, or availability.',
