@@ -83,7 +83,7 @@ export default function PortPlanner() {
   const [cachedPlans, setCachedPlans] = useState([]);
 
   useEffect(() => {
-    axios.get(`${API}/api/trips/${tripId}`)
+    api.get(`${API}/api/trips/${tripId}`)
       .then(res => {
         setTrip(res.data);
         const p = res.data.ports?.find(p => p.port_id === portId);
