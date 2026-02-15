@@ -91,9 +91,11 @@ def test_generate_plan_success(mock_plans, mock_trips, mock_genai_client_class):
         
         # Verify AI instructions and prompt
         args, kwargs = mock_genai_instance.models.generate_content.call_args
-        assert kwargs['model'] == "gemini-2.5-flash"
-        assert "Barcelona" in kwargs['contents']
-        assert "expert cruise port day planner" in kwargs['config'].system_instruction.lower()
+        assert kwargs["model"] == "gemini-2.0-flash"
+        assert "Barcelona" in kwargs["contents"]
+        assert (
+            "expert cruise port day planner" in kwargs["config"].system_instruction.lower()
+        )
 
 @patch('google.genai.Client')
 def test_generate_plan_missing_api_key(mock_genai_client_class):

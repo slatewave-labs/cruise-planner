@@ -1,6 +1,6 @@
+import json
 import os
 import uuid
-import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -403,7 +403,11 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     except Exception as e:
         error_msg = str(e).lower()
         # Handle budget exceeded or mock key (for integrity tests in CI)
-        if "budget" in error_msg or "exceeded" in error_msg or api_key == "mock-key-for-testing":
+        if (
+            "budget" in error_msg
+            or "exceeded" in error_msg
+            or api_key == "mock-key-for-testing"
+        ):
             raise HTTPException(
                 503,
                 "Gemini API budget exceeded. The plan generation service is temporarily at capacity. Please try again shortly.",
