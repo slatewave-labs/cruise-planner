@@ -22,17 +22,25 @@ This directory contains custom agent files (`.agent.md`) that give your AI codin
 3. Select one of the custom agents listed above
 4. Type your request — the AI adopts that agent's expertise, tools, and rules
 
-Each agent has a curated set of tools. For example, **Code Reviewer** only has read-only tools (no file editing), while **Full-Stack Developer** has full access to edit files and run terminal commands.
+Each agent has a curated set of tools. For example, **Code Reviewer** only has read-only tools (no file editing), while **Full-Stack Developer** has full access to edit files, search the codebase, and analyze code usages.
 
 ## Tool Sets by Agent
 
-| Agent | Edit | Terminal | Search | Fetch | Usages | Changes |
+Agents use the following tools:
+- `edit/editFiles` - Edit files in the workspace
+- `search/codebase` - Semantic search across the codebase
+- `search` - File and text search
+- `search/usages` - Find code references and usages
+- `web/fetch` - Fetch content from web pages
+- `search/changes` - View git changes and diffs
+
+| Agent | Edit | Codebase | Search | Fetch | Usages | Changes |
 |-------|------|----------|--------|-------|--------|---------|
 | Full-Stack Developer | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Test Engineer | ✅ | ✅ | ✅ | | ✅ | ✅ |
-| UI/UX Engineer | ✅ | | ✅ | ✅ | ✅ | ✅ |
+| UI/UX Engineer | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | DevOps Engineer | ✅ | ✅ | ✅ | ✅ | | ✅ |
 | Security Engineer | ✅ | ✅ | ✅ | | ✅ | ✅ |
-| Code Reviewer | | | ✅ | | ✅ | ✅ |
-| Technical Writer | ✅ | | ✅ | ✅ | ✅ | |
+| Code Reviewer | | ✅ | ✅ | | ✅ | ✅ |
+| Technical Writer | ✅ | ✅ | ✅ | ✅ | ✅ | |
 | Performance Engineer | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
