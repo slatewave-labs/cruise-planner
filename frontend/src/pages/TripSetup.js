@@ -209,7 +209,7 @@ export default function TripSetup() {
             <div className="text-center py-10 text-stone-400">
               <MapPin className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No ports added yet</p>
-              <p className="text-sm">Click "Add Port" to add your first port of call</p>
+              <p className="text-sm">Click &quot;Add Port&quot; to add your first port of call</p>
             </div>
           )}
 

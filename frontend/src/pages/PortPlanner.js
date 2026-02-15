@@ -69,7 +69,6 @@ export default function PortPlanner() {
   const { tripId, portId } = useParams();
   const navigate = useNavigate();
   const [port, setPort] = useState(null);
-  const [trip, setTrip] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
@@ -85,7 +84,6 @@ export default function PortPlanner() {
   useEffect(() => {
     api.get(`${API}/api/trips/${tripId}`)
       .then(res => {
-        setTrip(res.data);
         const p = res.data.ports?.find(p => p.port_id === portId);
         setPort(p);
       })

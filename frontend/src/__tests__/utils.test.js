@@ -238,13 +238,19 @@ describe('Trip Cache Utils', () => {
   });
 
   test('localStorage errors are handled gracefully', () => {
+    const testPlan = {
+      plan_id: 'plan-test',
+      trip_id: 'trip-123',
+      port_id: 'port-test',
+    };
+    
     // Mock localStorage.setItem to throw
     localStorageMock.setItem.mockImplementationOnce(() => {
       throw new Error('QuotaExceededError');
     });
     
     // Should not throw
-    expect(() => cachePlan(mockPlan)).not.toThrow();
+    expect(() => cachePlan(testPlan)).not.toThrow();
   });
 
   test('malformed JSON in localStorage is handled', () => {

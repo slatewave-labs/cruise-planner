@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Ship, Map, Compass, FileText, Home } from 'lucide-react';
+import { Ship, Compass, FileText, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const navItems = [
