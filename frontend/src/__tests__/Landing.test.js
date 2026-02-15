@@ -34,10 +34,9 @@ describe('Landing Page Component', () => {
   test('displays call-to-action button', () => {
     renderWithRouter(<Landing />);
     
-    // Look for "Start Planning" or "Plan My Day" CTA
-    const ctaButtons = screen.getAllByRole('link', { name: /plan.*day|start|begin|create/i });
-    expect(ctaButtons.length).toBeGreaterThan(0);
-    expect(ctaButtons[0]).toBeInTheDocument();
+    // Look for "Plan My Day" or similar CTA
+    const ctaButton = screen.getByRole('link', { name: /plan.*day|start|begin|create/i });
+    expect(ctaButton).toBeInTheDocument();
   });
 
   test('displays feature sections', () => {

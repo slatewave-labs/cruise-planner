@@ -34,7 +34,7 @@ describe('WeatherCard Component', () => {
     const rainyWeather = { ...mockWeatherData, weathercode: [61], precipitation_sum: [5] };
     render(<WeatherCard weather={rainyWeather} />);
     
-    expect(screen.getAllByText(/rain/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/rain/i)).toBeInTheDocument();
   });
 
   test('renders nothing when weather is null', () => {
