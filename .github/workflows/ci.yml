@@ -239,13 +239,13 @@ jobs:
         id: semgrep
         with:
           config: p/security-audit p/owasp-top-ten p/python p/javascript
-          generateSarif: true
+          args: --sarif --output=semgrep.sarif
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.semgrep.outcome != 'skipped'
+        if: always() && steps.semgrep.outcome == 'success'
         with:
           sarif_file: semgrep.sarif
 
@@ -271,10 +271,11 @@ jobs:
           output: 'trivy-backend-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,secret,config'
+          exit-code: '0'
 
       - name: Upload Trivy results - Backend
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.scan_backend.outcome != 'skipped'
+        if: always() && steps.scan_backend.outcome == 'success'
         with:
           sarif_file: 'trivy-backend-results.sarif'
           category: 'trivy-backend'
@@ -289,10 +290,11 @@ jobs:
           output: 'trivy-frontend-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,secret,config'
+          exit-code: '0'
 
       - name: Upload Trivy results - Frontend
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.scan_frontend.outcome != 'skipped'
+        if: always() && steps.scan_frontend.outcome == 'success'
         with:
           sarif_file: 'trivy-frontend-results.sarif'
           category: 'trivy-frontend'
