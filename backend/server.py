@@ -1,7 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
@@ -23,8 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-mongo_client = MongoClient(os.environ.get("MONGO_URL"))
-db = mongo_client[os.environ.get("DB_NAME")]
+mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+db_name = os.environ.get("DB_NAME", "shoreexplorer")
+mongo_client: MongoClient = MongoClient(mongo_url)
+db = mongo_client[db_name]
 trips_col = db["trips"]
 plans_col = db["plans"]
 
@@ -93,7 +95,7 @@ def search_ports(
     query = q.lower().strip()
     results = []
     for port in CRUISE_PORTS:
-        if region and port["region"].lower() != region.lower():
+        if region and str(port["region"]).lower() != region.lower():
             continue
         if query:
             searchable = f"{port['name']} {port['country']} {port['region']}".lower()
@@ -240,7 +242,7 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
 
 @app.get("/api/weather")
 async def get_weather(latitude: float, longitude: float, date: Optional[str] = None):
-    params = {
+    params: dict[str, Any] = {
         "latitude": latitude,
         "longitude": longitude,
         "daily": (
@@ -383,10 +385,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     if not api_key:
         raise HTTPException(
             503,
-            (
-                "Plan generation is not configured. "
-                "Please contact the administrator."
-            ),
+            ("Plan generation is not configured. " "Please contact the administrator."),
         )
 
     client = genai.Client(api_key=api_key)
