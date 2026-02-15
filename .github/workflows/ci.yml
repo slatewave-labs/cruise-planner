@@ -228,26 +228,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write  # For uploading SARIF results
+      security-events: write
+      actions: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Run Semgrep
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/security-audit
-            p/owasp-top-ten
-            p/python
-            p/javascript
-          generateSarif: true
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-        continue-on-error: true  # Don't fail the build on findings, but report them
+        id: semgrep
+        run: |
+          # Use official semgrep container to generate SARIF
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep ci \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/python \
+            --config p/javascript \
+            --sarif --output /src/semgrep.sarif || true
 
       - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -259,12 +258,14 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Run Trivy vulnerability scanner - Backend
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.28.0
+        id: scan_backend
         with:
           scan-type: 'fs'
           scan-ref: 'backend'
@@ -272,16 +273,18 @@ jobs:
           output: 'trivy-backend-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,secret,config'
+          exit-code: '0'
 
       - name: Upload Trivy results - Backend
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-backend-results.sarif'
           category: 'trivy-backend'
 
       - name: Run Trivy vulnerability scanner - Frontend
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.28.0
+        id: scan_frontend
         with:
           scan-type: 'fs'
           scan-ref: 'frontend'
@@ -289,9 +292,10 @@ jobs:
           output: 'trivy-frontend-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,secret,config'
+          exit-code: '0'
 
       - name: Upload Trivy results - Frontend
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-frontend-results.sarif'

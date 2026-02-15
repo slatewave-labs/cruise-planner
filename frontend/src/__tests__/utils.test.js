@@ -36,7 +36,19 @@ const mockTrip = {
 };
 
 describe('Currency Utils', () => {
-/* ... existing code ... */
+  test('returns the correct symbol for known currencies', () => {
+    expect(getCurrencySymbol('GBP')).toBe('\u00A3');
+    expect(getCurrencySymbol('USD')).toBe('$');
+    expect(getCurrencySymbol('EUR')).toBe('\u20AC');
+  });
+
+  test('returns the currency code if symbol is not found', () => {
+    expect(getCurrencySymbol('XYZ')).toBe('XYZ');
+  });
+
+  test('returns the currency code if no code is provided', () => {
+    expect(getCurrencySymbol(null)).toBe(null);
+  });
 });
 
 describe('Device ID Utils', () => {
