@@ -11,3 +11,7 @@ __pycache__/
 # Test Reports
 test-results/
 junit.xml
+
+# Data & Logs
+data/
+*.log
