@@ -228,7 +228,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write  # For uploading SARIF results
+      security-events: write
+      actions: read  # For telemetry and API access
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -238,13 +239,13 @@ jobs:
         id: semgrep
         with:
           config: p/security-audit p/owasp-top-ten p/python p/javascript
-          generateSarif: "true"
+          generateSarif: true
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v4
-        if: steps.semgrep.outcome == 'success' || steps.semgrep.outcome == 'failure'
+        if: always() && steps.semgrep.outcome != 'skipped'
         with:
           sarif_file: semgrep.sarif
 
@@ -255,6 +256,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: read  # For telemetry and API access
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -272,7 +274,7 @@ jobs:
 
       - name: Upload Trivy results - Backend
         uses: github/codeql-action/upload-sarif@v4
-        if: steps.scan_backend.outcome == 'success' || steps.scan_backend.outcome == 'failure'
+        if: always() && steps.scan_backend.outcome != 'skipped'
         with:
           sarif_file: 'trivy-backend-results.sarif'
           category: 'trivy-backend'
@@ -290,7 +292,7 @@ jobs:
 
       - name: Upload Trivy results - Frontend
         uses: github/codeql-action/upload-sarif@v4
-        if: steps.scan_frontend.outcome == 'success' || steps.scan_frontend.outcome == 'failure'
+        if: always() && steps.scan_frontend.outcome != 'skipped'
         with:
           sarif_file: 'trivy-frontend-results.sarif'
           category: 'trivy-frontend'
