@@ -14,6 +14,12 @@ test_reports/
 junit.xml
 backend_test_report.html
 frontend/coverage/
+*.sarif
+
+# Build artifacts
+frontend/build/
+backend/dist/
+*.pyc
 
 # Data & Logs
 data/
