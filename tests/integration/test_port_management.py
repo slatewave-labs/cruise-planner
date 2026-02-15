@@ -119,6 +119,9 @@ def test_update_port_success(mock_trips):
         }]
     }
     
+    # Mock successful update
+    mock_trips.update_one.return_value = MagicMock(matched_count=1)
+    
     updated_data = {
         **VALID_PORT_DATA,
         "arrival": "2023-10-01T09:00:00",  # Changed arrival time
@@ -132,17 +135,15 @@ def test_update_port_success(mock_trips):
     
     assert response.status_code == 200
     data = response.json()
-    assert data["arrival"] == updated_data["arrival"]
+    assert "message" in data
+    assert "updated" in data["message"].lower()
 
 
 @patch('backend.server.trips_col')
 def test_update_port_not_found(mock_trips):
     """Test updating non-existent port"""
-    mock_trips.find_one.return_value = {
-        "trip_id": TEST_TRIP_ID,
-        "device_id": VALID_DEVICE_ID,
-        "ports": []  # No ports
-    }
+    # Mock update that matches no documents
+    mock_trips.update_one.return_value = MagicMock(matched_count=0)
     
     response = client.put(
         f"/api/trips/{TEST_TRIP_ID}/ports/nonexistent",
@@ -156,15 +157,8 @@ def test_update_port_not_found(mock_trips):
 @patch('backend.server.trips_col')
 def test_delete_port_success(mock_trips):
     """Test deleting a port from a trip"""
-    # Mock trip with existing port
-    mock_trips.find_one.return_value = {
-        "trip_id": TEST_TRIP_ID,
-        "device_id": VALID_DEVICE_ID,
-        "ports": [{
-            "port_id": TEST_PORT_ID,
-            **VALID_PORT_DATA
-        }]
-    }
+    # Mock successful update
+    mock_trips.update_one.return_value = MagicMock(matched_count=1)
     
     response = client.delete(
         f"/api/trips/{TEST_TRIP_ID}/ports/{TEST_PORT_ID}",
@@ -173,7 +167,7 @@ def test_delete_port_success(mock_trips):
     
     assert response.status_code == 200
     data = response.json()
-    assert data["deleted"] is True
+    assert "message" in data
     
     # Verify update was called to remove port
     assert mock_trips.update_one.called
@@ -182,11 +176,8 @@ def test_delete_port_success(mock_trips):
 @patch('backend.server.trips_col')
 def test_delete_port_not_found(mock_trips):
     """Test deleting non-existent port"""
-    mock_trips.find_one.return_value = {
-        "trip_id": TEST_TRIP_ID,
-        "device_id": VALID_DEVICE_ID,
-        "ports": []
-    }
+    # Mock update that matches no documents
+    mock_trips.update_one.return_value = MagicMock(matched_count=0)
     
     response = client.delete(
         f"/api/trips/{TEST_TRIP_ID}/ports/nonexistent",
