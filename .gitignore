@@ -10,7 +10,10 @@ __pycache__/
 
 # Test Reports
 test-results/
+test_reports/
 junit.xml
+backend_test_report.html
+frontend/coverage/
 
 # Data & Logs
 data/
