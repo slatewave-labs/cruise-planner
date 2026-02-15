@@ -1,19 +1,17 @@
 // jest-dom adds custom jest matchers for asserting on DOM nodes.
 import '@testing-library/jest-dom';
+import React from 'react';
 
 // Mock window.matchMedia
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: jest.fn().mockImplementation(query => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: jest.fn(),
-    removeListener: jest.fn(),
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    dispatchEvent: jest.fn(),
-  })),
+window.matchMedia = (query) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addListener: jest.fn(),
+  removeListener: jest.fn(),
+  addEventListener: jest.fn(),
+  removeEventListener: jest.fn(),
+  dispatchEvent: jest.fn(),
 });
 
 // Mock IntersectionObserver
@@ -32,6 +30,7 @@ jest.mock('leaflet', () => ({
   map: jest.fn(() => ({
     setView: jest.fn(),
     remove: jest.fn(),
+    on: jest.fn(),
   })),
   tileLayer: jest.fn(() => ({
     addTo: jest.fn(),
@@ -41,7 +40,27 @@ jest.mock('leaflet', () => ({
     bindPopup: jest.fn(),
   })),
   icon: jest.fn(),
+  divIcon: jest.fn(),
+  latLng: jest.fn((lat, lng) => ({ lat, lng })),
+  FeatureGroup: jest.fn(() => ({
+    addTo: jest.fn(),
+    getBounds: jest.fn(),
+  })),
+  featureGroup: jest.fn(() => ({
+    addTo: jest.fn(),
+    getBounds: jest.fn(),
+  })),
 }));
 
-// Suppress console errors during tests (optional)
-// global.console.error = jest.fn();
+// Mock react-leaflet
+jest.mock('react-leaflet', () => ({
+  MapContainer: ({ children }) => <div data-testid="map-container">{children}</div>,
+  TileLayer: () => <div data-testid="tile-layer" />,
+  Marker: ({ children, position }) => <div data-testid="marker" data-position={JSON.stringify(position)}>{children}</div>,
+  Popup: ({ children }) => <div data-testid="popup">{children}</div>,
+  Polyline: ({ positions }) => <div data-testid="polyline" data-positions={JSON.stringify(positions)} />,
+  useMap: () => ({
+    setView: jest.fn(),
+    fitBounds: jest.fn(),
+  }),
+}));
