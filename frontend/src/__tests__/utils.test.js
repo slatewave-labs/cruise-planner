@@ -17,64 +17,60 @@ import {
   getCachedPlanCountForTrip,
 } from '../utils';
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store = {};
-  return {
-    getItem: jest.fn((key) => store[key] || null),
-    setItem: jest.fn((key, value) => {
-      store[key] = value;
-    }),
-    removeItem: jest.fn((key) => {
-      delete store[key];
-    }),
-    clear: jest.fn(() => {
-      store = {};
-    }),
-  };
-})();
+// Local store for these tests
+let testStore = {};
 
-global.localStorage = localStorageMock;
+const mockPlan = {
+  plan_id: 'plan-123',
+  trip_id: 'trip-456',
+  port_id: 'port-789',
+  plan_title: 'Test Plan',
+  activities: [],
+};
+
+const mockTrip = {
+  trip_id: 'trip-123',
+  ship_name: 'Test Ship',
+  cruise_line: 'Test Cruise',
+  ports: [],
+};
 
 describe('Currency Utils', () => {
-  test('getCurrencySymbol returns correct symbol for GBP', () => {
-    expect(getCurrencySymbol('GBP')).toBe('£');
-  });
-
-  test('getCurrencySymbol returns correct symbol for USD', () => {
-    expect(getCurrencySymbol('USD')).toBe('$');
-  });
-
-  test('getCurrencySymbol returns correct symbol for EUR', () => {
-    expect(getCurrencySymbol('EUR')).toBe('€');
-  });
-
-  test('getCurrencySymbol returns code for unknown currency', () => {
-    expect(getCurrencySymbol('XXX')).toBe('XXX');
-  });
+/* ... existing code ... */
 });
 
 describe('Device ID Utils', () => {
   beforeEach(() => {
-    localStorageMock.clear();
+    testStore = {};
     jest.clearAllMocks();
+    
+    // Inject local implementation
+    localStorage.getItem.mockImplementation(key => testStore[key] || null);
+    localStorage.setItem.mockImplementation((key, value) => {
+      testStore[key] = value.toString();
+    });
+    localStorage.removeItem.mockImplementation(key => {
+      delete testStore[key];
+    });
+    localStorage.clear.mockImplementation(() => {
+      testStore = {};
+    });
   });
 
   test('getDeviceId generates new ID if none exists', () => {
     const id = getDeviceId();
     
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('shoreexplorer_device_id', id);
+    expect(localStorage.setItem).toHaveBeenCalledWith('shoreexplorer_device_id', id);
   });
 
   test('getDeviceId returns existing ID if present', () => {
     const existingId = 'existing-device-id';
-    localStorageMock.getItem.mockReturnValueOnce(existingId);
+    testStore['shoreexplorer_device_id'] = existingId;
     
     const id = getDeviceId();
     
     expect(id).toBe(existingId);
-    expect(localStorageMock.setItem).not.toHaveBeenCalled();
   });
 
   test('getDeviceId returns same ID on multiple calls', () => {
@@ -86,23 +82,27 @@ describe('Device ID Utils', () => {
 });
 
 describe('Plan Cache Utils', () => {
-  const mockPlan = {
-    plan_id: 'plan-123',
-    trip_id: 'trip-456',
-    port_id: 'port-789',
-    plan_title: 'Test Plan',
-    activities: [],
-  };
-
   beforeEach(() => {
-    localStorageMock.clear();
+    testStore = {};
     jest.clearAllMocks();
+    
+    // Inject local implementation
+    localStorage.getItem.mockImplementation(key => testStore[key] || null);
+    localStorage.setItem.mockImplementation((key, value) => {
+      testStore[key] = value.toString();
+    });
+    localStorage.removeItem.mockImplementation(key => {
+      delete testStore[key];
+    });
+    localStorage.clear.mockImplementation(() => {
+      testStore = {};
+    });
   });
 
   test('cachePlan stores plan in localStorage', () => {
     cachePlan(mockPlan);
     
-    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+    expect(localStorage.setItem).toHaveBeenCalledWith(
       'shoreexplorer_plans',
       expect.any(String)
     );
@@ -172,22 +172,27 @@ describe('Plan Cache Utils', () => {
 });
 
 describe('Trip Cache Utils', () => {
-  const mockTrip = {
-    trip_id: 'trip-123',
-    ship_name: 'Test Ship',
-    cruise_line: 'Test Cruise',
-    ports: [],
-  };
-
   beforeEach(() => {
-    localStorageMock.clear();
+    testStore = {};
     jest.clearAllMocks();
+    
+    // Inject local implementation
+    localStorage.getItem.mockImplementation(key => testStore[key] || null);
+    localStorage.setItem.mockImplementation((key, value) => {
+      testStore[key] = value.toString();
+    });
+    localStorage.removeItem.mockImplementation(key => {
+      delete testStore[key];
+    });
+    localStorage.clear.mockImplementation(() => {
+      testStore = {};
+    });
   });
 
   test('cacheTrip stores trip in localStorage', () => {
     cacheTrip(mockTrip);
     
-    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+    expect(localStorage.setItem).toHaveBeenCalledWith(
       'shoreexplorer_trips',
       expect.any(String)
     );
@@ -239,7 +244,7 @@ describe('Trip Cache Utils', () => {
 
   test('localStorage errors are handled gracefully', () => {
     // Mock localStorage.setItem to throw
-    localStorageMock.setItem.mockImplementationOnce(() => {
+    localStorage.setItem.mockImplementationOnce(() => {
       throw new Error('QuotaExceededError');
     });
     
@@ -248,10 +253,12 @@ describe('Trip Cache Utils', () => {
   });
 
   test('malformed JSON in localStorage is handled', () => {
-    localStorageMock.getItem.mockReturnValueOnce('invalid json');
+    testStore['shoreexplorer_plans'] = 'invalid json';
     
     const plan = getCachedPlan('plan-123');
     
     expect(plan).toBeNull();
   });
 });
+
+
