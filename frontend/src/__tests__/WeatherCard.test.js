@@ -34,7 +34,9 @@ describe('WeatherCard Component', () => {
     const rainyWeather = { ...mockWeatherData, weathercode: [61], precipitation_sum: [5] };
     render(<WeatherCard weather={rainyWeather} />);
     
-    expect(screen.getByText(/rain/i)).toBeInTheDocument();
+    // Check if rain related text exists (might be multiple like "Slight rain" and label "Rain")
+    const rainTexts = screen.getAllByText(/rain/i);
+    expect(rainTexts.length).toBeGreaterThan(0);
   });
 
   test('renders nothing when weather is null', () => {
