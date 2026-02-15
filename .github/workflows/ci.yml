@@ -236,18 +236,13 @@ jobs:
       - name: Run Semgrep
         uses: semgrep/semgrep-action@v1
         with:
-          config: >-
-            p/security-audit
-            p/owasp-top-ten
-            p/python
-            p/javascript
-          generateSarif: true
+          config: p/security-audit p/owasp-top-ten p/python p/javascript
+          generateSarif: "true"
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-        continue-on-error: true  # Don't fail the build on findings, but report them
 
       - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -274,7 +269,7 @@ jobs:
           scanners: 'vuln,secret,config'
 
       - name: Upload Trivy results - Backend
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-backend-results.sarif'
@@ -291,7 +286,7 @@ jobs:
           scanners: 'vuln,secret,config'
 
       - name: Upload Trivy results - Frontend
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-frontend-results.sarif'
