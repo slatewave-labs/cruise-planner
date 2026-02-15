@@ -12,7 +12,7 @@ from datetime import datetime
 
 class ShoreExplorerAPITester:
     def __init__(self):
-        self.base_url = "https://port-adventure-1.preview.emergentagent.com"
+        self.base_url = "http://localhost:8001"
         self.test_trip_id = None
         self.test_port_id = None
         self.test_plan_id = None

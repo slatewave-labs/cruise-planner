@@ -298,23 +298,24 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
   "safety_tips": ["string - safety reminders"]
 }}"""
 
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from google import genai
     import json
 
-    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise HTTPException(503, "Plan generation is not configured. Please contact the administrator.")
 
-    session_id = f"plan-{data.trip_id}-{data.port_id}-{uuid.uuid4().hex[:8]}"
-    chat = LlmChat(
-        api_key=api_key,
-        session_id=session_id,
-        system_message="You are an expert cruise port day planner. You always respond with valid JSON only, no markdown formatting."
-    ).with_model("gemini", "gemini-3-flash-preview")
-
-    user_msg = UserMessage(text=prompt)
+    client = genai.Client(api_key=api_key)
     try:
-        response_text = await chat.send_message(user_msg)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                system_instruction="You are an expert cruise port day planner. You always respond with valid JSON only, no markdown formatting.",
+                temperature=0.7,
+            ),
+        )
+        response_text = response.text
     except Exception as e:
         error_msg = str(e)
         if "budget" in error_msg.lower() or "exceeded" in error_msg.lower():

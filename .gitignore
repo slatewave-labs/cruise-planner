@@ -5,4 +5,13 @@
 # Node modules
 frontend/node_modules*
 # Pycache
-backend/__pycache__*
+__pycache__/
+.pytest_cache/
+
+# Test Reports
+test-results/
+junit.xml
+
+# Data & Logs
+data/
+*.log

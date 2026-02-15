@@ -15,7 +15,7 @@ const sections = [
   },
   {
     title: 'Google Gemini (Plan Generation)',
-    description: 'Day plans are generated using Google Gemini technology. The integration is managed through the Emergent platform.',
+    description: 'Day plans are generated using Google Gemini AI technology via the Google Gemini API.',
     terms: [
       'Generated content is provided as suggestions only and should not be relied upon as definitive travel advice.',
       'Users should independently verify all activity details, costs, opening hours, and safety information.',
