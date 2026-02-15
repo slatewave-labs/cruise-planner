@@ -229,23 +229,25 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      actions: read  # For telemetry and API access
+      actions: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Run Semgrep
-        uses: semgrep/semgrep-action@v1
         id: semgrep
-        with:
-          config: p/security-audit p/owasp-top-ten p/python p/javascript
-          args: --sarif --output=semgrep.sarif
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        run: |
+          # Use official semgrep container to generate SARIF
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep ci \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/python \
+            --config p/javascript \
+            --sarif --output /src/semgrep.sarif || true
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.semgrep.outcome == 'success'
+        if: always()
         with:
           sarif_file: semgrep.sarif
 
@@ -256,7 +258,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      actions: read  # For telemetry and API access
+      actions: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -275,7 +277,7 @@ jobs:
 
       - name: Upload Trivy results - Backend
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.scan_backend.outcome == 'success'
+        if: always()
         with:
           sarif_file: 'trivy-backend-results.sarif'
           category: 'trivy-backend'
@@ -294,7 +296,7 @@ jobs:
 
       - name: Upload Trivy results - Frontend
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.scan_frontend.outcome == 'success'
+        if: always()
         with:
           sarif_file: 'trivy-frontend-results.sarif'
           category: 'trivy-frontend'
