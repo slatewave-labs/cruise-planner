@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, MapPin, Coins, ExternalLink, ArrowRight } from 'lucide-react';
 
-export default function ActivityCard({ activity, isLast, currencySymbol }) {
+export default function ActivityCard({ activity, isLast, currencySymbol: _currencySymbol }) {
   return (
     <div className="relative" data-testid={`activity-card-${activity.order}`}>
       {/* Timeline connector */}

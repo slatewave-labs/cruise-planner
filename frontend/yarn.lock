@@ -2689,7 +2689,7 @@ argparse@^2.0.1:
 
 aria-query@5.3.0, aria-query@^5.0.0:
   version "5.3.0"
-  resolved "https://registry.npmjs.org/aria-query/-/aria-query-5.3.0.tgz"
+  resolved "https://registry.yarnpkg.com/aria-query/-/aria-query-5.3.0.tgz#650c569e41ad90b51b3d7df5e5eed1c7549c103e"
   integrity sha512-b0P0sZPKtyu8HkeRAfCq0IfURZK+SuwMjY1UXGBU27wpAiTwQAIlq56IbIO+ytk/JjS1fMR14ee5WBBfKi5J6A==
   dependencies:
     dequal "^2.0.3"
@@ -4391,12 +4391,12 @@ eslint-plugin-jsx-a11y@^6.5.1:
     safe-regex-test "^1.0.3"
     string.prototype.includes "^2.0.1"
 
-eslint-plugin-react-hooks@^4.3.0:
+eslint-plugin-react-hooks@^4.3.0, eslint-plugin-react-hooks@^4.6.0:
   version "4.6.2"
   resolved "https://registry.npmjs.org/eslint-plugin-react-hooks/-/eslint-plugin-react-hooks-4.6.2.tgz"
   integrity sha512-QzliNJq4GinDBcD8gPB5v0wh6g8q3SUi6EFF0x8N/BL9PoVs0atuGc47ozMRyOWAKdwaZ5OnbOEa3WR+dSGKuQ==
 
-eslint-plugin-react@^7.27.1:
+eslint-plugin-react@^7.27.1, eslint-plugin-react@^7.33.2:
   version "7.37.5"
   resolved "https://registry.npmjs.org/eslint-plugin-react/-/eslint-plugin-react-7.37.5.tgz"
   integrity sha512-Qteup0SqU15kdocexFNAJMvCJEfa2xUKNV4CC1xsVMrIIqEy3SQ/rqyxCWNzfrd3/ldy6HMlD2e0JDVpDg2qIA==
@@ -4464,7 +4464,7 @@ eslint-webpack-plugin@^3.1.1:
     normalize-path "^3.0.0"
     schema-utils "^4.0.0"
 
-eslint@^8.3.0:
+eslint@^8.3.0, eslint@^8.57.0:
   version "8.57.1"
   resolved "https://registry.npmjs.org/eslint/-/eslint-8.57.1.tgz"
   integrity sha512-ypowyDxpVSYpkXr9WPv2PAZCtNip1Mv5KTW0SCurXv/9iOpcrH9PaqUElksqEB6pChqHGDRCFTyrZlGhnLNGiA==

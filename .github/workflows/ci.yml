@@ -1,0 +1,337 @@
+# ShoreExplorer CI Pipeline
+# Runs on all PRs and pushes to main/develop
+# Ensures code quality, security, and functionality before merge
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-progress runs when a new run is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Backend linting - Check code style and type safety
+  backend-lint:
+    name: Backend Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install black isort flake8 mypy
+
+      - name: Run black (code formatter check)
+        run: |
+          cd backend
+          black --check --diff .
+
+      - name: Run isort (import sorting check)
+        run: |
+          cd backend
+          isort --check-only --diff .
+
+      - name: Run flake8 (linting)
+        run: |
+          cd backend
+          flake8 . --max-line-length=88 --extend-ignore=E203,W503
+
+      - name: Run mypy (type checking)
+        run: |
+          cd backend
+          mypy . --ignore-missing-imports
+        continue-on-error: true  # Type checking is advisory for now
+
+  # Backend tests - Run unit tests with MongoDB
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          cd backend
+          pytest tests/ -v --cov=. --cov-report=xml --cov-report=term
+        env:
+          MONGO_URL: mongodb://localhost:27017
+          DB_NAME: shoreexplorer_test
+          GOOGLE_API_KEY: mock-key-for-testing
+
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          retention-days: 7
+
+  # Frontend linting - Check code style
+  frontend-lint:
+    name: Frontend Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+
+      - name: Run ESLint
+        run: |
+          cd frontend
+          yarn lint
+
+  # Frontend tests - Run Jest/React Testing Library tests
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+
+      - name: Run tests
+        run: |
+          cd frontend
+          yarn test --watchAll=false --coverage --passWithNoTests
+        env:
+          CI: true
+
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 7
+
+  # Frontend build - Ensure the app builds successfully
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    needs: [frontend-lint, frontend-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+
+      - name: Build production bundle
+        run: |
+          cd frontend
+          yarn build
+        env:
+          REACT_APP_BACKEND_URL: https://api.shoreexplorer.com
+          CI: true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/build/
+          retention-days: 7
+
+  # Backend build - Ensure Docker image builds successfully
+  backend-build:
+    name: Backend Docker Build
+    runs-on: ubuntu-latest
+    needs: [backend-lint, backend-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: shoreexplorer-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # SAST - Static Application Security Testing with Semgrep
+  security-sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # For uploading SARIF results
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/owasp-top-ten
+            p/python
+            p/javascript
+          generateSarif: true
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        continue-on-error: true  # Don't fail the build on findings, but report them
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+
+  # SCA - Software Composition Analysis with Trivy
+  security-sca:
+    name: SCA (Trivy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner - Backend
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: 'backend'
+          format: 'sarif'
+          output: 'trivy-backend-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          scanners: 'vuln,secret,config'
+
+      - name: Upload Trivy results - Backend
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-backend-results.sarif'
+          category: 'trivy-backend'
+
+      - name: Run Trivy vulnerability scanner - Frontend
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: 'frontend'
+          format: 'sarif'
+          output: 'trivy-frontend-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          scanners: 'vuln,secret,config'
+
+      - name: Upload Trivy results - Frontend
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-frontend-results.sarif'
+          category: 'trivy-frontend'
+
+  # All checks passed - This job only succeeds if all critical jobs pass
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs:
+      - backend-lint
+      - backend-test
+      - backend-build
+      - frontend-lint
+      - frontend-test
+      - frontend-build
+      - security-sast
+      - security-sca
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "Backend lint: ${{ needs.backend-lint.result }}"
+          echo "Backend test: ${{ needs.backend-test.result }}"
+          echo "Backend build: ${{ needs.backend-build.result }}"
+          echo "Frontend lint: ${{ needs.frontend-lint.result }}"
+          echo "Frontend test: ${{ needs.frontend-test.result }}"
+          echo "Frontend build: ${{ needs.frontend-build.result }}"
+          echo "SAST: ${{ needs.security-sast.result }}"
+          echo "SCA: ${{ needs.security-sca.result }}"
+          
+          # Fail if any required job failed
+          if [[ "${{ needs.backend-lint.result }}" != "success" ]] || \
+             [[ "${{ needs.backend-test.result }}" != "success" ]] || \
+             [[ "${{ needs.backend-build.result }}" != "success" ]] || \
+             [[ "${{ needs.frontend-lint.result }}" != "success" ]] || \
+             [[ "${{ needs.frontend-test.result }}" != "success" ]] || \
+             [[ "${{ needs.frontend-build.result }}" != "success" ]]; then
+            echo "❌ One or more critical jobs failed"
+            exit 1
+          fi
+          
+          echo "✅ All critical jobs passed!"
