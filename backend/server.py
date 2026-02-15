@@ -410,7 +410,8 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         ):
             raise HTTPException(
                 503,
-                "Gemini API budget exceeded. The plan generation service is temporarily at capacity. Please try again shortly.",
+                "Gemini API budget exceeded. The plan generation service is "
+                "temporarily at capacity. Please try again shortly.",
             )
         raise HTTPException(
             503,
