@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -6,15 +7,27 @@ from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 from ports_data import CRUISE_PORTS
 
 load_dotenv()
+
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format=(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(extra_fields)s"
+        if hasattr(logging, "extra_fields")
+        else "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    ),
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ShoreExplorer API", version="1.0.0")
 app.add_middleware(
@@ -25,12 +38,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Request ID middleware for correlation
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+    logger.info(
+        f"Incoming request: {request.method} {request.url.path}",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+        },
+    )
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+# MongoDB connection with error handling
 mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 db_name = os.environ.get("DB_NAME", "shoreexplorer")
-mongo_client: MongoClient = MongoClient(mongo_url)
-db = mongo_client[db_name]
-trips_col = db["trips"]
-plans_col = db["plans"]
+
+try:
+    mongo_client: MongoClient = MongoClient(
+        mongo_url, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000
+    )
+    # Test connection
+    mongo_client.admin.command("ping")
+    logger.info(f"Successfully connected to MongoDB at {mongo_url}")
+    db = mongo_client[db_name]
+    trips_col = db["trips"]
+    plans_col = db["plans"]
+except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+    logger.error(f"Failed to connect to MongoDB at {mongo_url}: {str(e)}")
+    # Create placeholder collections to avoid immediate startup failure
+    # The actual operations will fail with informative errors
+    mongo_client = None
+    db = None
+    trips_col = None
+    plans_col = None
 
 # --- Pydantic Models ---
 
@@ -77,12 +125,67 @@ def serialize_doc(doc):
     return doc
 
 
+def check_db_connection():
+    """Check if database is available and raise informative error if not."""
+    if mongo_client is None or db is None:
+        logger.error("Database operation attempted but MongoDB is not connected")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "database_unavailable",
+                "message": "Database service is currently unavailable. Please try again later.",
+                "troubleshooting": "If you're the administrator, check the MONGO_URL environment variable and ensure MongoDB is running.",
+            },
+        )
+    try:
+        mongo_client.admin.command("ping")
+    except Exception as e:
+        logger.error(f"Database ping failed: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "database_connection_lost",
+                "message": "Lost connection to database. Please try again.",
+                "technical_details": str(e),
+            },
+        )
+
+
 # --- Health ---
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "ShoreExplorer API"}
+    """Health check endpoint with service status diagnostics."""
+    status = {
+        "status": "ok",
+        "service": "ShoreExplorer API",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": {"database": "unknown", "ai_service": "unknown"},
+    }
+
+    # Check database
+    try:
+        if mongo_client is not None:
+            mongo_client.admin.command("ping")
+            status["checks"]["database"] = "healthy"
+        else:
+            status["checks"]["database"] = "not_configured"
+            status["status"] = "degraded"
+    except Exception as e:
+        logger.warning(f"Health check: Database unhealthy - {str(e)}")
+        status["checks"]["database"] = "unhealthy"
+        status["status"] = "degraded"
+
+    # Check AI service configuration
+    if os.environ.get("GOOGLE_API_KEY"):
+        status["checks"]["ai_service"] = "configured"
+    else:
+        status["checks"]["ai_service"] = "not_configured"
+        status["status"] = "degraded"
+
+    logger.info(f"Health check completed: {status['status']}")
+    return status
 
 
 # --- Port Search ---
@@ -120,59 +223,158 @@ def list_regions():
 
 @app.post("/api/trips")
 def create_trip(data: TripInput, x_device_id: str = Header()):
-    trip = {
-        "trip_id": str(uuid.uuid4()),
-        "device_id": x_device_id,
-        "ship_name": data.ship_name,
-        "cruise_line": data.cruise_line or "",
-        "ports": [],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    trips_col.insert_one(trip)
-    return serialize_doc(trip)
+    """Create a new cruise trip."""
+    check_db_connection()
+    try:
+        trip = {
+            "trip_id": str(uuid.uuid4()),
+            "device_id": x_device_id,
+            "ship_name": data.ship_name,
+            "cruise_line": data.cruise_line or "",
+            "ports": [],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        trips_col.insert_one(trip)
+        logger.info(f"Created trip {trip['trip_id']} for device {x_device_id}")
+        return serialize_doc(trip)
+    except Exception as e:
+        logger.error(f"Failed to create trip: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "trip_creation_failed",
+                "message": "Failed to create trip. Please try again.",
+                "technical_details": str(e),
+            },
+        )
 
 
 @app.get("/api/trips")
 def list_trips(x_device_id: str = Header(), skip: int = 0, limit: int = 100):
-    trips = list(
-        trips_col.find({"device_id": x_device_id}, {"_id": 0})
-        .sort("created_at", -1)
-        .skip(skip)
-        .limit(limit)
-    )
-    return trips
+    """List all trips for a device."""
+    check_db_connection()
+    try:
+        trips = list(
+            trips_col.find({"device_id": x_device_id}, {"_id": 0})
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        logger.info(f"Listed {len(trips)} trips for device {x_device_id}")
+        return trips
+    except Exception as e:
+        logger.error(f"Failed to list trips: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "trip_list_failed",
+                "message": "Failed to retrieve trips. Please try again.",
+            },
+        )
 
 
 @app.get("/api/trips/{trip_id}")
 def get_trip(trip_id: str, x_device_id: str = Header()):
-    trip = trips_col.find_one(
-        {"trip_id": trip_id, "device_id": x_device_id}, {"_id": 0}
-    )
-    if not trip:
-        raise HTTPException(404, "Trip not found")
-    return trip
+    """Get details of a specific trip."""
+    check_db_connection()
+    try:
+        trip = trips_col.find_one(
+            {"trip_id": trip_id, "device_id": x_device_id}, {"_id": 0}
+        )
+        if not trip:
+            logger.warning(f"Trip {trip_id} not found for device {x_device_id}")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "trip_not_found",
+                    "message": f"Trip with ID '{trip_id}' not found or you don't have permission to access it.",
+                    "trip_id": trip_id,
+                },
+            )
+        logger.info(f"Retrieved trip {trip_id}")
+        return trip
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get trip {trip_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "trip_retrieval_failed",
+                "message": "Failed to retrieve trip details. Please try again.",
+            },
+        )
 
 
 @app.put("/api/trips/{trip_id}")
 def update_trip(trip_id: str, data: TripUpdate, x_device_id: str = Header()):
-    updates = {k: v for k, v in data.model_dump().items() if v is not None}
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = trips_col.update_one(
-        {"trip_id": trip_id, "device_id": x_device_id}, {"$set": updates}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(404, "Trip not found")
-    return trips_col.find_one({"trip_id": trip_id}, {"_id": 0})
+    """Update an existing trip."""
+    check_db_connection()
+    try:
+        updates = {k: v for k, v in data.model_dump().items() if v is not None}
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        result = trips_col.update_one(
+            {"trip_id": trip_id, "device_id": x_device_id}, {"$set": updates}
+        )
+        if result.matched_count == 0:
+            logger.warning(f"Trip {trip_id} not found for update")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "trip_not_found",
+                    "message": f"Trip with ID '{trip_id}' not found or you don't have permission to update it.",
+                    "trip_id": trip_id,
+                },
+            )
+        logger.info(f"Updated trip {trip_id}")
+        return trips_col.find_one({"trip_id": trip_id}, {"_id": 0})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update trip {trip_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "trip_update_failed",
+                "message": "Failed to update trip. Please try again.",
+            },
+        )
 
 
 @app.delete("/api/trips/{trip_id}")
 def delete_trip(trip_id: str, x_device_id: str = Header()):
-    result = trips_col.delete_one({"trip_id": trip_id, "device_id": x_device_id})
-    if result.deleted_count == 0:
-        raise HTTPException(404, "Trip not found")
-    plans_col.delete_many({"trip_id": trip_id})
-    return {"message": "Trip deleted"}
+    """Delete a trip and all its associated plans."""
+    check_db_connection()
+    try:
+        result = trips_col.delete_one({"trip_id": trip_id, "device_id": x_device_id})
+        if result.deleted_count == 0:
+            logger.warning(f"Trip {trip_id} not found for deletion")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "trip_not_found",
+                    "message": f"Trip with ID '{trip_id}' not found or you don't have permission to delete it.",
+                    "trip_id": trip_id,
+                },
+            )
+        # Delete associated plans
+        deleted_plans = plans_col.delete_many({"trip_id": trip_id})
+        logger.info(
+            f"Deleted trip {trip_id} and {deleted_plans.deleted_count} associated plans"
+        )
+        return {"message": "Trip deleted", "deleted_plans": deleted_plans.deleted_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete trip {trip_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "trip_deletion_failed",
+                "message": "Failed to delete trip. Please try again.",
+            },
+        )
 
 
 # --- Port Management ---
@@ -180,63 +382,136 @@ def delete_trip(trip_id: str, x_device_id: str = Header()):
 
 @app.post("/api/trips/{trip_id}/ports")
 def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
-    trip = trips_col.find_one({"trip_id": trip_id, "device_id": x_device_id})
-    if not trip:
-        raise HTTPException(404, "Trip not found")
-    port = {
-        "port_id": str(uuid.uuid4()),
-        "name": data.name,
-        "country": data.country,
-        "latitude": data.latitude,
-        "longitude": data.longitude,
-        "arrival": data.arrival,
-        "departure": data.departure,
-    }
-    trips_col.update_one(
-        {"trip_id": trip_id, "device_id": x_device_id},
-        {
-            "$push": {"ports": port},
-            "$set": {"updated_at": datetime.now(timezone.utc).isoformat()},
-        },
-    )
-    return port
+    """Add a port to a trip."""
+    check_db_connection()
+    try:
+        trip = trips_col.find_one({"trip_id": trip_id, "device_id": x_device_id})
+        if not trip:
+            logger.warning(f"Trip {trip_id} not found when adding port")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "trip_not_found",
+                    "message": f"Trip with ID '{trip_id}' not found.",
+                    "trip_id": trip_id,
+                },
+            )
+        port = {
+            "port_id": str(uuid.uuid4()),
+            "name": data.name,
+            "country": data.country,
+            "latitude": data.latitude,
+            "longitude": data.longitude,
+            "arrival": data.arrival,
+            "departure": data.departure,
+        }
+        trips_col.update_one(
+            {"trip_id": trip_id, "device_id": x_device_id},
+            {
+                "$push": {"ports": port},
+                "$set": {"updated_at": datetime.now(timezone.utc).isoformat()},
+            },
+        )
+        logger.info(f"Added port {port['port_id']} ({data.name}) to trip {trip_id}")
+        return port
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to add port to trip {trip_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "port_addition_failed",
+                "message": "Failed to add port to trip. Please try again.",
+            },
+        )
 
 
 @app.put("/api/trips/{trip_id}/ports/{port_id}")
 def update_port(
     trip_id: str, port_id: str, data: PortInput, x_device_id: str = Header()
 ):
-    port_update = {
-        "ports.$.name": data.name,
-        "ports.$.country": data.country,
-        "ports.$.latitude": data.latitude,
-        "ports.$.longitude": data.longitude,
-        "ports.$.arrival": data.arrival,
-        "ports.$.departure": data.departure,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    result = trips_col.update_one(
-        {"trip_id": trip_id, "device_id": x_device_id, "ports.port_id": port_id},
-        {"$set": port_update},
-    )
-    if result.matched_count == 0:
-        raise HTTPException(404, "Port not found")
-    return {"message": "Port updated"}
+    """Update a port in a trip."""
+    check_db_connection()
+    try:
+        port_update = {
+            "ports.$.name": data.name,
+            "ports.$.country": data.country,
+            "ports.$.latitude": data.latitude,
+            "ports.$.longitude": data.longitude,
+            "ports.$.arrival": data.arrival,
+            "ports.$.departure": data.departure,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        result = trips_col.update_one(
+            {"trip_id": trip_id, "device_id": x_device_id, "ports.port_id": port_id},
+            {"$set": port_update},
+        )
+        if result.matched_count == 0:
+            logger.warning(f"Port {port_id} in trip {trip_id} not found for update")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "port_not_found",
+                    "message": f"Port with ID '{port_id}' not found in trip '{trip_id}'.",
+                    "port_id": port_id,
+                    "trip_id": trip_id,
+                },
+            )
+        logger.info(f"Updated port {port_id} in trip {trip_id}")
+        return {"message": "Port updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update port {port_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "port_update_failed",
+                "message": "Failed to update port. Please try again.",
+            },
+        )
 
 
 @app.delete("/api/trips/{trip_id}/ports/{port_id}")
 def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
-    result = trips_col.update_one(
-        {"trip_id": trip_id, "device_id": x_device_id},
-        {
-            "$pull": {"ports": {"port_id": port_id}},
-            "$set": {"updated_at": datetime.now(timezone.utc).isoformat()},
-        },
-    )
-    if result.matched_count == 0:
-        raise HTTPException(404, "Trip not found")
-    plans_col.delete_many({"port_id": port_id})
-    return {"message": "Port removed"}
+    """Remove a port from a trip and delete associated plans."""
+    check_db_connection()
+    try:
+        result = trips_col.update_one(
+            {"trip_id": trip_id, "device_id": x_device_id},
+            {
+                "$pull": {"ports": {"port_id": port_id}},
+                "$set": {"updated_at": datetime.now(timezone.utc).isoformat()},
+            },
+        )
+        if result.matched_count == 0:
+            logger.warning(f"Trip {trip_id} not found when deleting port {port_id}")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "trip_not_found",
+                    "message": f"Trip with ID '{trip_id}' not found.",
+                    "trip_id": trip_id,
+                },
+            )
+        # Delete associated plans
+        deleted_plans = plans_col.delete_many({"port_id": port_id})
+        logger.info(
+            f"Removed port {port_id} from trip {trip_id} and deleted {deleted_plans.deleted_count} associated plans"
+        )
+        return {"message": "Port removed", "deleted_plans": deleted_plans.deleted_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete port {port_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "port_deletion_failed",
+                "message": "Failed to remove port. Please try again.",
+            },
+        )
 
 
 # --- Weather (Open-Meteo) ---
@@ -244,6 +519,8 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
 
 @app.get("/api/weather")
 async def get_weather(latitude: float, longitude: float, date: Optional[str] = None):
+    """Fetch weather forecast from Open-Meteo API."""
+    logger.info(f"Fetching weather for lat={latitude}, lon={longitude}, date={date}")
     params: dict[str, Any] = {
         "latitude": latitude,
         "longitude": longitude,
@@ -259,33 +536,113 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
         params["end_date"] = date
     else:
         params["forecast_days"] = 7
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.open-meteo.com/v1/forecast", params=params, timeout=15
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://api.open-meteo.com/v1/forecast", params=params, timeout=15
+            )
+            if resp.status_code != 200:
+                logger.error(
+                    f"Weather API returned status {resp.status_code}: {resp.text}"
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "error": "weather_service_unavailable",
+                        "message": "Weather service is temporarily unavailable. Please try again later.",
+                        "status_code": resp.status_code,
+                    },
+                )
+            logger.info("Weather data retrieved successfully")
+            return resp.json()
+    except httpx.TimeoutException:
+        logger.error("Weather API request timed out")
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "error": "weather_service_timeout",
+                "message": "Weather service request timed out. Please try again.",
+            },
         )
-        if resp.status_code != 200:
-            raise HTTPException(502, "Weather service unavailable")
-        return resp.json()
+    except httpx.RequestError as e:
+        logger.error(f"Weather API request failed: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "weather_service_error",
+                "message": "Failed to connect to weather service. Please try again later.",
+                "technical_details": str(e),
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error fetching weather: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "weather_fetch_failed",
+                "message": "An unexpected error occurred while fetching weather data.",
+            },
+        )
 
 
-# --- Day Plan Generation (Gemini 3 Flash) ---
+# --- Day Plan Generation (Gemini 2.0 Flash) ---
 
 
 @app.post("/api/plans/generate")
 async def generate_plan(data: GeneratePlanInput, x_device_id: str = Header()):
-    trip = trips_col.find_one(
-        {"trip_id": data.trip_id, "device_id": x_device_id}, {"_id": 0}
-    )
-    if not trip:
-        raise HTTPException(404, "Trip not found")
-    port = next((p for p in trip["ports"] if p["port_id"] == data.port_id), None)
-    if not port:
-        raise HTTPException(404, "Port not found in trip")
+    """Generate an AI-powered day plan for a cruise port visit."""
+    check_db_connection()
 
-    # Fetch weather
+    logger.info(f"Generating plan for trip {data.trip_id}, port {data.port_id}")
+
+    # Fetch trip and port data
+    try:
+        trip = trips_col.find_one(
+            {"trip_id": data.trip_id, "device_id": x_device_id}, {"_id": 0}
+        )
+        if not trip:
+            logger.warning(f"Trip {data.trip_id} not found for plan generation")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "trip_not_found",
+                    "message": f"Trip with ID '{data.trip_id}' not found.",
+                    "trip_id": data.trip_id,
+                },
+            )
+
+        port = next((p for p in trip["ports"] if p["port_id"] == data.port_id), None)
+        if not port:
+            logger.warning(f"Port {data.port_id} not found in trip {data.trip_id}")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "port_not_found",
+                    "message": f"Port with ID '{data.port_id}' not found in this trip.",
+                    "port_id": data.port_id,
+                    "trip_id": data.trip_id,
+                },
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch trip/port data: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "data_fetch_failed",
+                "message": "Failed to retrieve trip data. Please try again.",
+            },
+        )
+
+    # Fetch weather data (non-blocking - plan generation continues if this fails)
     weather_data = None
     try:
         arrival_date = port["arrival"][:10] if port["arrival"] else None
+        logger.info(f"Fetching weather for {port['name']} on {arrival_date}")
         async with httpx.AsyncClient() as client:
             params = {
                 "latitude": port["latitude"],
@@ -305,7 +662,11 @@ async def generate_plan(data: GeneratePlanInput, x_device_id: str = Header()):
             )
             if resp.status_code == 200:
                 weather_data = resp.json()
-    except Exception:
+                logger.info("Weather data retrieved successfully")
+            else:
+                logger.warning(f"Weather API returned status {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch weather data (non-blocking): {str(e)}")
         weather_data = None
 
     weather_summary = "Weather data unavailable."
@@ -379,15 +740,23 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
   "safety_tips": ["string - safety reminders"]
 }}"""
 
+    # Check AI service configuration
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
+        logger.error("Plan generation attempted but GOOGLE_API_KEY is not configured")
         raise HTTPException(
-            503,
-            ("Plan generation is not configured. " "Please contact the administrator."),
+            status_code=503,
+            detail={
+                "error": "ai_service_not_configured",
+                "message": "AI plan generation service is not configured. Please contact your administrator to set up the GOOGLE_API_KEY environment variable.",
+                "troubleshooting": "Administrators: Set the GOOGLE_API_KEY environment variable with a valid Google Gemini API key.",
+            },
         )
 
+    # Call Gemini API
     client = genai.Client(api_key=api_key)
     try:
+        logger.info(f"Calling Gemini API for plan generation (port: {port_name})")
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt,
@@ -400,64 +769,147 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             ),
         )
         response_text = response.text
+        logger.info("Gemini API call successful")
     except Exception as e:
         error_msg = str(e).lower()
-        # Handle budget exceeded or mock key (for integrity tests in CI)
-        if (
-            "budget" in error_msg
-            or "exceeded" in error_msg
-            or api_key == "mock-key-for-testing"
-        ):
-            raise HTTPException(
-                503,
-                "Gemini API budget exceeded. The plan generation service is "
-                "temporarily at capacity. Please try again shortly.",
-            )
-        raise HTTPException(
-            503,
-            "Plan generation is temporarily unavailable. Try again shortly.",
-        )
+        logger.error(f"Gemini API call failed: {str(e)}", exc_info=True)
 
+        # Handle specific error cases with detailed responses
+        if "budget" in error_msg or "exceeded" in error_msg or "quota" in error_msg:
+            logger.error("Gemini API budget/quota exceeded")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "ai_service_quota_exceeded",
+                    "message": "The AI service has reached its usage quota. This is temporary - please try again in a few minutes.",
+                    "troubleshooting": "Administrators: Check your Google Cloud Console for API quotas and billing status.",
+                    "retry_after": 300,  # Suggest retry after 5 minutes
+                },
+            )
+        elif (
+            "api key" in error_msg
+            or "authentication" in error_msg
+            or "401" in error_msg
+        ):
+            logger.error("Gemini API authentication failed - invalid API key")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "ai_service_auth_failed",
+                    "message": "AI service authentication failed. The API key may be invalid or expired.",
+                    "troubleshooting": "Administrators: Verify the GOOGLE_API_KEY environment variable contains a valid, active API key.",
+                },
+            )
+        elif api_key == "mock-key-for-testing":
+            # Special case for CI testing
+            logger.info("Mock API key detected in test environment")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "ai_service_mock_key",
+                    "message": "Plan generation is using a mock API key for testing.",
+                },
+            )
+        else:
+            # Generic Gemini API failure
+            logger.error(f"Gemini API error: {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "ai_service_unavailable",
+                    "message": "The AI plan generation service is temporarily unavailable. Please try again in a few moments.",
+                    "technical_details": (
+                        str(e) if api_key else "API key not configured"
+                    ),
+                },
+            )
+
+    # Parse JSON response
     try:
         clean = response_text.strip()
         if clean.startswith("```"):
+            # Remove markdown code fences if present
             clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
             if clean.endswith("```"):
                 clean = clean[:-3]
             clean = clean.strip()
         plan_data = json.loads(clean)
-    except json.JSONDecodeError:
-        plan_data = {"raw_response": response_text, "parse_error": True}
+        logger.info("Successfully parsed Gemini response as JSON")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Gemini response as JSON: {str(e)}")
+        logger.debug(f"Raw response: {response_text[:500]}")  # Log first 500 chars
+        # Fallback: Return raw response with error flag
+        plan_data = {
+            "raw_response": response_text,
+            "parse_error": True,
+            "error_message": "The AI generated an invalid response format. Please try generating the plan again.",
+        }
 
-    plan = {
-        "plan_id": str(uuid.uuid4()),
-        "device_id": x_device_id,
-        "trip_id": data.trip_id,
-        "port_id": data.port_id,
-        "port_name": port["name"],
-        "port_country": port["country"],
-        "preferences": prefs.model_dump(),
-        "weather": (
-            weather_data.get("daily")
-            if weather_data and "daily" in weather_data
-            else None
-        ),
-        "plan": plan_data,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    plans_col.insert_one(plan)
-    plan.pop("_id", None)
-    return plan
+    # Save plan to database
+    try:
+        plan = {
+            "plan_id": str(uuid.uuid4()),
+            "device_id": x_device_id,
+            "trip_id": data.trip_id,
+            "port_id": data.port_id,
+            "port_name": port["name"],
+            "port_country": port["country"],
+            "preferences": prefs.model_dump(),
+            "weather": (
+                weather_data.get("daily")
+                if weather_data and "daily" in weather_data
+                else None
+            ),
+            "plan": plan_data,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        plans_col.insert_one(plan)
+        plan.pop("_id", None)
+        logger.info(f"Successfully created plan {plan['plan_id']} for port {port_name}")
+        return plan
+    except Exception as e:
+        logger.error(f"Failed to save plan to database: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "plan_save_failed",
+                "message": "Generated the plan but failed to save it. Please try again.",
+                "technical_details": str(e),
+            },
+        )
 
 
 @app.get("/api/plans/{plan_id}")
 def get_plan(plan_id: str, x_device_id: str = Header()):
-    plan = plans_col.find_one(
-        {"plan_id": plan_id, "device_id": x_device_id}, {"_id": 0}
-    )
-    if not plan:
-        raise HTTPException(404, "Plan not found")
-    return plan
+    """Get details of a specific generated plan."""
+    check_db_connection()
+    try:
+        plan = plans_col.find_one(
+            {"plan_id": plan_id, "device_id": x_device_id}, {"_id": 0}
+        )
+        if not plan:
+            logger.warning(f"Plan {plan_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "plan_not_found",
+                    "message": f"Plan with ID '{plan_id}' not found or you don't have permission to access it.",
+                    "plan_id": plan_id,
+                },
+            )
+        logger.info(f"Retrieved plan {plan_id}")
+        return plan
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get plan {plan_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "plan_retrieval_failed",
+                "message": "Failed to retrieve plan details. Please try again.",
+            },
+        )
 
 
 @app.get("/api/plans")
@@ -468,23 +920,59 @@ def list_plans(
     skip: int = 0,
     limit: int = 100,
 ):
-    query = {"device_id": x_device_id}
-    if trip_id:
-        query["trip_id"] = trip_id
-    if port_id:
-        query["port_id"] = port_id
-    plans = list(
-        plans_col.find(query, {"_id": 0})
-        .sort("generated_at", -1)
-        .skip(skip)
-        .limit(limit)
-    )
-    return plans
+    """List all generated plans for a device, optionally filtered by trip or port."""
+    check_db_connection()
+    try:
+        query = {"device_id": x_device_id}
+        if trip_id:
+            query["trip_id"] = trip_id
+        if port_id:
+            query["port_id"] = port_id
+        plans = list(
+            plans_col.find(query, {"_id": 0})
+            .sort("generated_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        logger.info(f"Listed {len(plans)} plans for device {x_device_id}")
+        return plans
+    except Exception as e:
+        logger.error(f"Failed to list plans: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "plan_list_failed",
+                "message": "Failed to retrieve plans. Please try again.",
+            },
+        )
 
 
 @app.delete("/api/plans/{plan_id}")
 def delete_plan(plan_id: str, x_device_id: str = Header()):
-    result = plans_col.delete_one({"plan_id": plan_id, "device_id": x_device_id})
-    if result.deleted_count == 0:
-        raise HTTPException(404, "Plan not found")
-    return {"message": "Plan deleted"}
+    """Delete a generated plan."""
+    check_db_connection()
+    try:
+        result = plans_col.delete_one({"plan_id": plan_id, "device_id": x_device_id})
+        if result.deleted_count == 0:
+            logger.warning(f"Plan {plan_id} not found for deletion")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "plan_not_found",
+                    "message": f"Plan with ID '{plan_id}' not found or you don't have permission to delete it.",
+                    "plan_id": plan_id,
+                },
+            )
+        logger.info(f"Deleted plan {plan_id}")
+        return {"message": "Plan deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete plan {plan_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "plan_deletion_failed",
+                "message": "Failed to delete plan. Please try again.",
+            },
+        )
