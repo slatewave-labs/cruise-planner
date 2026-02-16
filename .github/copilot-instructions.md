@@ -73,6 +73,13 @@ ShoreExplorer is an AI-powered cruise port day planner that helps cruise passeng
   - `MONGO_URL` - MongoDB connection string
   - `DB_NAME` - Database name (default: `shoreexplorer`)
   - `GOOGLE_API_KEY` - Google Gemini API key (for AI plan generation)
+- Optional affiliate program env vars (for monetization):
+  - `VIATOR_AFFILIATE_ID` - Viator affiliate program ID
+  - `GETYOURGUIDE_AFFILIATE_ID` - GetYourGuide partner program ID
+  - `KLOOK_AFFILIATE_ID` - Klook affiliate program ID
+  - `TRIPADVISOR_AFFILIATE_ID` - TripAdvisor affiliate program ID
+  - `BOOKING_AFFILIATE_ID` - Booking.com affiliate program ID
+  - See `AFFILIATE_LINKS.md` for details on affiliate monetization
 
 #### API Design
 - Use RESTful conventions for endpoint design
@@ -170,6 +177,7 @@ cruise-planner/
 │   └── copilot-instructions.md # This file
 ├── backend/                    # Python FastAPI server
 │   ├── server.py               # Main API application (all endpoints)
+│   ├── affiliate_config.py     # Affiliate link configuration & URL processing
 │   ├── ports_data.py           # Pre-loaded port coordinates
 │   ├── requirements.txt        # Python dependencies
 │   ├── .env                    # Backend environment variables (create this)
@@ -209,6 +217,7 @@ cruise-planner/
 │   └── e2e/                    # Playwright E2E tests
 ├── docker-compose.yml          # Local development with Docker
 ├── README.md                   # Setup and usage guide
+├── AFFILIATE_LINKS.md          # Affiliate link configuration guide
 └── HANDOVER.md                 # Migration guide (Emergent → AWS)
 ```
 
