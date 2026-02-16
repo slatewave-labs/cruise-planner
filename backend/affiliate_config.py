@@ -18,7 +18,8 @@ def get_affiliate_config(domain: str) -> Optional[dict]:
     """
     Get affiliate configuration for a specific domain.
 
-    This function reads environment variables at runtime to support dynamic configuration.
+    This function reads environment variables at runtime to support
+    dynamic configuration.
 
     Args:
         domain: The domain to get configuration for (e.g., 'viator.com')
