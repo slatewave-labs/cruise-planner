@@ -30,10 +30,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# CORS configuration from environment
+allowed_origins_str = os.environ.get(
+    "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"
+)
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
+
 app = FastAPI(title="ShoreExplorer API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

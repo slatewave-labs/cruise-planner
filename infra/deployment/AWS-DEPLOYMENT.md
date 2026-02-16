@@ -239,7 +239,10 @@ Point your domain to:
 | `GOOGLE_API_KEY` | Google Gemini API key | `AIzaSyC...` |
 | `MONGO_URL` | MongoDB Atlas connection string | `mongodb+srv://user:pass@cluster.mongodb.net/...` |
 | `DB_NAME` | Database name | `shoreexplorer` |
+| `ALLOWED_ORIGINS` | **Required** - Comma-separated list of allowed frontend origins for CORS security | `https://yourdomain.com` or `https://yourdomain.com,https://www.yourdomain.com` |
 | `REACT_APP_BACKEND_URL` | Backend URL for frontend | `https://api.yourdomain.com` |
+
+> **Important:** The `ALLOWED_ORIGINS` environment variable must be set for the backend to accept requests from your frontend. Never use wildcard `*` in production as this creates a serious security vulnerability.
 
 ## Step 6: Monitoring and Maintenance
 
@@ -312,9 +315,15 @@ curl -X POST "http://localhost:8001/api/plans/generate" \
 
 ### Frontend can't reach backend
 
-**Check CORS configuration in backend/server.py:**
-```python
-app.add_middleware(CORSMiddleware, allow_origins=["*"], ...)
+**Check CORS configuration:**
+The backend now requires explicit configuration of allowed origins. Set the `ALLOWED_ORIGINS` environment variable:
+
+```bash
+# For local development
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# For production (set to your actual frontend domain)
+ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 ```
 
 **Update frontend environment:**
@@ -330,6 +339,7 @@ REACT_APP_BACKEND_URL=http://your-actual-backend-url:8001
 3. **API Keys**: Rotate keys periodically
 4. **HTTPS**: Always use SSL/TLS in production
 5. **Secrets**: Use AWS Secrets Manager for sensitive data
+6. **CORS**: Set `ALLOWED_ORIGINS` to your actual frontend domain(s), never use wildcard `*` in production
 
 ## Next Steps
 

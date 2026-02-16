@@ -186,16 +186,18 @@ cat > .env << 'EOF'
 MONGO_URL=mongodb://localhost:27017
 DB_NAME=shoreexplorer
 GOOGLE_API_KEY=your-google-api-key-here
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 EOF
 ```
 
 **Windows (manually):**
 1. Open Notepad (or any text editor)
-2. Paste the following three lines:
+2. Paste the following lines:
    ```
    MONGO_URL=mongodb://localhost:27017
    DB_NAME=shoreexplorer
    GOOGLE_API_KEY=your-google-api-key-here
+   ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
    ```
 3. Save the file as `.env` (not `.env.txt`) inside the `backend` folder
    - In the "Save as type" dropdown, select "All Files"
@@ -208,6 +210,7 @@ EOF
 | `MONGO_URL` | The address of your MongoDB database. If you installed MongoDB locally with defaults, **leave this as-is**. For MongoDB Atlas, use your connection string. | `mongodb://localhost:27017` or `mongodb+srv://user:pass@cluster.mongodb.net/` |
 | `DB_NAME` | The name of the database. **Leave this as-is** unless you want a custom name. | `shoreexplorer` |
 | `GOOGLE_API_KEY` | Your Google Gemini API key. Replace `your-google-api-key-here` with your actual key from Google AI Studio. | `AIzaSyC...` |
+| `ALLOWED_ORIGINS` | Comma-separated list of allowed frontend URLs for CORS. **Leave as-is for local development**. For production, set to your actual frontend domain(s). | `http://localhost:3000,http://localhost:3001` or `https://yourdomain.com` |
 
 > **Where do I get my Google API Key?**
 > 1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
