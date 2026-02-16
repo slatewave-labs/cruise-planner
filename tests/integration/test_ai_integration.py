@@ -125,4 +125,8 @@ def test_generate_plan_missing_api_key(mock_genai_client_class):
             response = client.post("/api/plans/generate", json=payload, headers={"X-Device-Id": "d"})
             
             assert response.status_code == 503
-            assert "Plan generation is not configured" in response.json()["detail"]
+            detail = response.json()["detail"]
+            # New structured error format
+            assert isinstance(detail, dict)
+            assert detail["error"] == "ai_service_not_configured"
+            assert "not configured" in detail["message"].lower()

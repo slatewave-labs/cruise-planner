@@ -10,21 +10,38 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # Mock MongoClient before importing app
 with patch("pymongo.MongoClient") as mock_mongo:
+    # Configure mock to simulate successful connection
+    mock_mongo_instance = MagicMock()
+    mock_mongo_instance.admin.command.return_value = {"ok": 1}
+    mock_mongo.return_value = mock_mongo_instance
     from server import app
 
 client = TestClient(app)
 
 
 def test_health_check():
-    response = client.get("/api/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    """Test that health check endpoint works."""
+    with patch("server.mongo_client") as mock_client:
+        mock_client.admin.command.return_value = {"ok": 1}
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+            response = client.get("/api/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "ok"
+            assert "checks" in data
 
 
 @patch("google.genai.Client")
 @patch("server.trips_col")
 @patch("server.plans_col")
-def test_generate_plan_success(mock_plans, mock_trips, mock_genai_client_class):
+@patch("server.mongo_client")
+def test_generate_plan_success(
+    mock_mongo_client, mock_plans, mock_trips, mock_genai_client_class
+):
+    """Test successful plan generation."""
+    # Setup database mock
+    mock_mongo_client.admin.command.return_value = {"ok": 1}
+
     # Setup mocks
     mock_device_id = "test-device"
     mock_trip_id = "trip-123"
@@ -65,13 +82,20 @@ def test_generate_plan_success(mock_plans, mock_trips, mock_genai_client_class):
         },
     }
 
-    with patch("httpx.AsyncClient.get") as mock_weather:
-        mock_weather.return_value = MagicMock(
-            status_code=404
-        )  # Weather fail shouldn't break plan
-        response = client.post(
-            "/api/plans/generate", json=payload, headers={"X-Device-Id": mock_device_id}
-        )
+    with patch("httpx.AsyncClient") as mock_async_client:
+        # Mock weather API response
+        mock_client = MagicMock()
+        mock_async_client.return_value.__aenter__.return_value = mock_client
+        mock_weather_response = MagicMock()
+        mock_weather_response.status_code = 404  # Weather fail shouldn't break plan
+        mock_client.get.return_value = mock_weather_response
+
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+            response = client.post(
+                "/api/plans/generate",
+                json=payload,
+                headers={"X-Device-Id": mock_device_id},
+            )
 
     assert response.status_code == 200
     assert response.json()["plan"]["plan_title"] == "Mock Plan"

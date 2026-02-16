@@ -214,7 +214,10 @@ class TestWeatherAPI:
         
         # Should return 502 Bad Gateway when weather service fails
         assert response.status_code == 502
-        assert "unavailable" in response.json()["detail"].lower()
+        detail = response.json()["detail"]
+        # New structured error format
+        assert isinstance(detail, dict)
+        assert "unavailable" in detail["message"].lower()
     
     @patch('httpx.AsyncClient')
     def test_get_weather_extreme_coordinates(self, mock_httpx):
@@ -242,5 +245,7 @@ def test_health_endpoint():
     
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ok"
+    # Health status can be "ok" or "degraded" depending on service configuration
+    assert data["status"] in ["ok", "degraded"]
     assert "service" in data
+    assert "checks" in data

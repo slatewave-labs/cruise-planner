@@ -21,6 +21,11 @@ frontend/build/
 backend/dist/
 *.pyc
 
+# Python virtual environments
+venv/
+backend/venv/
+.venv/
+
 # Data & Logs
 data/
 *.log
