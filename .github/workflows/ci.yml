@@ -57,9 +57,9 @@ jobs:
           mypy . --ignore-missing-imports
         continue-on-error: true  # Type checking is advisory for now
 
-  # Backend tests - Run unit tests with MongoDB
+  # Backend tests - Run unit and integration tests with MongoDB
   backend-test:
-    name: Backend Tests
+    name: Backend Tests (Unit & Integration)
     runs-on: ubuntu-latest
     services:
       mongodb:
@@ -83,18 +83,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx pytest-cov
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio httpx pytest-cov requests uvicorn
 
-      - name: Run tests with coverage
+      - name: Run all pytest tests (Unit & Integration)
         run: |
-          cd backend
-          pytest tests/ -v --cov=. --cov-report=xml --cov-report=term
+          # Use pytest.ini from root which includes backend/tests, tests/unit, tests/integration
+          pytest -v --cov=backend --cov-report=xml --cov-report=term
         env:
           MONGO_URL: mongodb://localhost:27017
           DB_NAME: shoreexplorer_test
           GOOGLE_API_KEY: mock-key-for-testing
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
 
       - name: Upload coverage to artifacts
         uses: actions/upload-artifact@v4
@@ -103,6 +103,65 @@ jobs:
           name: backend-coverage
           path: backend/coverage.xml
           retention-days: 7
+
+  # Backend integrity tests - Run comprehensive API tests against a live server
+  backend-integrity:
+    name: Backend Integrity (E2E)
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install requests uvicorn
+
+      - name: Run System Integrity Tests
+        run: |
+          # Start backend server in background
+          cd backend
+          uvicorn server:app --host 0.0.0.0 --port 8001 &
+          SERVER_PID=$!
+          
+          # Wait for server to be ready
+          echo "Waiting for server to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8001/api/health > /dev/null; then
+              echo "Server is up!"
+              break
+            fi
+            sleep 1
+          done
+          
+          # Run the comprehensive test script
+          cd ..
+          python3 backend_test.py
+          RESULT=$?
+          
+          # Kill the server
+          kill $SERVER_PID
+          exit $RESULT
+        env:
+          MONGO_URL: mongodb://localhost:27017
+          DB_NAME: shoreexplorer_integrity
+          GOOGLE_API_KEY: mock-key-for-testing
 
   # Frontend linting - Check code style
   frontend-lint:
@@ -308,6 +367,7 @@ jobs:
     needs:
       - backend-lint
       - backend-test
+      - backend-integrity
       - backend-build
       - frontend-lint
       - frontend-test
@@ -320,6 +380,7 @@ jobs:
         run: |
           echo "Backend lint: ${{ needs.backend-lint.result }}"
           echo "Backend test: ${{ needs.backend-test.result }}"
+          echo "Backend integrity: ${{ needs.backend-integrity.result }}"
           echo "Backend build: ${{ needs.backend-build.result }}"
           echo "Frontend lint: ${{ needs.frontend-lint.result }}"
           echo "Frontend test: ${{ needs.frontend-test.result }}"
@@ -330,6 +391,7 @@ jobs:
           # Fail if any required job failed
           if [[ "${{ needs.backend-lint.result }}" != "success" ]] || \
              [[ "${{ needs.backend-test.result }}" != "success" ]] || \
+             [[ "${{ needs.backend-integrity.result }}" != "success" ]] || \
              [[ "${{ needs.backend-build.result }}" != "success" ]] || \
              [[ "${{ needs.frontend-lint.result }}" != "success" ]] || \
              [[ "${{ needs.frontend-test.result }}" != "success" ]] || \
