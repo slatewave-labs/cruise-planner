@@ -52,9 +52,9 @@ def get_affiliate_config(domain: str) -> Optional[dict]:
         },
     }
 
-    # Check if domain is in partners
+    # Check if domain is in partners (exact match or ends with partner domain)
     for partner_domain, config in affiliate_partners.items():
-        if partner_domain in domain:
+        if domain == partner_domain or domain.endswith("." + partner_domain):
             return config
 
     return None

@@ -85,8 +85,10 @@ class TestAffiliateLinksInPlanGeneration:
         original_url = "https://www.viator.com/tours/Barcelona/Sagrada-Familia-Tour/d562-12345"
         result_url = add_affiliate_params(original_url)
         
-        # URL should either be unchanged or only have the static mcid param
-        assert "aid=" not in result_url or result_url == original_url
+        # URL should not have affiliate ID param when not configured
+        assert "aid=" not in result_url
+        # May have static tracking param or be unchanged
+        assert "mcid=cruise-planner-app" in result_url or result_url == original_url
 
     @patch("server.genai.Client")
     def test_plan_generation_processes_affiliate_links(

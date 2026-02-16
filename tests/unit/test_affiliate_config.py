@@ -65,13 +65,16 @@ class TestAddAffiliateParams:
         assert result == url
 
     def test_url_without_configured_affiliate_id(self, monkeypatch):
-        """Test URL is unchanged when affiliate ID is not configured."""
+        """Test URL gets static params but not affiliate ID when ID is not configured."""
         monkeypatch.delenv("VIATOR_AFFILIATE_ID", raising=False)
         url = "https://www.viator.com/tours/Rome/Colosseum-Tour/d511-12345"
         result = add_affiliate_params(url)
 
-        # URL should be unchanged if no affiliate ID is configured
-        assert result == url or "mcid=cruise-planner-app" in result
+        # Should get static param (mcid) even without affiliate ID
+        # This helps with general tracking even if monetization isn't enabled
+        assert "mcid=cruise-planner-app" in result or result == url
+        # Should NOT have affiliate ID param
+        assert "aid=" not in result
 
     def test_url_with_existing_params(self, monkeypatch):
         """Test affiliate params are added to URLs with existing query params."""
@@ -108,6 +111,31 @@ class TestAddAffiliateParams:
 
         assert "aid=test-booking-111" in result
         assert "label=cruise-planner-booking" in result
+
+    def test_domain_matching_security(self):
+        """Test that fake domains don't match legitimate partners."""
+        # A malicious domain should not match our partners
+        fake_viator = "https://www.notviator.com/fake/tour"
+        result = add_affiliate_params(fake_viator)
+        assert result == fake_viator  # Should be unchanged
+
+        fake_klook = "https://www.klook.com.fake.com/activity/123"
+        result2 = add_affiliate_params(fake_klook)
+        assert result2 == fake_klook  # Should be unchanged
+
+    def test_subdomain_support(self, monkeypatch):
+        """Test that legitimate subdomains are supported."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
+        
+        # www.viator.com should work
+        url1 = "https://www.viator.com/tour/123"
+        result1 = add_affiliate_params(url1)
+        assert "aid=test-123" in result1
+        
+        # Direct viator.com should also work
+        url2 = "https://viator.com/tour/123"
+        result2 = add_affiliate_params(url2)
+        assert "aid=test-123" in result2
 
 
 class TestProcessPlanActivities:
