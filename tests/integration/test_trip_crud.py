@@ -163,7 +163,10 @@ def test_get_trip_not_found(mock_trips):
     )
     
     assert response.status_code == 404
-    assert "not found" in response.json()["detail"].lower()
+    detail = response.json()["detail"]
+    # New structured error format
+    assert isinstance(detail, dict)
+    assert "not found" in detail["message"].lower()
 
 
 @patch('backend.server.trips_col')

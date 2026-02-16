@@ -133,8 +133,14 @@ def check_db_connection():
             status_code=503,
             detail={
                 "error": "database_unavailable",
-                "message": "Database service is currently unavailable. Please try again later.",
-                "troubleshooting": "If you're the administrator, check the MONGO_URL environment variable and ensure MongoDB is running.",
+                "message": (
+                    "Database service is currently unavailable. "
+                    "Please try again later."
+                ),
+                "troubleshooting": (
+                    "If you're the administrator, check the MONGO_URL "
+                    "environment variable and ensure MongoDB is running."
+                ),
             },
         )
     try:
@@ -288,7 +294,10 @@ def get_trip(trip_id: str, x_device_id: str = Header()):
                 status_code=404,
                 detail={
                     "error": "trip_not_found",
-                    "message": f"Trip with ID '{trip_id}' not found or you don't have permission to access it.",
+                    "message": (
+                        f"Trip with ID '{trip_id}' not found or you don't "
+                        "have permission to access it."
+                    ),
                     "trip_id": trip_id,
                 },
             )
@@ -323,7 +332,10 @@ def update_trip(trip_id: str, data: TripUpdate, x_device_id: str = Header()):
                 status_code=404,
                 detail={
                     "error": "trip_not_found",
-                    "message": f"Trip with ID '{trip_id}' not found or you don't have permission to update it.",
+                    "message": (
+                        f"Trip with ID '{trip_id}' not found or you don't "
+                        "have permission to update it."
+                    ),
                     "trip_id": trip_id,
                 },
             )
@@ -354,7 +366,10 @@ def delete_trip(trip_id: str, x_device_id: str = Header()):
                 status_code=404,
                 detail={
                     "error": "trip_not_found",
-                    "message": f"Trip with ID '{trip_id}' not found or you don't have permission to delete it.",
+                    "message": (
+                        f"Trip with ID '{trip_id}' not found or you don't "
+                        "have permission to delete it."
+                    ),
                     "trip_id": trip_id,
                 },
             )
@@ -453,7 +468,10 @@ def update_port(
                 status_code=404,
                 detail={
                     "error": "port_not_found",
-                    "message": f"Port with ID '{port_id}' not found in trip '{trip_id}'.",
+                    "message": (
+                        f"Port with ID '{port_id}' not found in "
+                        f"trip '{trip_id}'."
+                    ),
                     "port_id": port_id,
                     "trip_id": trip_id,
                 },
@@ -498,9 +516,13 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
         # Delete associated plans
         deleted_plans = plans_col.delete_many({"port_id": port_id})
         logger.info(
-            f"Removed port {port_id} from trip {trip_id} and deleted {deleted_plans.deleted_count} associated plans"
+            f"Removed port {port_id} from trip {trip_id} and deleted "
+            f"{deleted_plans.deleted_count} associated plans"
         )
-        return {"message": "Port removed", "deleted_plans": deleted_plans.deleted_count}
+        return {
+            "message": "Port removed",
+            "deleted_plans": deleted_plans.deleted_count,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -550,7 +572,10 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
                     status_code=502,
                     detail={
                         "error": "weather_service_unavailable",
-                        "message": "Weather service is temporarily unavailable. Please try again later.",
+                        "message": (
+                            "Weather service is temporarily unavailable. "
+                            "Please try again later."
+                        ),
                         "status_code": resp.status_code,
                     },
                 )
@@ -562,7 +587,9 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
             status_code=504,
             detail={
                 "error": "weather_service_timeout",
-                "message": "Weather service request timed out. Please try again.",
+                "message": (
+                    "Weather service request timed out. Please try again."
+                ),
             },
         )
     except httpx.RequestError as e:
@@ -571,7 +598,10 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
             status_code=502,
             detail={
                 "error": "weather_service_error",
-                "message": "Failed to connect to weather service. Please try again later.",
+                "message": (
+                    "Failed to connect to weather service. "
+                    "Please try again later."
+                ),
                 "technical_details": str(e),
             },
         )
@@ -743,13 +773,22 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     # Check AI service configuration
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
-        logger.error("Plan generation attempted but GOOGLE_API_KEY is not configured")
+        logger.error(
+            "Plan generation attempted but GOOGLE_API_KEY is not configured"
+        )
         raise HTTPException(
             status_code=503,
             detail={
                 "error": "ai_service_not_configured",
-                "message": "AI plan generation service is not configured. Please contact your administrator to set up the GOOGLE_API_KEY environment variable.",
-                "troubleshooting": "Administrators: Set the GOOGLE_API_KEY environment variable with a valid Google Gemini API key.",
+                "message": (
+                    "AI plan generation service is not configured. "
+                    "Please contact your administrator to set up the "
+                    "GOOGLE_API_KEY environment variable."
+                ),
+                "troubleshooting": (
+                    "Administrators: Set the GOOGLE_API_KEY environment "
+                    "variable with a valid Google Gemini API key."
+                ),
             },
         )
 
@@ -781,8 +820,14 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
                 status_code=503,
                 detail={
                     "error": "ai_service_quota_exceeded",
-                    "message": "The AI service has reached its usage quota. This is temporary - please try again in a few minutes.",
-                    "troubleshooting": "Administrators: Check your Google Cloud Console for API quotas and billing status.",
+                    "message": (
+                        "The AI service has reached its usage quota. "
+                        "This is temporary - please try again in a few minutes."
+                    ),
+                    "troubleshooting": (
+                        "Administrators: Check your Google Cloud Console for "
+                        "API quotas and billing status."
+                    ),
                     "retry_after": 300,  # Suggest retry after 5 minutes
                 },
             )
@@ -796,8 +841,14 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
                 status_code=503,
                 detail={
                     "error": "ai_service_auth_failed",
-                    "message": "AI service authentication failed. The API key may be invalid or expired.",
-                    "troubleshooting": "Administrators: Verify the GOOGLE_API_KEY environment variable contains a valid, active API key.",
+                    "message": (
+                        "AI service authentication failed. "
+                        "The API key may be invalid or expired."
+                    ),
+                    "troubleshooting": (
+                        "Administrators: Verify the GOOGLE_API_KEY environment "
+                        "variable contains a valid, active API key."
+                    ),
                 },
             )
         elif api_key == "mock-key-for-testing":
@@ -817,7 +868,10 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
                 status_code=503,
                 detail={
                     "error": "ai_service_unavailable",
-                    "message": "The AI plan generation service is temporarily unavailable. Please try again in a few moments.",
+                    "message": (
+                        "The AI plan generation service is temporarily unavailable. "
+                        "Please try again in a few moments."
+                    ),
                     "technical_details": (
                         str(e) if api_key else "API key not configured"
                     ),
@@ -842,7 +896,10 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         plan_data = {
             "raw_response": response_text,
             "parse_error": True,
-            "error_message": "The AI generated an invalid response format. Please try generating the plan again.",
+            "error_message": (
+                "The AI generated an invalid response format. "
+                "Please try generating the plan again."
+            ),
         }
 
     # Save plan to database
@@ -865,7 +922,9 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         }
         plans_col.insert_one(plan)
         plan.pop("_id", None)
-        logger.info(f"Successfully created plan {plan['plan_id']} for port {port_name}")
+        logger.info(
+            f"Successfully created plan {plan['plan_id']} for port {port_name}"
+        )
         return plan
     except Exception as e:
         logger.error(f"Failed to save plan to database: {str(e)}", exc_info=True)
@@ -873,7 +932,10 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             status_code=500,
             detail={
                 "error": "plan_save_failed",
-                "message": "Generated the plan but failed to save it. Please try again.",
+                "message": (
+                    "Generated the plan but failed to save it. "
+                    "Please try again."
+                ),
                 "technical_details": str(e),
             },
         )
@@ -893,7 +955,10 @@ def get_plan(plan_id: str, x_device_id: str = Header()):
                 status_code=404,
                 detail={
                     "error": "plan_not_found",
-                    "message": f"Plan with ID '{plan_id}' not found or you don't have permission to access it.",
+                    "message": (
+                        f"Plan with ID '{plan_id}' not found or you don't "
+                        "have permission to access it."
+                    ),
                     "plan_id": plan_id,
                 },
             )
@@ -959,7 +1024,10 @@ def delete_plan(plan_id: str, x_device_id: str = Header()):
                 status_code=404,
                 detail={
                     "error": "plan_not_found",
-                    "message": f"Plan with ID '{plan_id}' not found or you don't have permission to delete it.",
+                    "message": (
+                        f"Plan with ID '{plan_id}' not found or you don't "
+                        "have permission to delete it."
+                    ),
                     "plan_id": plan_id,
                 },
             )

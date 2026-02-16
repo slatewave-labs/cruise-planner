@@ -2,12 +2,10 @@
 Test suite for backend error handling and logging improvements.
 """
 
-import json
 import os
 import sys
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 # Import app from parent directory
@@ -130,8 +128,6 @@ class TestWeatherAPIErrors:
 
     def test_weather_service_unavailable(self):
         """Test weather endpoint handles service unavailability."""
-        from unittest.mock import AsyncMock
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = MagicMock()
             mock_client.__aenter__.return_value = mock_client
@@ -151,8 +147,6 @@ class TestWeatherAPIErrors:
 
     def test_weather_service_timeout(self):
         """Test weather endpoint handles timeouts."""
-        from unittest.mock import AsyncMock
-
         import httpx
 
         with patch("httpx.AsyncClient") as mock_client_class:
