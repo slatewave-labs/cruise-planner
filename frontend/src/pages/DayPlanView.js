@@ -5,7 +5,7 @@ import api from '../api';
 import MapView from '../components/MapView';
 import WeatherCard from '../components/WeatherCard';
 import ActivityCard from '../components/ActivityCard';
-import { getCurrencySymbol, cachePlan, getCachedPlan } from '../utils';
+import { getCurrencySymbol, cachePlan, getCachedPlan, getErrorMessage } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -35,7 +35,7 @@ export default function DayPlanView() {
           setPlan(res.data);
           cachePlan(res.data);
         })
-        .catch(() => alert('Failed to load plan'))
+        .catch(err => alert('Failed to load plan: ' + getErrorMessage(err)))
         .finally(() => setLoading(false));
     }
   }, [planId]);

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Users, Activity, Car, DollarSign, Sparkles, Loader2, ArrowLeft, MapPin, AlertTriangle, Coins, History, Clock } from 'lucide-react';
 import api from '../api';
-import CURRENCIES, { cachePlan, getCachedPlansForPort, getCurrencySymbol } from '../utils';
+import CURRENCIES, { cachePlan, getCachedPlansForPort, getCurrencySymbol, getErrorMessage } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -87,7 +87,7 @@ export default function PortPlanner() {
         const p = res.data.ports?.find(p => p.port_id === portId);
         setPort(p);
       })
-      .catch(() => alert('Failed to load trip'))
+      .catch(err => alert('Failed to load trip: ' + getErrorMessage(err)))
       .finally(() => setLoading(false));
     // Load any previously cached plans for this port
     const cached = getCachedPlansForPort(tripId, portId);
@@ -111,8 +111,7 @@ export default function PortPlanner() {
       cachePlan(res.data);
       navigate(`/plans/${res.data.plan_id}`);
     } catch (err) {
-      const detail = err.response?.data?.detail || err.message;
-      setError(detail);
+      setError(getErrorMessage(err));
     } finally {
       setGenerating(false);
     }

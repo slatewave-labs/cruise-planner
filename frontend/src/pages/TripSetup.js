@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Ship, Plus, Trash2, MapPin, Calendar, Clock, ArrowRight, Loader2, Search, Globe } from 'lucide-react';
 import api from '../api';
-import { cacheTrip } from '../utils';
+import { cacheTrip, getErrorMessage } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -50,7 +50,7 @@ export default function TripSetup() {
           setCruiseLine(res.data.cruise_line || '');
           setPorts(res.data.ports || []);
         })
-        .catch(() => alert('Failed to load trip'))
+        .catch(err => alert('Failed to load trip: ' + getErrorMessage(err)))
         .finally(() => setLoading(false));
     }
   }, [tripId, isEdit]);
@@ -126,7 +126,7 @@ export default function TripSetup() {
 
       navigate(`/trips/${savedTripId}`);
     } catch (err) {
-      alert('Failed to save trip: ' + (err.response?.data?.detail || err.message));
+      alert('Failed to save trip: ' + getErrorMessage(err));
     } finally {
       setSaving(false);
     }
