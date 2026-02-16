@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
+from affiliate_config import process_plan_activities
 from ports_data import CRUISE_PORTS
 
 load_dotenv()
@@ -737,6 +738,8 @@ IMPORTANT RULES:
 7. The "total_estimated_cost" must also be in {currency}
 8. Include 5-8 activities appropriate for the preferences
 9. For each activity with costs, include a relevant booking/info URL if known
+10. When suggesting bookable activities, prefer established booking platforms like \
+Viator, GetYourGuide, Klook, TripAdvisor Experiences, or Booking.com when available
 
 Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {{
@@ -883,6 +886,11 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             clean = clean.strip()
         plan_data = json.loads(clean)
         logger.info("Successfully parsed Gemini response as JSON")
+
+        # Process activities to add affiliate tracking parameters
+        if "activities" in plan_data and isinstance(plan_data["activities"], list):
+            plan_data["activities"] = process_plan_activities(plan_data["activities"])
+            logger.info("Processed activities for affiliate links")
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Gemini response as JSON: {str(e)}")
         logger.debug(f"Raw response: {response_text[:500]}")  # Log first 500 chars

@@ -1,6 +1,12 @@
+import sys
+import os
 import pytest
 from pydantic import ValidationError
-from backend.server import TripInput, PlanPreferences, GeneratePlanInput, PortInput
+
+# Add backend directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../backend"))
+
+from server import TripInput, PlanPreferences, GeneratePlanInput, PortInput
 
 def test_trip_input_valid():
     data = {"ship_name": "Wonder of the Seas", "cruise_line": "Royal Caribbean"}
