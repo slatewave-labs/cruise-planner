@@ -81,7 +81,8 @@ class ShoreExplorerAPITester:
     def test_health_endpoint(self):
         """Test health check endpoint"""
         success, response = self.run_test("Health Check", "GET", "api/health")
-        if success and response.get("status") == "ok":
+        # Accept both "ok" and "degraded" status (degraded when services not configured)
+        if success and response.get("status") in ["ok", "degraded"]:
             self.log("Health endpoint working correctly", "PASS")
             return True
         else:

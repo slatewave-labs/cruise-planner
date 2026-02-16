@@ -469,8 +469,7 @@ def update_port(
                 detail={
                     "error": "port_not_found",
                     "message": (
-                        f"Port with ID '{port_id}' not found in "
-                        f"trip '{trip_id}'."
+                        f"Port with ID '{port_id}' not found in " f"trip '{trip_id}'."
                     ),
                     "port_id": port_id,
                     "trip_id": trip_id,
@@ -587,9 +586,7 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
             status_code=504,
             detail={
                 "error": "weather_service_timeout",
-                "message": (
-                    "Weather service request timed out. Please try again."
-                ),
+                "message": ("Weather service request timed out. Please try again."),
             },
         )
     except httpx.RequestError as e:
@@ -599,8 +596,7 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
             detail={
                 "error": "weather_service_error",
                 "message": (
-                    "Failed to connect to weather service. "
-                    "Please try again later."
+                    "Failed to connect to weather service. " "Please try again later."
                 ),
                 "technical_details": str(e),
             },
@@ -773,9 +769,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     # Check AI service configuration
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
-        logger.error(
-            "Plan generation attempted but GOOGLE_API_KEY is not configured"
-        )
+        logger.error("Plan generation attempted but GOOGLE_API_KEY is not configured")
         raise HTTPException(
             status_code=503,
             detail={
@@ -922,9 +916,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         }
         plans_col.insert_one(plan)
         plan.pop("_id", None)
-        logger.info(
-            f"Successfully created plan {plan['plan_id']} for port {port_name}"
-        )
+        logger.info(f"Successfully created plan {plan['plan_id']} for port {port_name}")
         return plan
     except Exception as e:
         logger.error(f"Failed to save plan to database: {str(e)}", exc_info=True)
@@ -933,8 +925,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             detail={
                 "error": "plan_save_failed",
                 "message": (
-                    "Generated the plan but failed to save it. "
-                    "Please try again."
+                    "Generated the plan but failed to save it. " "Please try again."
                 ),
                 "technical_details": str(e),
             },
