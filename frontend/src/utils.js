@@ -154,3 +154,29 @@ export function getCachedPlanCountForTrip(tripId) {
     return 0;
   }
 }
+
+// --- Error Message Extraction ---
+
+/**
+ * Extracts a user-friendly error message from an API error response.
+ * Handles both structured error objects and plain string errors.
+ * 
+ * @param {Error} error - The error object from axios
+ * @returns {string} - A user-friendly error message
+ */
+export function getErrorMessage(error) {
+  const detail = error.response?.data?.detail;
+  
+  // If detail is a structured error object with a message field
+  if (detail && typeof detail === 'object' && detail.message && detail.message.trim()) {
+    return detail.message;
+  }
+  
+  // If detail is a plain string
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+  
+  // Fallback to error.message or generic message
+  return error.message || 'An unexpected error occurred. Please try again.';
+}
