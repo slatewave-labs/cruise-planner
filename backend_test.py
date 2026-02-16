@@ -388,11 +388,13 @@ class ShoreExplorerAPITester:
                 # Check error message contains budget information
                 error_data = response.json()
                 detail = error_data.get("detail", "")
-                if "budget" in detail.lower() and "exceeded" in detail.lower():
+                # Handle new structured error format (dict) or old string format
+                message = detail.get("message", str(detail)) if isinstance(detail, dict) else detail
+                if "budget" in message.lower() and "exceeded" in message.lower():
                     self.log("✅ Budget exceeded returns proper 503 with descriptive error", "PASS")
                     self.tests_passed += 1
                 else:
-                    self.log(f"❌ 503 response but error message not descriptive: {detail}", "FAIL")
+                    self.log(f"❌ 503 response but error message not descriptive: {message}", "FAIL")
             elif response.status_code == 200:
                 self.log("⚠️  Plan generation succeeded (budget may not be exceeded yet)", "WARN")
                 self.tests_passed += 1
