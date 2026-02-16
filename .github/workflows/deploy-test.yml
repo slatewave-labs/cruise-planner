@@ -1,0 +1,190 @@
+name: Deploy to Test
+
+on:
+  # Automatically deploy to test when CI passes on main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+  # Allow manual deployment
+  workflow_dispatch:
+    inputs:
+      skip_ci:
+        description: "Skip waiting for CI"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+  ENVIRONMENT: test
+  PROJECT_NAME: shoreexplorer
+  BACKEND_ECR_REPO: shoreexplorer-backend
+  FRONTEND_ECR_REPO: shoreexplorer-frontend
+
+jobs:
+  deploy-test:
+    name: Deploy to Test Environment
+    runs-on: ubuntu-latest
+    environment: test
+
+    # Only run if CI succeeded (or manual dispatch)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image variables
+        id: vars
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          GIT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          IMAGE_TAG="${ENVIRONMENT}-${GIT_SHA}"
+
+          echo "ecr_base=${ECR_BASE}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "backend_image=${ECR_BASE}/${BACKEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=${ECR_BASE}/${FRONTEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
+
+      # ── Get ALB URL for frontend build ──────────────────────────
+      - name: Get ALB DNS
+        id: alb
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
+            --query "LoadBalancers[0].DNSName" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
+            echo "dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
+            echo "backend_url=http://${ALB_DNS}" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend_url=http://localhost:8001" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Build and push backend ──────────────────────────────────
+      - name: Build backend image
+        run: |
+          docker build \
+            -t "${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}" \
+            -t "${{ steps.vars.outputs.backend_image }}:${ENVIRONMENT}-latest" \
+            -t "${{ steps.vars.outputs.backend_image }}:latest" \
+            -f backend/Dockerfile \
+            backend/
+
+      - name: Push backend image
+        run: |
+          docker push "${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}"
+          docker push "${{ steps.vars.outputs.backend_image }}:${ENVIRONMENT}-latest"
+          docker push "${{ steps.vars.outputs.backend_image }}:latest"
+
+      # ── Build and push frontend ────────────────────────────────
+      - name: Build frontend image
+        run: |
+          docker build \
+            --build-arg REACT_APP_BACKEND_URL="${{ steps.alb.outputs.backend_url }}" \
+            -t "${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}" \
+            -t "${{ steps.vars.outputs.frontend_image }}:${ENVIRONMENT}-latest" \
+            -t "${{ steps.vars.outputs.frontend_image }}:latest" \
+            -f frontend/Dockerfile \
+            frontend/
+
+      - name: Push frontend image
+        run: |
+          docker push "${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}"
+          docker push "${{ steps.vars.outputs.frontend_image }}:${ENVIRONMENT}-latest"
+          docker push "${{ steps.vars.outputs.frontend_image }}:latest"
+
+      # ── Deploy to ECS ──────────────────────────────────────────
+      - name: Update backend ECS service
+        run: |
+          aws ecs update-service \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-backend" \
+            --force-new-deployment \
+            --region "$AWS_REGION"
+
+      - name: Update frontend ECS service
+        run: |
+          aws ecs update-service \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
+            --force-new-deployment \
+            --region "$AWS_REGION"
+
+      - name: Wait for deployment to stabilize
+        run: |
+          echo "Waiting for services to stabilize (up to 10 minutes)..."
+          aws ecs wait services-stable \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
+            --region "$AWS_REGION"
+          echo "Deployment complete!"
+
+      # ── Smoke test ─────────────────────────────────────────────
+      - name: Run smoke test
+        if: steps.alb.outputs.dns != ''
+        run: |
+          echo "Running smoke tests against http://${{ steps.alb.outputs.dns }}"
+
+          # Wait for ALB to register targets
+          sleep 30
+
+          # Test health endpoint
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${{ steps.alb.outputs.dns }}/api/health" \
+            --max-time 30 || echo "000")
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  Health check returned HTTP $HTTP_CODE (may still be starting)"
+          fi
+
+          # Test frontend
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${{ steps.alb.outputs.dns }}/" \
+            --max-time 30 || echo "000")
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  Frontend returned HTTP $HTTP_CODE (may still be starting)"
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Test Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`test\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Tag | \`${{ steps.vars.outputs.image_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "${{ steps.alb.outputs.dns }}" ]]; then
+            echo "| App URL | http://${{ steps.alb.outputs.dns }} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| API Health | http://${{ steps.alb.outputs.dns }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+          fi

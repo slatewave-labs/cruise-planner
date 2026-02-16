@@ -1,0 +1,298 @@
+name: Deploy to Production
+
+on:
+  # Deploy when a version tag is pushed (e.g., v1.0.0)
+  push:
+    tags:
+      - "v*"
+
+  # Allow manual deployment
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (leave empty for latest)"
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+  ENVIRONMENT: prod
+  PROJECT_NAME: shoreexplorer
+  BACKEND_ECR_REPO: shoreexplorer-backend
+  FRONTEND_ECR_REPO: shoreexplorer-frontend
+
+jobs:
+  # ─────────────────────────────────────────────────
+  # Run CI first to make sure everything passes
+  # ─────────────────────────────────────────────────
+  ci-check:
+    name: CI Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx black flake8 isort
+
+      - name: Backend lint
+        run: cd backend && black --check . && isort --check-only . && flake8 .
+
+      - name: Backend tests
+        run: |
+          cd backend
+          pytest tests/ -v --tb=short
+        env:
+          MONGO_URL: mongodb://localhost:27017
+          DB_NAME: shoreexplorer_test
+          GOOGLE_API_KEY: test-key-not-real
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Frontend tests
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+          yarn test --watchAll=false --ci
+        env:
+          CI: true
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+  # ─────────────────────────────────────────────────
+  # Deploy to production (requires approval)
+  # ─────────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: ci-check
+    environment: production  # Requires manual approval if configured
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image variables
+        id: vars
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          GIT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+
+          # Use provided tag or generate one
+          if [[ -n "$INPUT_IMAGE_TAG" ]]; then
+            IMAGE_TAG="$INPUT_IMAGE_TAG"
+          else
+            IMAGE_TAG="${ENVIRONMENT}-${GIT_SHA}"
+          fi
+
+          echo "ecr_base=${ECR_BASE}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "backend_image=${ECR_BASE}/${BACKEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=${ECR_BASE}/${FRONTEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
+
+      - name: Get ALB DNS
+        id: alb
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
+            --query "LoadBalancers[0].DNSName" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
+            echo "dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
+            echo "backend_url=http://${ALB_DNS}" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend_url=http://localhost:8001" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Build and push backend ──────────────────────────────────
+      - name: Build backend image
+        run: |
+          docker build \
+            -t "${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}" \
+            -t "${{ steps.vars.outputs.backend_image }}:${ENVIRONMENT}-latest" \
+            -f backend/Dockerfile \
+            backend/
+
+      - name: Push backend image
+        run: |
+          docker push "${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}"
+          docker push "${{ steps.vars.outputs.backend_image }}:${ENVIRONMENT}-latest"
+
+      # ── Build and push frontend ────────────────────────────────
+      - name: Build frontend image
+        run: |
+          docker build \
+            --build-arg REACT_APP_BACKEND_URL="${{ steps.alb.outputs.backend_url }}" \
+            -t "${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}" \
+            -t "${{ steps.vars.outputs.frontend_image }}:${ENVIRONMENT}-latest" \
+            -f frontend/Dockerfile \
+            frontend/
+
+      - name: Push frontend image
+        run: |
+          docker push "${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}"
+          docker push "${{ steps.vars.outputs.frontend_image }}:${ENVIRONMENT}-latest"
+
+      # ── Deploy to ECS (rolling deployment) ─────────────────────
+      - name: Update backend ECS service
+        run: |
+          aws ecs update-service \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-backend" \
+            --force-new-deployment \
+            --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
+            --region "$AWS_REGION"
+
+      - name: Update frontend ECS service
+        run: |
+          aws ecs update-service \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
+            --force-new-deployment \
+            --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
+            --region "$AWS_REGION"
+
+      - name: Wait for deployment to stabilize
+        run: |
+          echo "Waiting for production services to stabilize (up to 10 minutes)..."
+          aws ecs wait services-stable \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
+            --region "$AWS_REGION"
+          echo "Production deployment complete!"
+
+      # ── Smoke test ─────────────────────────────────────────────
+      - name: Run production smoke test
+        if: steps.alb.outputs.dns != ''
+        run: |
+          echo "Running smoke tests against http://${{ steps.alb.outputs.dns }}"
+          sleep 30
+
+          # Test health endpoint
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${{ steps.alb.outputs.dns }}/api/health" \
+            --max-time 30 --retry 3 --retry-delay 10 || echo "000")
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          # Test frontend
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${{ steps.alb.outputs.dns }}/" \
+            --max-time 30 --retry 3 --retry-delay 10 || echo "000")
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Frontend accessible"
+          else
+            echo "❌ Frontend not accessible (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Production Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`production\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Tag | \`${{ steps.vars.outputs.image_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "${{ steps.alb.outputs.dns }}" ]]; then
+            echo "| App URL | http://${{ steps.alb.outputs.dns }} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| API Health | http://${{ steps.alb.outputs.dns }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ─────────────────────────────────────────────────
+  # Rollback job (manual trigger only)
+  # ─────────────────────────────────────────────────
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    if: failure() && needs.deploy-prod.result == 'failure'
+    needs: deploy-prod
+    environment: production
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Rollback to previous task definition
+        run: |
+          echo "⚠️  Deployment failed. Rolling back..."
+
+          for SERVICE in backend frontend; do
+            FULL_SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-${SERVICE}"
+            FAMILY="${PROJECT_NAME}-${ENVIRONMENT}-${SERVICE}-task"
+
+            # Get the previous task definition (second most recent)
+            PREVIOUS_TD=$(aws ecs list-task-definitions \
+              --family-prefix "$FAMILY" \
+              --sort DESC \
+              --query "taskDefinitionArns[1]" \
+              --output text --region "$AWS_REGION")
+
+            if [[ -n "$PREVIOUS_TD" && "$PREVIOUS_TD" != "None" ]]; then
+              aws ecs update-service \
+                --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+                --service "$FULL_SERVICE" \
+                --task-definition "$PREVIOUS_TD" \
+                --force-new-deployment \
+                --region "$AWS_REGION"
+              echo "Rolled back $SERVICE to: $PREVIOUS_TD"
+            else
+              echo "No previous task definition found for $SERVICE"
+            fi
+          done
+
+      - name: Wait for rollback to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
+            --region "$AWS_REGION"
+          echo "Rollback complete."
