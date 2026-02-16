@@ -55,10 +55,12 @@ jobs:
 
       - name: Set image variables
         id: vars
+        env:
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          GIT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          GIT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
           IMAGE_TAG="${ENVIRONMENT}-${GIT_SHA}"
 
           echo "ecr_base=${ECR_BASE}" >> "$GITHUB_OUTPUT"
