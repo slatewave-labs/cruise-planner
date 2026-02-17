@@ -3,6 +3,7 @@
 # Step 8: Set Up HTTPS for ALB (Optional)
 # =============================================================================
 # Configures HTTPS listener on ALB using AWS Certificate Manager (ACM).
+# Uses a wildcard certificate (*.domain.com) to cover all subdomains.
 # Requires a domain name and DNS control for certificate validation.
 # Usage: ./infra/aws/scripts/08-setup-https.sh <test|prod> <domain-name> [certificate-arn]
 # Example: ./infra/aws/scripts/08-setup-https.sh test shoreexplorer.com
@@ -55,7 +56,7 @@ fi
 DOMAIN_NAME="$2"
 CERTIFICATE_ARN="${3:-}"
 
-print_status "Setting up HTTPS for '$ENVIRONMENT' environment with domain: $DOMAIN_NAME"
+print_status "Setting up HTTPS for '$ENVIRONMENT' environment with wildcard certificate for: *.${DOMAIN_NAME}"
 
 # Load ALB outputs
 ALB_FILE="$SCRIPT_DIR/.alb-outputs-${ENVIRONMENT}.env"
@@ -65,6 +66,32 @@ if [[ ! -f "$ALB_FILE" ]]; then
     exit 1
 fi
 source "$ALB_FILE"
+
+# ---------------------------------------------------------------------------
+# Delete any existing pending certificates (cleanup before creating new one)
+# ---------------------------------------------------------------------------
+PENDING_CERT_ARN="arn:aws:acm:us-east-1:159987617855:certificate/80434a0c-0a98-44dc-9fe5-4a0025b89618"
+
+print_info "Checking for pending certificate to delete: $PENDING_CERT_ARN..."
+PENDING_CERT_STATUS=$(aws acm describe-certificate \
+    --certificate-arn "$PENDING_CERT_ARN" \
+    --region "$AWS_REGION" \
+    --query 'Certificate.Status' \
+    --output text 2>/dev/null || echo "NOT_FOUND")
+
+if [[ "$PENDING_CERT_STATUS" != "NOT_FOUND" ]]; then
+    if [[ "$PENDING_CERT_STATUS" == "PENDING_VALIDATION" || "$PENDING_CERT_STATUS" == "FAILED" ]]; then
+        print_info "Deleting pending certificate: $PENDING_CERT_ARN"
+        aws acm delete-certificate \
+            --certificate-arn "$PENDING_CERT_ARN" \
+            --region "$AWS_REGION" 2>/dev/null || true
+        print_success "Deleted old pending certificate"
+    else
+        print_warning "Existing certificate status: $PENDING_CERT_STATUS (not deleting)"
+    fi
+else
+    print_info "No pending certificate found to delete"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 1: Request or validate certificate
@@ -92,17 +119,17 @@ if [[ -n "$CERTIFICATE_ARN" ]]; then
     
     print_success "Certificate is valid and issued"
 else
-    print_info "Checking for existing certificate for $DOMAIN_NAME..."
+    print_info "Checking for existing wildcard certificate for *.${DOMAIN_NAME}..."
     
-    # Check for existing certificate
+    # Check for existing wildcard certificate
     EXISTING_CERT=$(aws acm list-certificates \
         --region "$AWS_REGION" \
-        --query "CertificateSummaryList[?DomainName=='$DOMAIN_NAME'].CertificateArn" \
+        --query "CertificateSummaryList[?DomainName=='*.${DOMAIN_NAME}'].CertificateArn" \
         --output text 2>/dev/null || echo "")
     
     if [[ -n "$EXISTING_CERT" && "$EXISTING_CERT" != "None" ]]; then
         CERTIFICATE_ARN="$EXISTING_CERT"
-        print_success "Found existing certificate: $CERTIFICATE_ARN"
+        print_success "Found existing wildcard certificate: $CERTIFICATE_ARN"
         
         # Check status
         CERT_STATUS=$(aws acm describe-certificate \
@@ -124,21 +151,25 @@ else
             fi
         fi
     else
-        print_info "Requesting new certificate for $DOMAIN_NAME..."
+        print_info "Requesting new wildcard certificate for *.${DOMAIN_NAME}..."
         
         CERTIFICATE_ARN=$(aws acm request-certificate \
-            --domain-name "$DOMAIN_NAME" \
+            --domain-name "*.${DOMAIN_NAME}" \
             --validation-method DNS \
-            --subject-alternative-names "www.$DOMAIN_NAME" \
+            --subject-alternative-names "${DOMAIN_NAME}" \
             --tags Key=Project,Value="$TAG_PROJECT" Key=Environment,Value="$TAG_ENVIRONMENT" \
             --region "$AWS_REGION" \
             --query 'CertificateArn' \
             --output text)
         
-        print_success "Certificate requested: $CERTIFICATE_ARN"
+        print_success "Wildcard certificate requested: $CERTIFICATE_ARN"
         
         echo ""
         print_warning "IMPORTANT: You must validate domain ownership"
+        echo ""
+        echo "  This wildcard certificate covers:"
+        echo "    *.${DOMAIN_NAME}  (all subdomains: test.${DOMAIN_NAME}, www.${DOMAIN_NAME}, etc.)"
+        echo "    ${DOMAIN_NAME}    (apex domain)"
         echo ""
         echo "  Validation steps:"
         echo "    1. Go to ACM console:"

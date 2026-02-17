@@ -204,17 +204,27 @@ If you're not using Route 53, create a CNAME record:
 
 ## 🔐 Adding HTTPS
 
-After DNS is configured, set up HTTPS:
+After DNS is configured, set up HTTPS with a **wildcard certificate** (recommended):
 
 ```bash
-# For test environment
-./08-setup-https.sh test test.shoreexplorer.com
-
-# For production
-./08-setup-https.sh prod shoreexplorer.com
+# Single command for wildcard certificate covering all subdomains
+# This certificate will work for both test.yourdomain.com AND yourdomain.com
+./08-setup-https.sh test yourdomain.com
 ```
 
-See [HTTPS-SETUP.md](HTTPS-SETUP.md) for detailed HTTPS configuration.
+The wildcard certificate (*.yourdomain.com) covers:
+- test.yourdomain.com (test environment)
+- www.yourdomain.com (production with www)
+- yourdomain.com (apex domain via SAN)
+- Any other subdomains you create in the future
+
+**Benefits:**
+- Single certificate for all environments and subdomains
+- Simplified management and renewal
+- Still completely free with AWS Certificate Manager
+- Automatic coverage for new subdomains
+
+See [HTTPS-SETUP.md](HTTPS-SETUP.md) for detailed HTTPS configuration and wildcard certificate setup.
 
 ---
 
@@ -402,16 +412,20 @@ Typical workflow for multi-environment setup:
 # 1. Setup test environment
 ./setup-all.sh test
 ./09-setup-dns-subdomain.sh test shoreexplorer.com
-./08-setup-https.sh test test.shoreexplorer.com
 
-# 2. Test changes on test.shoreexplorer.com
+# 2. Setup HTTPS with wildcard certificate (covers both test and prod)
+./08-setup-https.sh test shoreexplorer.com
 
-# 3. When ready, setup production
+# 3. Test changes on test.shoreexplorer.com
+
+# 4. When ready, setup production
 ./setup-all.sh prod
 ./09-setup-dns-subdomain.sh prod shoreexplorer.com
-./08-setup-https.sh prod shoreexplorer.com
 
-# 4. Deploy to production
+# 5. Use same wildcard certificate for production (already covers *.shoreexplorer.com)
+./08-setup-https.sh prod shoreexplorer.com <certificate-arn-from-step-2>
+
+# 6. Deploy to production
 ./build-and-deploy.sh prod
 ```
 

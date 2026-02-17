@@ -1,6 +1,8 @@
 # HTTPS Setup Guide for ShoreExplorer
 
-This guide walks you through enabling HTTPS on your ALB (Application Load Balancer) with a free SSL certificate from AWS Certificate Manager (ACM).
+This guide walks you through enabling HTTPS on your ALB (Application Load Balancer) with a free wildcard SSL certificate from AWS Certificate Manager (ACM).
+
+**Key Feature:** We use a **wildcard certificate (*.domain.com)** that covers all subdomains (test.domain.com, www.domain.com, etc.) with a single certificate, simplifying management and deployment.
 
 ## Prerequisites
 
@@ -21,18 +23,51 @@ Before setting up HTTPS, you need:
 
 ## Quick Start
 
-**Single command to set up HTTPS:**
+**Single command to set up HTTPS with wildcard certificate:**
 
 ```bash
 ./infra/aws/scripts/08-setup-https.sh test yourdomain.com
 ```
 
 This will:
-1. Request an SSL certificate from AWS Certificate Manager (free!)
-2. Show you DNS validation records to add
-3. Wait for you to validate the certificate
-4. Create HTTPS listener on port 443
-5. Configure HTTP → HTTPS redirect
+1. Delete any old pending certificates (if present)
+2. Request a wildcard SSL certificate (*.yourdomain.com + yourdomain.com) from AWS Certificate Manager (free!)
+3. Show you DNS validation records to add
+4. Wait for you to validate the certificate
+5. Create HTTPS listener on port 443
+6. Configure HTTP → HTTPS redirect
+
+**Why wildcard certificate?**
+- Single certificate covers all subdomains (test.yourdomain.com, www.yourdomain.com, etc.)
+- Easier to manage - no need to request separate certificates for each environment
+- Cost-effective - still completely free with ACM
+- Future-proof - automatically covers any new subdomains you create
+
+---
+
+## Understanding Wildcard Certificates
+
+### What is a Wildcard Certificate?
+
+A wildcard certificate uses an asterisk (*) to cover all first-level subdomains of a domain. For example:
+
+- Certificate domain: **\*.yourdomain.com**
+- Covers: test.yourdomain.com, www.yourdomain.com, api.yourdomain.com, staging.yourdomain.com, etc.
+- Also includes: **yourdomain.com** (apex domain) via Subject Alternative Name (SAN)
+
+### Benefits for ShoreExplorer
+
+1. **Simplified Management**: One certificate covers both test (test.yourdomain.com) and production (yourdomain.com or www.yourdomain.com) environments
+2. **Cost**: Still completely free with AWS Certificate Manager (ACM)
+3. **Automatic Renewal**: ACM auto-renews as long as DNS validation records remain in place
+4. **Future-Proof**: Automatically covers any new subdomains you create (e.g., staging.yourdomain.com, dev.yourdomain.com)
+5. **Reduced Complexity**: No need to manage separate certificates for each environment or subdomain
+
+### Trade-offs
+
+- **Security**: Slightly less secure than individual certificates (if one subdomain is compromised, the certificate could potentially be misused for other subdomains)
+- **Granularity**: Cannot revoke access for a specific subdomain without affecting all subdomains
+- **Best Practice**: For most use cases, including ShoreExplorer, the benefits far outweigh the minimal security trade-offs
 
 ---
 
@@ -112,10 +147,14 @@ cd infra/aws/scripts
 ```
 === Step 1: SSL Certificate ===
 
-ℹ Requesting new certificate for yourdomain.com...
-✓ Certificate requested: arn:aws:acm:us-east-1:123456789012:certificate/abc123...
+ℹ Requesting new wildcard certificate for *.yourdomain.com...
+✓ Wildcard certificate requested: arn:aws:acm:us-east-1:123456789012:certificate/abc123...
 
 ⚠ IMPORTANT: You must validate domain ownership
+
+  This wildcard certificate covers:
+    *.yourdomain.com  (all subdomains: test.yourdomain.com, www.yourdomain.com, etc.)
+    yourdomain.com    (apex domain)
 
   Validation steps:
     1. Go to ACM console: https://console.aws.amazon.com/acm/home?region=us-east-1
@@ -127,8 +166,8 @@ cd infra/aws/scripts
 
   Validation details:
   +-------------------+------------------------------+------------------------------+
-  | yourdomain.com    | _abc123.yourdomain.com      | _def456.acm-validations.aws. |
-  | www.yourdomain.com| _ghi789.www.yourdomain.com  | _jkl012.acm-validations.aws. |
+  | *.yourdomain.com  | _abc123.yourdomain.com      | _def456.acm-validations.aws. |
+  | yourdomain.com    | _ghi789.yourdomain.com      | _jkl012.acm-validations.aws. |
   +-------------------+------------------------------+------------------------------+
 ```
 
@@ -149,14 +188,14 @@ You need to prove you own the domain by adding DNS records.
 #### Option B: Using 123-reg.com (Manual)
 
 1. Go to ACM console: https://console.aws.amazon.com/acm/home?region=us-east-1
-2. Click on your certificate
-3. Copy the **CNAME Name** and **CNAME Value** for each domain
+2. Click on your wildcard certificate
+3. Copy the **CNAME Name** and **CNAME Value** for each domain (*.yourdomain.com and yourdomain.com)
 4. Log in to [123-reg.com Control Panel](https://www.123-reg.co.uk/secure/cpanel/domain/overview)
 5. Select your domain → click **"Manage DNS"**
 6. Scroll down to the **"Advanced DNS"** section
 7. Add CNAME records:
 
-   **Example for yourdomain.com:**
+   **Example for *.yourdomain.com (wildcard):**
    ```
    Type:     CNAME
    Hostname: _abc123def456ghi789   (IMPORTANT: only the part BEFORE .yourdomain.com)
@@ -164,10 +203,10 @@ You need to prove you own the domain by adding DNS records.
    TTL:      300
    ```
 
-   **Example for www.yourdomain.com:**
+   **Example for yourdomain.com (apex):**
    ```
    Type:     CNAME
-   Hostname: _stu901vwx234yza567.www   (IMPORTANT: only the part BEFORE .yourdomain.com)
+   Hostname: _stu901vwx234yza567   (IMPORTANT: only the part BEFORE .yourdomain.com)
    Target:   _bcd890efg123hij456.acm-validations.aws.
    TTL:      300
    ```
@@ -178,6 +217,7 @@ You need to prove you own the domain by adding DNS records.
    > - If 123-reg strips the leading underscore (`_`), try entering it with and without — ACM requires the underscore.
    > - 123-reg calls the value field **"Destination"** — paste the full ACM CNAME value here.
    > - DNS propagation on 123-reg typically takes **15-45 minutes** but can take up to 24 hours.
+   > - **Wildcard note:** The wildcard certificate requires validation for both *.yourdomain.com and yourdomain.com, so you'll need to add both CNAME records.
 
 8. Click **"Add"** for each record, then **Save**
 9. Wait 15-45 minutes for DNS propagation
@@ -194,12 +234,12 @@ You should see the ACM validation value in the response. If not, wait longer or 
 #### Option C: Using Another DNS Provider (Manual)
 
 1. Go to ACM console: https://console.aws.amazon.com/acm/home?region=us-east-1
-2. Click on your certificate
-3. Copy the CNAME Name and CNAME Value for each domain
+2. Click on your wildcard certificate
+3. Copy the CNAME Name and CNAME Value for each domain (*.yourdomain.com and yourdomain.com)
 4. Go to your DNS provider (GoDaddy, Namecheap, etc.)
 5. Add CNAME records:
 
-   **Example for yourdomain.com:**
+   **Example for *.yourdomain.com (wildcard):**
    ```
    Type:  CNAME
    Name:  _abc123def456ghi789  (the part before .yourdomain.com)
@@ -207,10 +247,10 @@ You should see the ACM validation value in the response. If not, wait longer or 
    TTL:   300 (or default)
    ```
 
-   **Example for www.yourdomain.com:**
+   **Example for yourdomain.com (apex):**
    ```
    Type:  CNAME
-   Name:  _stu901vwx234yza567.www  (the part before .yourdomain.com)
+   Name:  _stu901vwx234yza567  (the part before .yourdomain.com)
    Value: _bcd890efg123hij456.acm-validations.aws.
    TTL:   300 (or default)
    ```
