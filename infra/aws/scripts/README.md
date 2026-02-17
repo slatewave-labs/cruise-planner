@@ -51,6 +51,7 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
 | `06-create-alb.sh` | Create ALB, target groups, listeners | Rarely needed (included in setup-all) |
 | `07-create-ecs-services.sh` | Create ECS services and task definitions | Rarely needed (included in setup-all) |
 | `08-setup-https.sh` | Configure HTTPS with SSL certificate | Optional - when you have a domain |
+| `09-setup-dns-subdomain.sh` | Configure Route 53 subdomain (test) or apex domain (prod) | Optional - when you have a Route 53 hosted zone |
 
 ### Deployment Scripts (Run Often)
 
@@ -150,6 +151,43 @@ To enable HTTPS on your ALB with a free SSL certificate:
 5. **Point your domain to ALB** (script will show instructions)
 
 **Full guide:** See [../HTTPS-SETUP.md](../HTTPS-SETUP.md)
+
+### Set Up DNS Subdomain (Optional)
+
+To configure a subdomain for test environment (test.yourdomain.com) or apex domain for production:
+
+**Prerequisites:**
+- A registered domain name
+- Route 53 hosted zone for your domain
+
+**Usage:**
+```bash
+# For test environment (creates test.yourdomain.com)
+./09-setup-dns-subdomain.sh test yourdomain.com
+
+# For production (creates yourdomain.com)
+./09-setup-dns-subdomain.sh prod yourdomain.com
+```
+
+This script will:
+- Automatically find your Route 53 hosted zone
+- Create an ALIAS record pointing to your ALB
+- Configure the appropriate subdomain based on environment:
+  - **Test**: `test.yourdomain.com`
+  - **Production**: `yourdomain.com` (no subdomain)
+
+**Example:**
+```bash
+# Setup test environment subdomain
+./09-setup-dns-subdomain.sh test shoreexplorer.com
+# Result: test.shoreexplorer.com → ALB DNS
+
+# Setup production apex domain
+./09-setup-dns-subdomain.sh prod shoreexplorer.com
+# Result: shoreexplorer.com → ALB DNS
+```
+
+**Note:** DNS propagation may take 5-60 minutes.
 
 ### Troubleshoot Connection Issues
 

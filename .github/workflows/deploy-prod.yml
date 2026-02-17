@@ -126,18 +126,29 @@ jobs:
 
       - name: Get ALB DNS
         id: alb
+        env:
+          CUSTOM_DOMAIN: ${{ secrets.PROD_DOMAIN || '' }}
         run: |
           ALB_DNS=$(aws elbv2 describe-load-balancers \
             --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
             --query "LoadBalancers[0].DNSName" \
             --output text --region "$AWS_REGION" 2>/dev/null || echo "")
 
-          if [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
-            echo "dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
-            echo "backend_url=http://${ALB_DNS}" >> "$GITHUB_OUTPUT"
+          # Use custom domain if configured, otherwise use ALB DNS
+          if [[ -n "$CUSTOM_DOMAIN" ]]; then
+            # Production environment uses apex domain (no subdomain)
+            BACKEND_URL="http://${CUSTOM_DOMAIN}"
+            echo "Using custom domain: ${CUSTOM_DOMAIN}"
+          elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
+            BACKEND_URL="http://${ALB_DNS}"
+            echo "Using ALB DNS: ${ALB_DNS}"
           else
-            echo "backend_url=http://localhost:8001" >> "$GITHUB_OUTPUT"
+            BACKEND_URL="http://localhost:8001"
+            echo "Using localhost fallback"
           fi
+
+          echo "dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
+          echo "backend_url=${BACKEND_URL}" >> "$GITHUB_OUTPUT"
 
       # ── Build and push backend ──────────────────────────────────
       - name: Build backend image
@@ -198,14 +209,16 @@ jobs:
 
       # ── Smoke test ─────────────────────────────────────────────
       - name: Run production smoke test
-        if: steps.alb.outputs.dns != ''
+        if: steps.alb.outputs.backend_url != 'http://localhost:8001'
+        env:
+          BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
         run: |
-          echo "Running smoke tests against http://${{ steps.alb.outputs.dns }}"
+          echo "Running smoke tests against ${BACKEND_URL}"
           sleep 30
 
           # Test health endpoint
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "http://${{ steps.alb.outputs.dns }}/api/health" \
+            "${BACKEND_URL}/api/health" \
             --max-time 30 --retry 3 --retry-delay 10 || echo "000")
 
           if [[ "$HTTP_CODE" == "200" ]]; then
@@ -215,9 +228,10 @@ jobs:
             exit 1
           fi
 
-          # Test frontend
+          # Test frontend (use same base URL without /api)
+          FRONTEND_URL="${BACKEND_URL%/api*}"
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "http://${{ steps.alb.outputs.dns }}/" \
+            "${FRONTEND_URL}/" \
             --max-time 30 --retry 3 --retry-delay 10 || echo "000")
 
           if [[ "$HTTP_CODE" == "200" ]]; then
@@ -229,6 +243,8 @@ jobs:
 
       - name: Deployment summary
         if: always()
+        env:
+          BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
         run: |
           echo "## Production Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -238,9 +254,9 @@ jobs:
           echo "| Image Tag | \`${{ steps.vars.outputs.image_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Tag | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          if [[ -n "${{ steps.alb.outputs.dns }}" ]]; then
-            echo "| App URL | http://${{ steps.alb.outputs.dns }} |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| API Health | http://${{ steps.alb.outputs.dns }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${BACKEND_URL}" != "http://localhost:8001" ]]; then
+            echo "| App URL | ${BACKEND_URL} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| API Health | ${BACKEND_URL}/api/health |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # ─────────────────────────────────────────────────
