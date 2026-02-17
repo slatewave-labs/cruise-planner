@@ -464,11 +464,23 @@ Full terms and conditions for each service are available in the app at the **Ter
 
 This application has been migrated from the Emergent platform to run on AWS with MongoDB Atlas M0.
 
-**Quick Deployment Options:**
+### 🚨 Connection Issues?
+
+If you're getting a "connection closed" error when accessing the deployed environment:
+
+**→ See [CONNECTION-ERROR-FIX.md](./CONNECTION-ERROR-FIX.md) for the quick fix** (TL;DR: Use `http://` not `https://`)
+
+### Quick Deployment Options
 
 1. **Docker Compose** (Local/VPS) - See root `docker-compose.yml`
 2. **AWS Deployment** - See `infra/deployment/AWS-DEPLOYMENT.md` for complete guide
 3. **Production Infrastructure** - See scaffolds below
+
+### AWS Troubleshooting & Diagnostics
+
+- **Quick Fix:** Run `./infra/aws/scripts/quick-fix-alb.sh test` to auto-fix common issues
+- **Diagnostics:** Run `./infra/aws/scripts/diagnose-alb.sh test` for detailed health check
+- **Full Guide:** See [infra/aws/TROUBLESHOOTING.md](./infra/aws/TROUBLESHOOTING.md)
 
 The `infra/` folder contains **scaffold files** (marked with TODO comments) for production infrastructure. These are ready to be picked up and completed:
 
