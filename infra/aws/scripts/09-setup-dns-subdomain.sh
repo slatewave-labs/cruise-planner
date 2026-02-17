@@ -56,12 +56,12 @@ fi
 
 DOMAIN_NAME="$2"
 
-# Determine full domain based on environment
+# Determine full domain based on environment using config helper
+FULL_DOMAIN=$(get_full_domain "$DOMAIN_NAME")
+
 if [[ "$ENVIRONMENT" == "test" ]]; then
-    FULL_DOMAIN="test.${DOMAIN_NAME}"
     print_status "Setting up DNS subdomain for test: $FULL_DOMAIN"
 else
-    FULL_DOMAIN="$DOMAIN_NAME"
     print_status "Setting up DNS for production: $FULL_DOMAIN"
 fi
 
