@@ -126,8 +126,9 @@ get_account_id() {
 # Example: get_full_domain "shoreexplorer.com" → "test.shoreexplorer.com" (test) or "shoreexplorer.com" (prod)
 get_full_domain() {
     local base_domain="$1"
-    if [[ "$ENVIRONMENT" == "test" ]]; then
-        echo "test.${base_domain}"
+    # Use SUBDOMAIN variable - if set, prepend it with a dot
+    if [[ -n "$SUBDOMAIN" ]]; then
+        echo "${SUBDOMAIN}.${base_domain}"
     else
         echo "$base_domain"
     fi
