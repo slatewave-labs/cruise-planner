@@ -162,7 +162,22 @@ aws ecs update-service \
 
 ### Long-term (optional HTTPS setup):
 
-To enable HTTPS:
+To enable HTTPS, use the automated setup script:
+
+```bash
+./infra/aws/scripts/08-setup-https.sh test yourdomain.com
+```
+
+This will:
+1. Request a free SSL certificate from AWS Certificate Manager
+2. Guide you through DNS validation
+3. Create HTTPS listener on port 443
+4. Configure HTTP → HTTPS redirect
+5. Show you how to point your domain to the ALB
+
+**📖 Full guide:** See [infra/aws/HTTPS-SETUP.md](./infra/aws/HTTPS-SETUP.md) for complete step-by-step instructions.
+
+**Manual steps (if you prefer):**
 
 1. **Get a domain name**
    - Use Route 53 or any domain registrar
@@ -195,5 +210,7 @@ To enable HTTPS:
 **Quick fix:** Use `http://` in the URL
 
 **If that doesn't work:** Run `./infra/aws/scripts/diagnose-alb.sh test` and `./infra/aws/scripts/quick-fix-alb.sh test`
+
+**For HTTPS setup:** See [infra/aws/HTTPS-SETUP.md](./infra/aws/HTTPS-SETUP.md)
 
 **For detailed help:** See [infra/aws/TROUBLESHOOTING.md](./TROUBLESHOOTING.md)

@@ -76,17 +76,30 @@ I've created comprehensive troubleshooting resources:
 1. **Quick Reference:** [CONNECTION-ERROR-FIX.md](./CONNECTION-ERROR-FIX.md)
 2. **Full Guide:** [infra/aws/TROUBLESHOOTING.md](./infra/aws/TROUBLESHOOTING.md)
 3. **Scripts Docs:** [infra/aws/scripts/README.md](./infra/aws/scripts/README.md)
+4. **HTTPS Setup:** [infra/aws/HTTPS-SETUP.md](./infra/aws/HTTPS-SETUP.md)
 
 ## Setting Up HTTPS (Optional - For Later)
 
-If you want HTTPS in the future, you'll need to:
+If you want HTTPS in the future, we now have an **automated setup script**:
 
-1. Register a domain name (e.g., via Route 53)
-2. Request an SSL certificate in AWS Certificate Manager
-3. Add an HTTPS listener to your ALB
-4. Point your domain to the ALB DNS
+```bash
+./infra/aws/scripts/08-setup-https.sh test yourdomain.com
+```
 
-See [CONNECTION-ERROR-FIX.md](./CONNECTION-ERROR-FIX.md) section "Long-term (optional HTTPS setup)" for detailed steps.
+This will:
+- ✓ Request a free SSL certificate from AWS Certificate Manager
+- ✓ Guide you through DNS validation
+- ✓ Create HTTPS listener on port 443
+- ✓ Configure HTTP → HTTPS redirect
+- ✓ Show you how to point your domain to the ALB
+
+**📖 Full step-by-step guide:** [infra/aws/HTTPS-SETUP.md](./infra/aws/HTTPS-SETUP.md)
+
+**Requirements:**
+1. A domain name (~$12/year)
+2. Access to DNS settings for validation
+
+**Cost:** Only the domain registration (~$12/year) - SSL certificate is FREE from AWS!
 
 ## Summary
 

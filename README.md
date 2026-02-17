@@ -480,7 +480,9 @@ If you're getting a "connection closed" error when accessing the deployed enviro
 
 - **Quick Fix:** Run `./infra/aws/scripts/quick-fix-alb.sh test` to auto-fix common issues
 - **Diagnostics:** Run `./infra/aws/scripts/diagnose-alb.sh test` for detailed health check
+- **HTTPS Setup:** Run `./infra/aws/scripts/08-setup-https.sh test yourdomain.com` to enable HTTPS
 - **Full Guide:** See [infra/aws/TROUBLESHOOTING.md](./infra/aws/TROUBLESHOOTING.md)
+- **HTTPS Guide:** See [infra/aws/HTTPS-SETUP.md](./infra/aws/HTTPS-SETUP.md)
 
 The `infra/` folder contains **scaffold files** (marked with TODO comments) for production infrastructure. These are ready to be picked up and completed:
 

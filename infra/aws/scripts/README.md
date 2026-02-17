@@ -50,6 +50,7 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
 | `05-create-secrets.sh` | Create Secrets Manager secrets | Rarely needed (included in setup-all) |
 | `06-create-alb.sh` | Create ALB, target groups, listeners | Rarely needed (included in setup-all) |
 | `07-create-ecs-services.sh` | Create ECS services and task definitions | Rarely needed (included in setup-all) |
+| `08-setup-https.sh` | Configure HTTPS with SSL certificate | Optional - when you have a domain |
 
 ### Deployment Scripts (Run Often)
 
@@ -125,6 +126,30 @@ If you need to change MongoDB connection, API keys, etc.:
 # Then redeploy to pick up new values
 ./deploy.sh test
 ```
+
+### Set Up HTTPS (Optional)
+
+To enable HTTPS on your ALB with a free SSL certificate:
+
+1. **Get a domain name** (if you don't have one):
+   - Register at Route 53, GoDaddy, Namecheap, etc.
+   - Cost: ~$12/year
+
+2. **Run HTTPS setup script:**
+   ```bash
+   ./08-setup-https.sh test yourdomain.com
+   ```
+
+3. **Follow prompts to validate certificate** (DNS validation required)
+
+4. **Re-run after validation completes:**
+   ```bash
+   ./08-setup-https.sh test yourdomain.com <certificate-arn>
+   ```
+
+5. **Point your domain to ALB** (script will show instructions)
+
+**Full guide:** See [../HTTPS-SETUP.md](../HTTPS-SETUP.md)
 
 ### Troubleshoot Connection Issues
 
