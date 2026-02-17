@@ -324,21 +324,43 @@ The setup script will print the URLs when it finishes.
 
 ## Troubleshooting
 
-### "Access Denied" errors when running scripts
+> **For detailed troubleshooting, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**
+
+### Quick Diagnostics
+
+Run the automated diagnostic script to check your deployment:
+
+```bash
+./infra/aws/scripts/diagnose-alb.sh test   # For test environment
+./infra/aws/scripts/diagnose-alb.sh prod  # For production
+```
+
+This will check:
+- ✓ ALB status and configuration
+- ✓ Security group rules
+- ✓ Target group health
+- ✓ ECS services
+- ✓ Connectivity
+
+### Common Issues
+
+#### "Access Denied" errors when running scripts
 - Make sure you completed Step 3 (IAM User) correctly
 - Run `aws sts get-caller-identity` to verify your credentials
 - Make sure all 7 policies are attached to the user
 
-### "Resource already exists" errors
+#### "Resource already exists" errors
 - This is usually fine — the scripts skip resources that already exist
 - If you need to start fresh, run: `./infra/aws/scripts/teardown.sh test`
 
-### Can't connect to the app after deployment
-- Wait 2-3 minutes for the load balancer to start
-- Check the health: `curl http://<your-alb-url>/api/health`
-- Look at logs: `aws logs tail /ecs/shoreexplorer-test-backend --follow`
+#### Connection closed / Can't access the app
+- **Important:** Use `http://` not `https://` (HTTPS not configured by default)
+- Run diagnostic script: `./infra/aws/scripts/diagnose-alb.sh test`
+- Wait 2-3 minutes for the load balancer to fully provision
+- Check security groups allow port 80
+- See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for detailed diagnosis
 
-### MongoDB connection errors
+#### MongoDB connection errors
 - Verify your connection string in Secrets Manager
 - Make sure MongoDB Atlas allows connections from `0.0.0.0/0`
 - Check: did you replace `<password>` in the connection string?

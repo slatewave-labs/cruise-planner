@@ -290,6 +290,23 @@ When you outgrow free tiers:
 
 ## Troubleshooting
 
+> **For comprehensive AWS infrastructure troubleshooting, see [../aws/TROUBLESHOOTING.md](../aws/TROUBLESHOOTING.md)**
+
+### Quick Diagnostics (AWS ECS Deployments)
+
+Run the automated diagnostic script:
+
+```bash
+./infra/aws/scripts/diagnose-alb.sh test   # For test environment
+./infra/aws/scripts/diagnose-alb.sh prod  # For production
+```
+
+This checks:
+- ALB status and security groups
+- Target group health
+- ECS service status
+- Connectivity tests
+
 ### Backend fails to start
 
 **Check MongoDB connection:**
@@ -297,7 +314,12 @@ When you outgrow free tiers:
 docker compose logs backend | grep -i mongo
 ```
 
-**Verify Atlas IP whitelist includes 0.0.0.0/0 or your EC2 IP**
+**For AWS ECS:**
+```bash
+aws logs tail "/ecs/shoreexplorer-test-backend" --follow --region us-east-1
+```
+
+**Verify Atlas IP whitelist includes 0.0.0.0/0 or your AWS VPC CIDR**
 
 ### Plan generation fails
 
@@ -309,6 +331,15 @@ curl -X POST "http://localhost:8001/api/plans/generate" \
 ```
 
 **Verify rate limits haven't been exceeded**
+
+### Connection closed / Can't access deployment
+
+**Important:** AWS ALB uses HTTP (port 80) by default, not HTTPS.
+
+- Use `http://` not `https://` when accessing the ALB URL
+- Run diagnostics: `./infra/aws/scripts/diagnose-alb.sh test`
+- Check security groups allow port 80 from 0.0.0.0/0
+- See [../aws/TROUBLESHOOTING.md](../aws/TROUBLESHOOTING.md) for detailed diagnosis
 
 ### Frontend can't reach backend
 
