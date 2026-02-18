@@ -14,12 +14,8 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 from affiliate_config import process_plan_activities
-from llm_client import (
-    LLMAPIError,
-    LLMAuthenticationError,
-    LLMClient,
-    LLMQuotaExceededError,
-)
+from llm_client import (LLMAPIError, LLMAuthenticationError, LLMClient,
+                        LLMQuotaExceededError)
 from ports_data import CRUISE_PORTS
 
 load_dotenv()
