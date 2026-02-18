@@ -55,7 +55,9 @@ Added steps to register backend and frontend task definitions **before** updatin
 
 - name: Update backend ECS service
   run: |
-    aws ecs update-service --force-new-deployment ...
+    aws ecs update-service \
+      --task-definition "${PROJECT_NAME}-${ENVIRONMENT}-backend-task" \
+      --force-new-deployment ...
 ```
 
 ### 2. `.github/workflows/deploy-prod.yml`
@@ -80,8 +82,8 @@ else
     # Register frontend task definition
     aws ecs register-task-definition --cli-input-json "$FRONTEND_TASK_DEF" ...
     
-    # Then update services
-    aws ecs update-service --force-new-deployment ...
+    # Then update services with the new task definition
+    aws ecs update-service --task-definition "$BACKEND_TASK_FAMILY" --force-new-deployment ...
 fi
 ```
 
@@ -152,9 +154,10 @@ aws secretsmanager get-secret-value \
 To prevent similar issues in the future:
 
 1. **Always re-register task definitions** when deploying, even if just forcing a new deployment
-2. **Keep GitHub workflows in sync** with infrastructure scripts (like `07-create-ecs-services.sh`)
-3. **Test deployments** after making environment variable changes
-4. **Document environment variables** in `README.md` and update when changing
+2. **Always specify `--task-definition`** in `aws ecs update-service` calls so the service picks up the latest registered revision
+3. **Keep GitHub workflows in sync** with infrastructure scripts (like `07-create-ecs-services.sh`)
+4. **Test deployments** after making environment variable changes
+5. **Document environment variables** in `README.md` and update when changing
 
 ## Related Files
 

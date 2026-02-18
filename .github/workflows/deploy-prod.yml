@@ -300,6 +300,7 @@ jobs:
           aws ecs update-service \
             --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
             --service "${PROJECT_NAME}-${ENVIRONMENT}-backend" \
+            --task-definition "${PROJECT_NAME}-${ENVIRONMENT}-backend-task" \
             --force-new-deployment \
             --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
             --region "$AWS_REGION"
@@ -309,6 +310,7 @@ jobs:
           aws ecs update-service \
             --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
             --service "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
+            --task-definition "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task" \
             --force-new-deployment \
             --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
             --region "$AWS_REGION"
