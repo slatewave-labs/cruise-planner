@@ -6,14 +6,14 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
+from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 from affiliate_config import process_plan_activities
+from dynamodb_client import DynamoDBClient
 from llm_client import (
     LLMAPIError,
     LLMAuthenticationError,
@@ -63,28 +63,26 @@ async def add_request_id(request: Request, call_next):
     return response
 
 
-# MongoDB connection with error handling
-mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-db_name = os.environ.get("DB_NAME", "shoreexplorer")
+# DynamoDB connection with error handling
+table_name = os.environ.get("DYNAMODB_TABLE_NAME", "shoreexplorer")
+region_name = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+endpoint_url = os.environ.get("DYNAMODB_ENDPOINT_URL")  # For local development
 
 try:
-    mongo_client: MongoClient = MongoClient(
-        mongo_url, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000
+    db_client = DynamoDBClient(
+        table_name=table_name, region_name=region_name, endpoint_url=endpoint_url
     )
     # Test connection
-    mongo_client.admin.command("ping")
-    logger.info(f"Successfully connected to MongoDB at {mongo_url}")
-    db = mongo_client[db_name]
-    trips_col = db["trips"]
-    plans_col = db["plans"]
-except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-    logger.error(f"Failed to connect to MongoDB at {mongo_url}: {str(e)}")
-    # Create placeholder collections to avoid immediate startup failure
+    db_client.ping()
+    logger.info(
+        f"Successfully connected to DynamoDB table '{table_name}' "
+        f"in region '{region_name}'"
+    )
+except (BotoCoreError, ClientError) as e:
+    logger.error(f"Failed to connect to DynamoDB: {str(e)}")
+    # Create placeholder client to avoid immediate startup failure
     # The actual operations will fail with informative errors
-    mongo_client = None
-    db = None
-    trips_col = None
-    plans_col = None
+    db_client = None
 
 # --- Pydantic Models ---
 
@@ -125,16 +123,10 @@ class GeneratePlanInput(BaseModel):
 # --- Helper ---
 
 
-def serialize_doc(doc):
-    if doc and "_id" in doc:
-        doc.pop("_id")
-    return doc
-
-
 def check_db_connection():
     """Check if database is available and raise informative error if not."""
-    if mongo_client is None or db is None:
-        logger.error("Database operation attempted but MongoDB is not connected")
+    if db_client is None:
+        logger.error("Database operation attempted but DynamoDB is not connected")
         raise HTTPException(
             status_code=503,
             detail={
@@ -144,13 +136,13 @@ def check_db_connection():
                     "Please try again later."
                 ),
                 "troubleshooting": (
-                    "If you're the administrator, check the MONGO_URL "
-                    "environment variable and ensure MongoDB is running."
+                    "If you're the administrator, check the DYNAMODB_TABLE_NAME "
+                    "and AWS credentials, and ensure DynamoDB table exists."
                 ),
             },
         )
     try:
-        mongo_client.admin.command("ping")
+        db_client.ping()
     except Exception as e:
         logger.error(f"Database ping failed: {str(e)}")
         raise HTTPException(
@@ -178,8 +170,8 @@ def health():
 
     # Check database
     try:
-        if mongo_client is not None:
-            mongo_client.admin.command("ping")
+        if db_client is not None:
+            db_client.ping()
             status["checks"]["database"] = "healthy"
         else:
             status["checks"]["database"] = "not_configured"
@@ -247,9 +239,9 @@ def create_trip(data: TripInput, x_device_id: str = Header()):
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        trips_col.insert_one(trip)
+        db_client.create_trip(trip)
         logger.info(f"Created trip {trip['trip_id']} for device {x_device_id}")
-        return serialize_doc(trip)
+        return trip
     except Exception as e:
         logger.error(f"Failed to create trip: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -267,12 +259,7 @@ def list_trips(x_device_id: str = Header(), skip: int = 0, limit: int = 100):
     """List all trips for a device."""
     check_db_connection()
     try:
-        trips = list(
-            trips_col.find({"device_id": x_device_id}, {"_id": 0})
-            .sort("created_at", -1)
-            .skip(skip)
-            .limit(limit)
-        )
+        trips = db_client.list_trips(x_device_id, skip=skip, limit=limit)
         logger.info(f"Listed {len(trips)} trips for device {x_device_id}")
         return trips
     except Exception as e:
@@ -291,9 +278,7 @@ def get_trip(trip_id: str, x_device_id: str = Header()):
     """Get details of a specific trip."""
     check_db_connection()
     try:
-        trip = trips_col.find_one(
-            {"trip_id": trip_id, "device_id": x_device_id}, {"_id": 0}
-        )
+        trip = db_client.get_trip(trip_id, x_device_id)
         if not trip:
             logger.warning(f"Trip {trip_id} not found for device {x_device_id}")
             raise HTTPException(
@@ -329,10 +314,9 @@ def update_trip(trip_id: str, data: TripUpdate, x_device_id: str = Header()):
     try:
         updates = {k: v for k, v in data.model_dump().items() if v is not None}
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-        result = trips_col.update_one(
-            {"trip_id": trip_id, "device_id": x_device_id}, {"$set": updates}
-        )
-        if result.matched_count == 0:
+
+        updated_trip = db_client.update_trip(trip_id, x_device_id, updates)
+        if not updated_trip:
             logger.warning(f"Trip {trip_id} not found for update")
             raise HTTPException(
                 status_code=404,
@@ -346,8 +330,18 @@ def update_trip(trip_id: str, data: TripUpdate, x_device_id: str = Header()):
                 },
             )
         logger.info(f"Updated trip {trip_id}")
-        return trips_col.find_one({"trip_id": trip_id}, {"_id": 0})
+        return updated_trip
     except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update trip {trip_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "trip_update_failed",
+                "message": "Failed to update trip. Please try again.",
+            },
+        )
         raise
     except Exception as e:
         logger.error(f"Failed to update trip {trip_id}: {str(e)}", exc_info=True)
@@ -365,8 +359,8 @@ def delete_trip(trip_id: str, x_device_id: str = Header()):
     """Delete a trip and all its associated plans."""
     check_db_connection()
     try:
-        result = trips_col.delete_one({"trip_id": trip_id, "device_id": x_device_id})
-        if result.deleted_count == 0:
+        deleted = db_client.delete_trip(trip_id, x_device_id)
+        if not deleted:
             logger.warning(f"Trip {trip_id} not found for deletion")
             raise HTTPException(
                 status_code=404,
@@ -380,11 +374,11 @@ def delete_trip(trip_id: str, x_device_id: str = Header()):
                 },
             )
         # Delete associated plans
-        deleted_plans = plans_col.delete_many({"trip_id": trip_id})
+        deleted_plans_count = db_client.delete_plans_by_trip(trip_id)
         logger.info(
-            f"Deleted trip {trip_id} and {deleted_plans.deleted_count} associated plans"
+            f"Deleted trip {trip_id} and {deleted_plans_count} associated plans"
         )
-        return {"message": "Trip deleted", "deleted_plans": deleted_plans.deleted_count}
+        return {"message": "Trip deleted", "deleted_plans": deleted_plans_count}
     except HTTPException:
         raise
     except Exception as e:
@@ -406,7 +400,8 @@ def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
     """Add a port to a trip."""
     check_db_connection()
     try:
-        trip = trips_col.find_one({"trip_id": trip_id, "device_id": x_device_id})
+        # Get existing trip
+        trip = db_client.get_trip(trip_id, x_device_id)
         if not trip:
             logger.warning(f"Trip {trip_id} not found when adding port")
             raise HTTPException(
@@ -417,6 +412,8 @@ def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
                     "trip_id": trip_id,
                 },
             )
+
+        # Create new port
         port = {
             "port_id": str(uuid.uuid4()),
             "name": data.name,
@@ -426,13 +423,18 @@ def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
             "arrival": data.arrival,
             "departure": data.departure,
         }
-        trips_col.update_one(
-            {"trip_id": trip_id, "device_id": x_device_id},
-            {
-                "$push": {"ports": port},
-                "$set": {"updated_at": datetime.now(timezone.utc).isoformat()},
-            },
-        )
+
+        # Add port to ports list
+        ports = trip.get("ports", [])
+        ports.append(port)
+
+        # Update trip with new ports list
+        updates = {
+            "ports": ports,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        db_client.update_trip(trip_id, x_device_id, updates)
+
         logger.info(f"Added port {port['port_id']} ({data.name}) to trip {trip_id}")
         return port
     except HTTPException:
@@ -455,20 +457,37 @@ def update_port(
     """Update a port in a trip."""
     check_db_connection()
     try:
-        port_update = {
-            "ports.$.name": data.name,
-            "ports.$.country": data.country,
-            "ports.$.latitude": data.latitude,
-            "ports.$.longitude": data.longitude,
-            "ports.$.arrival": data.arrival,
-            "ports.$.departure": data.departure,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        result = trips_col.update_one(
-            {"trip_id": trip_id, "device_id": x_device_id, "ports.port_id": port_id},
-            {"$set": port_update},
-        )
-        if result.matched_count == 0:
+        # Get existing trip
+        trip = db_client.get_trip(trip_id, x_device_id)
+        if not trip:
+            logger.warning(f"Trip {trip_id} not found when updating port {port_id}")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "trip_not_found",
+                    "message": f"Trip with ID '{trip_id}' not found.",
+                    "trip_id": trip_id,
+                },
+            )
+
+        # Find and update the port in the ports list
+        ports = trip.get("ports", [])
+        port_found = False
+        for i, port in enumerate(ports):
+            if port.get("port_id") == port_id:
+                ports[i] = {
+                    "port_id": port_id,
+                    "name": data.name,
+                    "country": data.country,
+                    "latitude": data.latitude,
+                    "longitude": data.longitude,
+                    "arrival": data.arrival,
+                    "departure": data.departure,
+                }
+                port_found = True
+                break
+
+        if not port_found:
             logger.warning(f"Port {port_id} in trip {trip_id} not found for update")
             raise HTTPException(
                 status_code=404,
@@ -481,6 +500,14 @@ def update_port(
                     "trip_id": trip_id,
                 },
             )
+
+        # Update trip with modified ports list
+        updates = {
+            "ports": ports,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        db_client.update_trip(trip_id, x_device_id, updates)
+
         logger.info(f"Updated port {port_id} in trip {trip_id}")
         return {"message": "Port updated"}
     except HTTPException:
@@ -501,14 +528,9 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
     """Remove a port from a trip and delete associated plans."""
     check_db_connection()
     try:
-        result = trips_col.update_one(
-            {"trip_id": trip_id, "device_id": x_device_id},
-            {
-                "$pull": {"ports": {"port_id": port_id}},
-                "$set": {"updated_at": datetime.now(timezone.utc).isoformat()},
-            },
-        )
-        if result.matched_count == 0:
+        # Get existing trip
+        trip = db_client.get_trip(trip_id, x_device_id)
+        if not trip:
             logger.warning(f"Trip {trip_id} not found when deleting port {port_id}")
             raise HTTPException(
                 status_code=404,
@@ -518,15 +540,33 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
                     "trip_id": trip_id,
                 },
             )
+
+        # Remove port from ports list
+        ports = trip.get("ports", [])
+        original_length = len(ports)
+        ports = [p for p in ports if p.get("port_id") != port_id]
+
+        # Check if port was actually removed
+        if len(ports) == original_length:
+            logger.warning(f"Port {port_id} not found in trip {trip_id}")
+            # Not raising error here as MongoDB behavior was to silently succeed
+
+        # Update trip with modified ports list
+        updates = {
+            "ports": ports,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        db_client.update_trip(trip_id, x_device_id, updates)
+
         # Delete associated plans
-        deleted_plans = plans_col.delete_many({"port_id": port_id})
+        deleted_plans_count = db_client.delete_plans_by_port(port_id)
         logger.info(
             f"Removed port {port_id} from trip {trip_id} and deleted "
-            f"{deleted_plans.deleted_count} associated plans"
+            f"{deleted_plans_count} associated plans"
         )
         return {
             "message": "Port removed",
-            "deleted_plans": deleted_plans.deleted_count,
+            "deleted_plans": deleted_plans_count,
         }
     except HTTPException:
         raise
@@ -632,9 +672,7 @@ async def generate_plan(data: GeneratePlanInput, x_device_id: str = Header()):
 
     # Fetch trip and port data
     try:
-        trip = trips_col.find_one(
-            {"trip_id": data.trip_id, "device_id": x_device_id}, {"_id": 0}
-        )
+        trip = db_client.get_trip(data.trip_id, x_device_id)
         if not trip:
             logger.warning(f"Trip {data.trip_id} not found for plan generation")
             raise HTTPException(
@@ -898,8 +936,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             "plan": plan_data,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
-        plans_col.insert_one(plan)
-        plan.pop("_id", None)
+        db_client.create_plan(plan)
         logger.info(f"Successfully created plan {plan['plan_id']} for port {port_name}")
         return plan
     except Exception as e:
@@ -921,9 +958,7 @@ def get_plan(plan_id: str, x_device_id: str = Header()):
     """Get details of a specific generated plan."""
     check_db_connection()
     try:
-        plan = plans_col.find_one(
-            {"plan_id": plan_id, "device_id": x_device_id}, {"_id": 0}
-        )
+        plan = db_client.get_plan(plan_id, x_device_id)
         if not plan:
             logger.warning(f"Plan {plan_id} not found")
             raise HTTPException(
@@ -963,16 +998,8 @@ def list_plans(
     """List all generated plans for a device, optionally filtered by trip or port."""
     check_db_connection()
     try:
-        query = {"device_id": x_device_id}
-        if trip_id:
-            query["trip_id"] = trip_id
-        if port_id:
-            query["port_id"] = port_id
-        plans = list(
-            plans_col.find(query, {"_id": 0})
-            .sort("generated_at", -1)
-            .skip(skip)
-            .limit(limit)
+        plans = db_client.list_plans(
+            x_device_id, trip_id=trip_id, port_id=port_id, skip=skip, limit=limit
         )
         logger.info(f"Listed {len(plans)} plans for device {x_device_id}")
         return plans
@@ -992,8 +1019,8 @@ def delete_plan(plan_id: str, x_device_id: str = Header()):
     """Delete a generated plan."""
     check_db_connection()
     try:
-        result = plans_col.delete_one({"plan_id": plan_id, "device_id": x_device_id})
-        if result.deleted_count == 0:
+        deleted = db_client.delete_plan(plan_id, x_device_id)
+        if not deleted:
             logger.warning(f"Plan {plan_id} not found for deletion")
             raise HTTPException(
                 status_code=404,
