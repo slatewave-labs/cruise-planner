@@ -5,7 +5,7 @@
 ShoreExplorer uses [Groq](https://groq.com/) for AI-powered day plan generation. Groq provides:
 
 - **14,400 requests per day** on the free tier (vs. 1,500/day with Google Gemini)
-- **Fast inference speeds**: Sub-second response times with Llama 3.1 70B
+- **Fast inference speeds**: Sub-second response times with Llama 3.3 70B
 - **No credit card required** for free tier
 - **High-quality structured JSON output** for cruise port itineraries
 
@@ -206,7 +206,7 @@ If you exceed the free tier limits, you'll receive a 503 error with `ai_service_
 1. **Wait**: Rate limits reset every minute/day
 2. **Upgrade**: Add a payment method at [https://console.groq.com/settings/billing](https://console.groq.com/settings/billing)
    - Pay-as-you-go pricing (very affordable)
-   - Llama 3.1 70B: $0.59 per 1M tokens
+   - Llama 3.3 70B: $0.59 per 1M tokens
 3. **Optimize**: Reduce prompt size or switch to faster 8B model
 
 ---
@@ -271,7 +271,7 @@ If you exceed the free tier limits, you'll receive a 503 error with `ai_service_
 **Cause**: The model might need adjustment or the prompt is unclear.
 
 **Fix**:
-1. The default model is `llama-3.1-70b-versatile` (best quality)
+1. The default model is `llama-3.3-70b-versatile` (best quality)
 2. You can change it in `backend/llm_client.py`:
    ```python
    self.model = "llama-3.1-8b-instant"  # Faster, less expensive

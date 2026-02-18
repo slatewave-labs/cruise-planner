@@ -26,7 +26,7 @@ class TestLLMClientInitialization:
         """Test initialization with explicit API key."""
         client = LLMClient(api_key="test-key-123")
         assert client.api_key == "test-key-123"
-        assert client.model == "llama-3.1-70b-versatile"
+        assert client.model == "llama-3.3-70b-versatile"
 
     def test_init_with_env_var(self):
         """Test initialization with environment variable."""
@@ -79,7 +79,7 @@ class TestGenerateDayPlan:
         assert "Test Plan" in result
         mock_groq_instance.chat.completions.create.assert_called_once()
         call_kwargs = mock_groq_instance.chat.completions.create.call_args[1]
-        assert call_kwargs["model"] == "llama-3.1-70b-versatile"
+        assert call_kwargs["model"] == "llama-3.3-70b-versatile"
         assert call_kwargs["temperature"] == 0.7
         assert call_kwargs["response_format"] == {"type": "json_object"}
         assert len(call_kwargs["messages"]) == 2

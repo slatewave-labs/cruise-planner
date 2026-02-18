@@ -6,7 +6,7 @@ ShoreExplorer is an AI-powered cruise port day planner that helps cruise passeng
 
 **Key Features:**
 - Trip and port management for cruise itineraries
-- AI-generated day plans using Groq (Llama 3.1 70B)
+- AI-generated day plans using Groq (Llama 3.3 70B)
 - Real-time weather forecasts via Open-Meteo API
 - Interactive maps with Leaflet and OpenStreetMap
 - Route export to Google Maps
@@ -24,7 +24,7 @@ ShoreExplorer is an AI-powered cruise port day planner that helps cruise passeng
 - **Web Server:** Uvicorn
 - **Database:** MongoDB 6+ (local development) / MongoDB Atlas M0 (production)
 - **Database Client:** PyMongo 4.6.1
-- **AI Service:** Groq (Llama 3.1 70B) via `groq` SDK (v0.13.0)
+- **AI Service:** Groq (Llama 3.3 70B) via `groq` SDK (v0.13.0)
 - **Weather API:** Open-Meteo (free, no authentication)
 - **Environment:** python-dotenv for configuration
 - **Testing:** pytest

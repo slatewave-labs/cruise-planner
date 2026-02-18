@@ -59,7 +59,7 @@ You will also need one API key:
 
 | Key | What It's For | How to Get It |
 |-----|--------------|---------------|
-| **Groq API Key** | Powers the AI that generates your day plans using Llama 3.1 70B | Go to [Groq Console](https://console.groq.com/keys), sign up (free), and click "Create API Key". Free tier: 30 requests/minute, 14,400 requests/day. See [GROQ_SETUP.md](GROQ_SETUP.md) for detailed instructions. |
+| **Groq API Key** | Powers the AI that generates your day plans using Llama 3.3 70B | Go to [Groq Console](https://console.groq.com/keys), sign up (free), and click "Create API Key". Free tier: 30 requests/minute, 14,400 requests/day. See [GROQ_SETUP.md](GROQ_SETUP.md) for detailed instructions. |
 
 > **No other API keys are needed.** The weather service (Open-Meteo) and maps (OpenStreetMap) are completely free and require no sign-up.
 

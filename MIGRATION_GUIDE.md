@@ -13,7 +13,7 @@ Groq offers significant advantages over Google Gemini for ShoreExplorer:
 | **Sign-up requirement** | Google account | Free sign-up | Easier |
 | **Credit card required** | Yes (for billing) | No | Simpler |
 | **Response speed** | ~2-5s | <1s | **Faster** |
-| **Model quality** | Gemini 2.0 Flash | Llama 3.1 70B | Comparable |
+| **Model quality** | Gemini 2.0 Flash | Llama 3.3 70B | Comparable |
 
 ## Pre-Migration Checklist
 
@@ -282,7 +282,7 @@ aws secretsmanager get-secret-value \
 
 ### Plans are lower quality or incorrect
 
-**Cause**: The Llama 3.1 70B model might need adjustment for your use case.
+**Cause**: The Llama 3.3 70B model might need adjustment for your use case.
 
 **Fix**:
 You can adjust the model or temperature in `backend/llm_client.py`:
@@ -350,7 +350,7 @@ aws ecs update-service \
 aws logs tail /ecs/shoreexplorer-prod-backend --follow --region us-east-1
 
 # Look for:
-# - "LLM client initialized with model: llama-3.1-70b-versatile"
+# - "LLM client initialized with model: llama-3.3-70b-versatile"
 # - "Calling LLM API for plan generation"
 # - "LLM API call successful"
 ```
@@ -386,6 +386,6 @@ You've successfully migrated from Google Gemini to Groq. Enjoy:
 - **9.6x more free API requests** (14,400/day vs 1,500/day)
 - **Faster response times** (< 1 second vs 2-5 seconds)
 - **No credit card required** for free tier
-- **Same high-quality day plans** powered by Llama 3.1 70B
+- **Same high-quality day plans** powered by Llama 3.3 70B
 
 Happy cruising! ⛴️🗺️

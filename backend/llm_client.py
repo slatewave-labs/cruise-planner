@@ -20,7 +20,7 @@ class LLMClient:
     """
     Abstraction layer for LLM API calls.
 
-    Currently uses Groq API with Llama 3.1 70B model for high-quality
+    Currently uses Groq API with Llama 3.3 70B model for high-quality
     structured JSON generation at low cost (14,400 requests/day on free tier).
     """
 
@@ -41,9 +41,9 @@ class LLMClient:
             )
 
         self.client = Groq(api_key=self.api_key)
-        # Using Llama 3.1 70B for best JSON generation quality
+        # Using Llama 3.3 70B for best JSON generation quality
         # Alternatives: llama-3.1-8b-instant (faster), mixtral-8x7b-32768
-        self.model = "llama-3.1-70b-versatile"
+        self.model = "llama-3.3-70b-versatile"
         logger.info(f"LLM client initialized with model: {self.model}")
 
     def generate_day_plan(
