@@ -215,7 +215,7 @@ aws secretsmanager get-secret-value \
 
 Required secrets:
 - `MONGO_URL`
-- `GOOGLE_API_KEY`
+- `GROQ_API_KEY`
 - `DB_NAME`
 
 ---
@@ -352,7 +352,7 @@ docker build -t shoreexplorer-frontend:local --build-arg REACT_APP_BACKEND_URL=h
 # Run backend
 docker run -p 8001:8001 \
   -e MONGO_URL="your-mongo-url" \
-  -e GOOGLE_API_KEY="your-api-key" \
+  -e GROQ_API_KEY="your-api-key" \
   -e DB_NAME="shoreexplorer" \
   shoreexplorer-backend:local
 

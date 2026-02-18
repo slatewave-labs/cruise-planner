@@ -297,7 +297,7 @@ aws secretsmanager put-secret-value \
   --secret-string '{
     "MONGO_URL": "mongodb+srv://...",
     "DB_NAME": "shoreexplorer",
-    "GOOGLE_API_KEY": "your-key",
+    "GROQ_API_KEY": "your-key",
     "REACT_APP_BACKEND_URL": "http://test.shore-explorer.com"
   }'
 ```

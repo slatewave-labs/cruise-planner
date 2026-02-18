@@ -93,7 +93,7 @@ jobs:
         env:
           MONGO_URL: mongodb://localhost:27017
           DB_NAME: shoreexplorer_test
-          GOOGLE_API_KEY: mock-key-for-testing
+          GROQ_API_KEY: mock-key-for-testing
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
 
       - name: Upload coverage to artifacts
@@ -161,7 +161,7 @@ jobs:
         env:
           MONGO_URL: mongodb://localhost:27017
           DB_NAME: shoreexplorer_integrity
-          GOOGLE_API_KEY: mock-key-for-testing
+          GROQ_API_KEY: mock-key-for-testing
 
   # Frontend linting - Check code style
   frontend-lint:

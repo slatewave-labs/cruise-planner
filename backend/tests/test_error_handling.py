@@ -30,7 +30,7 @@ class TestHealthCheck:
         """Test health check when all services are healthy."""
         mock_mongo_client.admin.command.return_value = {"ok": 1}
 
-        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             response = client.get("/api/health")
 
         assert response.status_code == 200
@@ -42,7 +42,7 @@ class TestHealthCheck:
     @patch("server.mongo_client", None)
     def test_health_check_database_not_configured(self):
         """Test health check when database is not configured."""
-        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             response = client.get("/api/health")
 
         assert response.status_code == 200

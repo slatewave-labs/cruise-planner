@@ -186,7 +186,7 @@ def health():
         status["status"] = "degraded"
 
     # Check AI service configuration
-    if os.environ.get("GOOGLE_API_KEY"):
+    if os.environ.get("GROQ_API_KEY"):
         status["checks"]["ai_service"] = "configured"
     else:
         status["checks"]["ai_service"] = "not_configured"
