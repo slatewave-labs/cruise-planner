@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { BrowserRouter, MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import Layout from '../components/Layout';
 
@@ -141,12 +141,8 @@ describe('Layout Component', () => {
       
       const mainElement = container.querySelector('main');
       
-      // Check that there's no motion.div wrapper
-      // framer-motion typically adds data attributes or specific divs
-      const motionDivs = mainElement.querySelectorAll('[style*="opacity"]');
-      
-      // If there are opacity styles, they shouldn't be from framer-motion animation
-      // (only from actual content, not animation wrappers)
+      // Verify there's only one direct child (no animation wrapper)
+      // framer-motion would add additional wrapper divs
       expect(mainElement.children.length).toBe(1); // Only the direct child
     });
 
