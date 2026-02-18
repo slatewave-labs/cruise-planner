@@ -33,17 +33,17 @@ if [[ -n "${REACT_APP_BACKEND_URL:-}" ]]; then
     BACKEND_URL="$REACT_APP_BACKEND_URL"
     print_info "Using explicit REACT_APP_BACKEND_URL: $BACKEND_URL"
 elif [[ "$ENVIRONMENT" == "test" && -n "${TEST_DOMAIN:-}" ]]; then
-    BACKEND_URL="http://test.${TEST_DOMAIN}"
+    BACKEND_URL="https://test.${TEST_DOMAIN}"
     print_info "Using TEST_DOMAIN: $BACKEND_URL"
 elif [[ "$ENVIRONMENT" == "prod" && -n "${PROD_DOMAIN:-}" ]]; then
-    BACKEND_URL="http://${PROD_DOMAIN}"
+    BACKEND_URL="https://${PROD_DOMAIN}"
     print_info "Using PROD_DOMAIN: $BACKEND_URL"
 else
     # Fallback to ALB DNS
     ALB_FILE="$SCRIPT_DIR/.alb-outputs-${ENVIRONMENT}.env"
     if [[ -f "$ALB_FILE" ]]; then
         source "$ALB_FILE"
-        BACKEND_URL="http://${ALB_DNS}"
+        BACKEND_URL="https://${ALB_DNS}"
         print_info "Using ALB DNS: $BACKEND_URL"
     else
         BACKEND_URL="http://localhost:8001"
