@@ -549,7 +549,15 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
         # Check if port was actually removed
         if len(ports) == original_length:
             logger.warning(f"Port {port_id} not found in trip {trip_id}")
-            # Not raising error here as MongoDB behavior was to silently succeed
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "port_not_found",
+                    "message": f"Port with ID '{port_id}' not found in this trip.",
+                    "port_id": port_id,
+                    "trip_id": trip_id,
+                },
+            )
 
         # Update trip with modified ports list
         updates = {
