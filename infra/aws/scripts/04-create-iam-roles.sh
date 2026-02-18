@@ -107,6 +107,40 @@ else
     print_success "Created IAM Role: $ECS_TASK_ROLE"
 fi
 
+# Create inline policy for DynamoDB access
+DYNAMODB_POLICY=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:DescribeTable"
+            ],
+            "Resource": [
+                "arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/${APP_NAME}-${ENVIRONMENT}",
+                "arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/${APP_NAME}-${ENVIRONMENT}/index/*"
+            ]
+        }
+    ]
+}
+EOF
+)
+
+aws iam put-role-policy \
+    --role-name "$ECS_TASK_ROLE" \
+    --policy-name "${APP_NAME}-dynamodb-access" \
+    --policy-document "$DYNAMODB_POLICY" \
+    --output text &>/dev/null 2>&1 || true
+
+print_success "Attached DynamoDB access policy to task role"
+
 # ---------------------------------------------------------------------------
 # Save outputs
 # ---------------------------------------------------------------------------

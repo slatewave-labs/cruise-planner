@@ -1,18 +1,23 @@
 version: "3.8"
 
 services:
-  # MongoDB Atlas M0 is used for production
-  # This local MongoDB is for development/testing only
-  mongodb:
-    image: mongo:7
+  # DynamoDB Local for development/testing
+  # Production uses AWS DynamoDB (managed service)
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
     ports:
-      - "27017:27017"
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
     volumes:
-      - mongo_data:/data/db
-    environment:
-      - MONGO_INITDB_DATABASE=shoreexplorer
+      - dynamodb_data:/home/dynamodblocal/data
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -21,11 +26,15 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - MONGO_URL=${MONGO_URL:-mongodb://mongodb:27017}
-      - DB_NAME=${DB_NAME:-shoreexplorer}
+      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME:-shoreexplorer}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - DYNAMODB_ENDPOINT_URL=${DYNAMODB_ENDPOINT_URL:-http://dynamodb-local:8000}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-dummy}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-dummy}
       - GROQ_API_KEY=${GROQ_API_KEY}
     depends_on:
-      - mongodb
+      dynamodb-local:
+        condition: service_healthy
     networks:
       - app-network
     restart: unless-stopped
@@ -45,7 +54,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  mongo_data:
+  dynamodb_data:
 
 networks:
   app-network:

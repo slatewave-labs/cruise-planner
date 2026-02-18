@@ -15,33 +15,27 @@ print_status "Creating Secrets for '$ENVIRONMENT' environment"
 # ---------------------------------------------------------------------------
 # Check for required values
 # ---------------------------------------------------------------------------
-if [[ -z "${MONGO_URL:-}" ]]; then
-    echo ""
-    echo "  You need to provide your secret values."
-    echo "  Set them as environment variables before running this script:"
-    echo ""
-    echo "    export MONGO_URL='mongodb+srv://user:pass@cluster.mongodb.net/...'"
-    echo "    export GROQ_API_KEY='gsk_...'"
-    echo ""
-    echo "  Then re-run this script."
-    echo ""
-    read -rp "  Or enter your MongoDB connection string now: " MONGO_URL
-fi
+echo ""
+echo "  DynamoDB Configuration (handled via environment variables in task definition):"
+echo "    - Table: shoreexplorer-${ENVIRONMENT}"
+echo "    - Region: ${AWS_REGION}"
+echo ""
+echo "  You need to provide your Groq API key for AI plan generation."
+echo "  Set it as an environment variable before running this script:"
+echo ""
+echo "    export GROQ_API_KEY='gsk_...'"
+echo ""
 
 if [[ -z "${GROQ_API_KEY:-}" ]]; then
     read -rp "  Enter your Groq API key: " GROQ_API_KEY
 fi
-
-DB_NAME="${DB_NAME:-shoreexplorer}"
 
 # ---------------------------------------------------------------------------
 # Create or update the secret
 # ---------------------------------------------------------------------------
 SECRET_VALUE=$(cat <<EOF
 {
-    "MONGO_URL": "$MONGO_URL",
-    "GROQ_API_KEY": "$GROQ_API_KEY",
-    "DB_NAME": "$DB_NAME"
+    "GROQ_API_KEY": "$GROQ_API_KEY"
 }
 EOF
 )
@@ -85,7 +79,9 @@ echo ""
 echo "  Secret: $SECRET_NAME"
 echo "  ARN:    $SECRET_ARN"
 echo ""
-echo "  To update secrets later:"
+echo "  DynamoDB table will be created separately using create-dynamodb-tables.sh"
+echo ""
+echo "  To update the Groq API key later:"
 echo "    aws secretsmanager update-secret --secret-id $SECRET_NAME \\"
-echo "      --secret-string '{\"MONGO_URL\":\"...\",\"GROQ_API_KEY\":\"...\",\"DB_NAME\":\"shoreexplorer\"}'"
+echo "      --secret-string '{\"GROQ_API_KEY\":\"gsk_...\"}'"
 echo ""

@@ -53,16 +53,18 @@ BACKEND_TASK_DEF=$(cat <<EOF
             ],
             "secrets": [
                 {
-                    "name": "MONGO_URL",
-                    "valueFrom": "${SECRET_ARN}:MONGO_URL::"
-                },
-                {
                     "name": "GROQ_API_KEY",
                     "valueFrom": "${SECRET_ARN}:GROQ_API_KEY::"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "DYNAMODB_TABLE_NAME",
+                    "value": "shoreexplorer-${ENVIRONMENT}"
                 },
                 {
-                    "name": "DB_NAME",
-                    "valueFrom": "${SECRET_ARN}:DB_NAME::"
+                    "name": "AWS_DEFAULT_REGION",
+                    "value": "${AWS_REGION}"
                 }
             ],
             "logConfiguration": {
