@@ -6,7 +6,7 @@ ShoreExplorer is an AI-powered cruise port day planner that helps cruise passeng
 
 **Key Features:**
 - Trip and port management for cruise itineraries
-- AI-generated day plans using Google Gemini 2.0 Flash
+- AI-generated day plans using Groq (Llama 3.1 70B)
 - Real-time weather forecasts via Open-Meteo API
 - Interactive maps with Leaflet and OpenStreetMap
 - Route export to Google Maps
@@ -24,7 +24,7 @@ ShoreExplorer is an AI-powered cruise port day planner that helps cruise passeng
 - **Web Server:** Uvicorn
 - **Database:** MongoDB 6+ (local development) / MongoDB Atlas M0 (production)
 - **Database Client:** PyMongo 4.6.1
-- **AI Service:** Google Gemini 2.0 Flash via `google-genai` SDK (v1.2.0)
+- **AI Service:** Groq (Llama 3.1 70B) via `groq` SDK (v0.13.0)
 - **Weather API:** Open-Meteo (free, no authentication)
 - **Environment:** python-dotenv for configuration
 - **Testing:** pytest
@@ -72,7 +72,7 @@ ShoreExplorer is an AI-powered cruise port day planner that helps cruise passeng
 - Required backend env vars:
   - `MONGO_URL` - MongoDB connection string
   - `DB_NAME` - Database name (default: `shoreexplorer`)
-  - `GOOGLE_API_KEY` - Google Gemini API key (for AI plan generation)
+  - `GROQ_API_KEY` - Groq API key (for AI plan generation with Llama 3.1)
 - Optional affiliate program env vars (for monetization):
   - `VIATOR_AFFILIATE_ID` - Viator affiliate program ID
   - `GETYOURGUIDE_AFFILIATE_ID` - GetYourGuide partner program ID
@@ -88,21 +88,23 @@ ShoreExplorer is an AI-powered cruise port day planner that helps cruise passeng
 - Include CORS middleware for cross-origin requests
 
 #### AI Integration
-- **Use `google-genai` SDK** for Google Gemini API integration (NOT `emergentintegrations`)
+- **Use `groq` SDK** for Groq API integration with Llama 3.1 models
 - Example pattern:
 ```python
-from google import genai
-from google.genai import types
+from llm_client import LLMClient
 
-client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
-response = client.models.generate_content(
-    model='gemini-2.0-flash-exp',
-    contents=user_message,
-    config=types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        temperature=0.7
-    )
+# Initialize client (reads GROQ_API_KEY from env)
+client = LLMClient()
+
+# Generate day plan
+response_text = client.generate_day_plan(
+    prompt=user_prompt,
+    system_instruction="You are an expert cruise port day planner.",
+    temperature=0.7
 )
+
+# Parse JSON response
+plan_data = client.parse_json_response(response_text)
 ```
 
 #### Database
@@ -240,7 +242,7 @@ cruise-planner/
    ```
    MONGO_URL=mongodb://localhost:27017
    DB_NAME=shoreexplorer
-   GOOGLE_API_KEY=your-google-api-key-here
+   GROQ_API_KEY=your-groq-api-key-here
    ```
 
 3. **Run server:**
@@ -296,15 +298,14 @@ cruise-planner/
 ## Important Notes & Gotchas
 
 ### Do NOT Use These
-- ❌ `emergentintegrations` library (deprecated, replaced with `google-genai`)
-- ❌ `EMERGENT_LLM_KEY` environment variable (use `GOOGLE_API_KEY` instead)
+- ❌ Old LLM providers (use Groq with Llama 3.1 via `llm_client` abstraction)
 - ❌ Pure white backgrounds (`bg-white` for large areas - use `bg-secondary` instead)
 - ❌ Custom CSS (use Tailwind utilities)
 - ❌ Class components (use functional components with hooks)
 - ❌ Default Inter font (use Playfair Display for headings, Plus Jakarta Sans for body)
 
 ### Always Do This
-- ✅ Use `google-genai` SDK for AI integration
+- ✅ Use `groq` SDK via `llm_client` abstraction for AI integration
 - ✅ Use MongoDB Atlas M0 (free tier) for production deployments
 - ✅ Use Open-Meteo API for weather (free, no auth required)
 - ✅ Use OpenStreetMap + Leaflet for maps (free, no auth required)

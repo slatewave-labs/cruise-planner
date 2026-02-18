@@ -9,12 +9,17 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from google import genai
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 from affiliate_config import process_plan_activities
+from llm_client import (
+    LLMAPIError,
+    LLMAuthenticationError,
+    LLMClient,
+    LLMQuotaExceededError,
+)
 from ports_data import CRUISE_PORTS
 
 load_dotenv()
@@ -769,10 +774,11 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
   "safety_tips": ["string - safety reminders"]
 }}"""
 
-    # Check AI service configuration
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        logger.error("Plan generation attempted but GOOGLE_API_KEY is not configured")
+    # Initialize LLM client
+    try:
+        llm_client = LLMClient()
+    except ValueError as e:
+        logger.error(f"Plan generation attempted but LLM is not configured: {str(e)}")
         raise HTTPException(
             status_code=503,
             detail={
@@ -780,119 +786,89 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
                 "message": (
                     "AI plan generation service is not configured. "
                     "Please contact your administrator to set up the "
-                    "GOOGLE_API_KEY environment variable."
+                    "GROQ_API_KEY environment variable."
                 ),
                 "troubleshooting": (
-                    "Administrators: Set the GOOGLE_API_KEY environment "
-                    "variable with a valid Google Gemini API key."
+                    "Administrators: Set the GROQ_API_KEY environment "
+                    "variable with a valid Groq API key. "
+                    "Get your free key at https://console.groq.com/keys"
                 ),
             },
         )
 
-    # Call Gemini API
-    client = genai.Client(api_key=api_key)
+    # Call LLM API
     try:
-        logger.info(f"Calling Gemini API for plan generation (port: {port_name})")
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                system_instruction=(
-                    "You are an expert cruise port day planner. "
-                    "You always respond with valid JSON only, no markdown."
-                ),
-                temperature=0.7,
-            ),
+        logger.info(f"Calling LLM API for plan generation (port: {port_name})")
+        system_instruction = (
+            "You are an expert cruise port day planner. "
+            "You always respond with valid JSON only, no markdown."
         )
-        response_text = response.text
-        logger.info("Gemini API call successful")
-    except Exception as e:
-        error_msg = str(e).lower()
-        logger.error(f"Gemini API call failed: {str(e)}", exc_info=True)
-
-        # Handle specific error cases with detailed responses
-        if "budget" in error_msg or "exceeded" in error_msg or "quota" in error_msg:
-            logger.error("Gemini API budget/quota exceeded")
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": "ai_service_quota_exceeded",
-                    "message": (
-                        "The AI service has reached its usage quota. "
-                        "This is temporary - please try again in a few minutes."
-                    ),
-                    "troubleshooting": (
-                        "Administrators: Check your Google Cloud Console for "
-                        "API quotas and billing status."
-                    ),
-                    "retry_after": 300,  # Suggest retry after 5 minutes
-                },
-            )
-        elif (
-            "api key" in error_msg
-            or "authentication" in error_msg
-            or "401" in error_msg
-        ):
-            logger.error("Gemini API authentication failed - invalid API key")
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": "ai_service_auth_failed",
-                    "message": (
-                        "AI service authentication failed. "
-                        "The API key may be invalid or expired."
-                    ),
-                    "troubleshooting": (
-                        "Administrators: Verify the GOOGLE_API_KEY environment "
-                        "variable contains a valid, active API key."
-                    ),
-                },
-            )
-        elif api_key == "mock-key-for-testing":
-            # Special case for CI testing
-            logger.info("Mock API key detected in test environment")
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": "ai_service_mock_key",
-                    "message": "Plan generation is using a mock API key for testing.",
-                },
-            )
-        else:
-            # Generic Gemini API failure
-            logger.error(f"Gemini API error: {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": "ai_service_unavailable",
-                    "message": (
-                        "The AI plan generation service is temporarily unavailable. "
-                        "Please try again in a few moments."
-                    ),
-                    "technical_details": (
-                        str(e) if api_key else "API key not configured"
-                    ),
-                },
-            )
+        response_text = llm_client.generate_day_plan(
+            prompt=prompt,
+            system_instruction=system_instruction,
+            temperature=0.7,
+        )
+        logger.info("LLM API call successful")
+    except LLMQuotaExceededError as e:
+        logger.error(f"LLM API quota exceeded: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_service_quota_exceeded",
+                "message": (
+                    "The AI service has reached its usage quota. "
+                    "This is temporary - please try again in a few minutes."
+                ),
+                "troubleshooting": (
+                    "Administrators: Check your Groq Console for "
+                    "API quotas at https://console.groq.com/settings/limits"
+                ),
+                "retry_after": 300,  # Suggest retry after 5 minutes
+            },
+        )
+    except LLMAuthenticationError as e:
+        logger.error(f"LLM API authentication failed: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_service_auth_failed",
+                "message": (
+                    "AI service authentication failed. "
+                    "The API key may be invalid or expired."
+                ),
+                "troubleshooting": (
+                    "Administrators: Verify the GROQ_API_KEY environment "
+                    "variable contains a valid, active API key from "
+                    "https://console.groq.com/keys"
+                ),
+            },
+        )
+    except LLMAPIError as e:
+        # Generic LLM API failure
+        logger.error(f"LLM API error: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ai_service_unavailable",
+                "message": (
+                    "The AI plan generation service is temporarily unavailable. "
+                    "Please try again in a few moments."
+                ),
+                "technical_details": str(e),
+            },
+        )
 
     # Parse JSON response
     try:
-        clean = response_text.strip()
-        if clean.startswith("```"):
-            # Remove markdown code fences if present
-            clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
-            if clean.endswith("```"):
-                clean = clean[:-3]
-            clean = clean.strip()
-        plan_data = json.loads(clean)
-        logger.info("Successfully parsed Gemini response as JSON")
+        plan_data = llm_client.parse_json_response(response_text)
+        logger.info("Successfully parsed LLM response as JSON")
 
         # Process activities to add affiliate tracking parameters
         if "activities" in plan_data and isinstance(plan_data["activities"], list):
             plan_data["activities"] = process_plan_activities(plan_data["activities"])
             logger.info("Processed activities for affiliate links")
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Gemini response as JSON: {str(e)}")
+        logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
         logger.debug(f"Raw response: {response_text[:500]}")  # Log first 500 chars
         # Fallback: Return raw response with error flag
         plan_data = {
