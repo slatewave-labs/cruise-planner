@@ -433,7 +433,17 @@ def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
             "ports": ports,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        db_client.update_trip(trip_id, x_device_id, updates)
+        updated_trip = db_client.update_trip(trip_id, x_device_id, updates)
+
+        if not updated_trip:
+            logger.error(f"Failed to update trip {trip_id} after adding port")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "port_addition_failed",
+                    "message": "Failed to add port to trip. Please try again.",
+                },
+            )
 
         logger.info(f"Added port {port['port_id']} ({data.name}) to trip {trip_id}")
         return port
@@ -506,7 +516,17 @@ def update_port(
             "ports": ports,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        db_client.update_trip(trip_id, x_device_id, updates)
+        updated_trip = db_client.update_trip(trip_id, x_device_id, updates)
+
+        if not updated_trip:
+            logger.error(f"Failed to update trip {trip_id} after updating port")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "port_update_failed",
+                    "message": "Failed to update port. Please try again.",
+                },
+            )
 
         logger.info(f"Updated port {port_id} in trip {trip_id}")
         return {"message": "Port updated"}
@@ -564,7 +584,17 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
             "ports": ports,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        db_client.update_trip(trip_id, x_device_id, updates)
+        updated_trip = db_client.update_trip(trip_id, x_device_id, updates)
+
+        if not updated_trip:
+            logger.error(f"Failed to update trip {trip_id} after deleting port")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "port_deletion_failed",
+                    "message": "Failed to delete port. Please try again.",
+                },
+            )
 
         # Delete associated plans
         deleted_plans_count = db_client.delete_plans_by_port(port_id)

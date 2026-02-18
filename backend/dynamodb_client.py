@@ -224,16 +224,28 @@ class DynamoDBClient:
 
             update_expression = "SET " + ", ".join(update_expr_parts)
 
+            # Add condition to ensure trip exists and belongs to this device
+            expr_attr_values[":device_pk"] = f"DEVICE#{device_id}"
+
             response = self.table.update_item(
                 Key={"PK": f"TRIP#{trip_id}", "SK": "METADATA"},
                 UpdateExpression=update_expression,
+                ConditionExpression="attribute_exists(PK) AND GSI1PK = :device_pk",
                 ExpressionAttributeNames=expr_attr_names,
                 ExpressionAttributeValues=expr_attr_values,
                 ReturnValues="ALL_NEW",
             )
             logger.debug(f"Updated trip {trip_id}")
             return self._clean_item(response["Attributes"])
-        except (BotoCoreError, ClientError) as e:
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                logger.warning(
+                    f"Update condition failed for trip {trip_id} - item doesn't exist or wrong device"
+                )
+                return None
+            logger.error(f"Failed to update trip {trip_id}: {str(e)}")
+            raise
+        except BotoCoreError as e:
             logger.error(f"Failed to update trip {trip_id}: {str(e)}")
             raise
 
