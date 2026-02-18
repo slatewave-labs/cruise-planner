@@ -42,6 +42,134 @@ if [[ "$BACKEND_EXISTS" == "false" || "$FRONTEND_EXISTS" == "false" ]]; then
     "$SCRIPT_DIR/07-create-ecs-services.sh" "$ENVIRONMENT"
 else
     # ---------------------------------------------------------------------------
+    # Re-register task definitions to ensure they have the latest configuration
+    # ---------------------------------------------------------------------------
+    print_info "Registering updated task definitions..."
+    
+    # Load required outputs for task definition
+    for F in iam secrets; do
+        OUTPUT_FILE="$SCRIPT_DIR/.${F}-outputs-${ENVIRONMENT}.env"
+        if [[ -f "$OUTPUT_FILE" ]]; then
+            source "$OUTPUT_FILE"
+        fi
+    done
+    
+    ACCOUNT_ID=$(get_account_id)
+    ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+    
+    # Register backend task definition with GROQ_API_KEY
+    BACKEND_TASK_DEF=$(cat <<EOF
+{
+    "family": "${BACKEND_TASK_FAMILY}",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "${BACKEND_CPU}",
+    "memory": "${BACKEND_MEMORY}",
+    "executionRoleArn": "${ECS_TASK_EXECUTION_ROLE_ARN}",
+    "taskRoleArn": "${ECS_TASK_ROLE_ARN}",
+    "containerDefinitions": [
+        {
+            "name": "backend",
+            "image": "${ECR_BASE}/${BACKEND_ECR_REPO}:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8001,
+                    "protocol": "tcp"
+                }
+            ],
+            "secrets": [
+                {
+                    "name": "MONGO_URL",
+                    "valueFrom": "${SECRET_ARN}:MONGO_URL::"
+                },
+                {
+                    "name": "GROQ_API_KEY",
+                    "valueFrom": "${SECRET_ARN}:GROQ_API_KEY::"
+                },
+                {
+                    "name": "DB_NAME",
+                    "valueFrom": "${SECRET_ARN}:DB_NAME::"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "${BACKEND_LOG_GROUP}",
+                    "awslogs-region": "${AWS_REGION}",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "healthCheck": {
+                "command": ["CMD-SHELL", "python -c \"import urllib.request; exit(0 if urllib.request.urlopen('http://localhost:8001/api/health').status == 200 else 1)\""],
+                "interval": 30,
+                "timeout": 10,
+                "retries": 3,
+                "startPeriod": 60
+            }
+        }
+    ]
+}
+EOF
+)
+    
+    aws ecs register-task-definition \
+        --cli-input-json "$BACKEND_TASK_DEF" \
+        --tags key=Project,value="$TAG_PROJECT" key=Environment,value="$TAG_ENVIRONMENT" \
+        --region "$AWS_REGION" --output text >/dev/null
+    
+    print_success "Registered backend task definition: $BACKEND_TASK_FAMILY"
+    
+    # Register frontend task definition
+    FRONTEND_TASK_DEF=$(cat <<EOF
+{
+    "family": "${FRONTEND_TASK_FAMILY}",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "${FRONTEND_CPU}",
+    "memory": "${FRONTEND_MEMORY}",
+    "executionRoleArn": "${ECS_TASK_EXECUTION_ROLE_ARN}",
+    "taskRoleArn": "${ECS_TASK_ROLE_ARN}",
+    "containerDefinitions": [
+        {
+            "name": "frontend",
+            "image": "${ECR_BASE}/${FRONTEND_ECR_REPO}:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 80,
+                    "protocol": "tcp"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "${FRONTEND_LOG_GROUP}",
+                    "awslogs-region": "${AWS_REGION}",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "healthCheck": {
+                "command": ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/ || exit 1"],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 30
+            }
+        }
+    ]
+}
+EOF
+)
+    
+    aws ecs register-task-definition \
+        --cli-input-json "$FRONTEND_TASK_DEF" \
+        --tags key=Project,value="$TAG_PROJECT" key=Environment,value="$TAG_ENVIRONMENT" \
+        --region "$AWS_REGION" --output text >/dev/null
+    
+    print_success "Registered frontend task definition: $FRONTEND_TASK_FAMILY"
+    
+    # ---------------------------------------------------------------------------
     # Force new deployment of backend
     # ---------------------------------------------------------------------------
     print_info "Deploying backend..."
