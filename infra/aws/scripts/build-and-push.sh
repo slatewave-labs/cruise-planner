@@ -20,17 +20,39 @@ ACCOUNT_ID=$(get_account_id)
 ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-# Load ALB outputs to get the backend URL for frontend builds
-ALB_FILE="$SCRIPT_DIR/.alb-outputs-${ENVIRONMENT}.env"
-if [[ -f "$ALB_FILE" ]]; then
-    source "$ALB_FILE"
-    BACKEND_URL="http://${ALB_DNS}"
+# ---------------------------------------------------------------------------
+# Determine backend URL for frontend build
+# ---------------------------------------------------------------------------
+# Priority:
+# 1. REACT_APP_BACKEND_URL environment variable (explicit override)
+# 2. TEST_DOMAIN/PROD_DOMAIN environment variable (matches GitHub workflow)
+# 3. ALB DNS from .alb-outputs file
+# 4. Fallback to localhost
+
+if [[ -n "${REACT_APP_BACKEND_URL:-}" ]]; then
+    BACKEND_URL="$REACT_APP_BACKEND_URL"
+    print_info "Using explicit REACT_APP_BACKEND_URL: $BACKEND_URL"
+elif [[ "$ENVIRONMENT" == "test" && -n "${TEST_DOMAIN:-}" ]]; then
+    BACKEND_URL="http://test.${TEST_DOMAIN}"
+    print_info "Using TEST_DOMAIN: $BACKEND_URL"
+elif [[ "$ENVIRONMENT" == "prod" && -n "${PROD_DOMAIN:-}" ]]; then
+    BACKEND_URL="http://${PROD_DOMAIN}"
+    print_info "Using PROD_DOMAIN: $BACKEND_URL"
 else
-    BACKEND_URL="${REACT_APP_BACKEND_URL:-http://localhost:8001}"
-    echo "  ⚠️  ALB not yet created. Using BACKEND_URL=$BACKEND_URL"
+    # Fallback to ALB DNS
+    ALB_FILE="$SCRIPT_DIR/.alb-outputs-${ENVIRONMENT}.env"
+    if [[ -f "$ALB_FILE" ]]; then
+        source "$ALB_FILE"
+        BACKEND_URL="http://${ALB_DNS}"
+        print_info "Using ALB DNS: $BACKEND_URL"
+    else
+        BACKEND_URL="http://localhost:8001"
+        print_warning "ALB not created yet. Using fallback: $BACKEND_URL"
+    fi
 fi
 
 print_status "Building and Pushing Images for '$ENVIRONMENT'"
+
 
 # ---------------------------------------------------------------------------
 # Authenticate Docker to ECR

@@ -481,6 +481,7 @@ If you're getting a "connection closed" error when accessing the deployed enviro
 - **Quick Fix:** Run `./infra/aws/scripts/quick-fix-alb.sh test` to auto-fix common issues
 - **Diagnostics:** Run `./infra/aws/scripts/diagnose-alb.sh test` for detailed health check
 - **DNS Setup:** Run `./infra/aws/scripts/09-setup-dns-subdomain.sh test yourdomain.com` to configure subdomains
+- **Custom Domain Config:** See [infra/aws/GITHUB-SECRETS.md](./infra/aws/GITHUB-SECRETS.md) to configure `REACT_APP_BACKEND_URL` with your domain
 - **HTTPS Setup:** Run `./infra/aws/scripts/08-setup-https.sh test yourdomain.com` to enable HTTPS
 - **Full Guide:** See [infra/aws/TROUBLESHOOTING.md](./infra/aws/TROUBLESHOOTING.md)
 - **DNS Guide:** See [infra/aws/DNS-SETUP.md](./infra/aws/DNS-SETUP.md)
