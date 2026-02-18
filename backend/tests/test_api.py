@@ -8,12 +8,11 @@ from fastapi.testclient import TestClient
 # Import app from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-# Mock MongoClient before importing app
-with patch("pymongo.MongoClient") as mock_mongo:
+# Mock DynamoDB client before importing app
+with patch("boto3.resource") as mock_boto_resource:
     # Configure mock to simulate successful connection
-    mock_mongo_instance = MagicMock()
-    mock_mongo_instance.admin.command.return_value = {"ok": 1}
-    mock_mongo.return_value = mock_mongo_instance
+    mock_dynamodb = MagicMock()
+    mock_boto_resource.return_value = mock_dynamodb
     from server import app
 
 client = TestClient(app)
@@ -21,8 +20,8 @@ client = TestClient(app)
 
 def test_health_check():
     """Test that health check endpoint works."""
-    with patch("server.mongo_client") as mock_client:
-        mock_client.admin.command.return_value = {"ok": 1}
+    with patch("server.db_client") as mock_db_client:
+        mock_db_client.health_check.return_value = True
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             response = client.get("/api/health")
             assert response.status_code == 200
@@ -32,22 +31,18 @@ def test_health_check():
 
 
 @patch("server.LLMClient")
-@patch("server.trips_col")
-@patch("server.plans_col")
-@patch("server.mongo_client")
-def test_generate_plan_success(
-    mock_mongo_client, mock_plans, mock_trips, mock_llm_client_class
-):
+@patch("server.db_client")
+def test_generate_plan_success(mock_db_client, mock_llm_client_class):
     """Test successful plan generation."""
     # Setup database mock
-    mock_mongo_client.admin.command.return_value = {"ok": 1}
+    mock_db_client.health_check.return_value = True
 
     # Setup mocks
     mock_device_id = "test-device"
     mock_trip_id = "trip-123"
     mock_port_id = "port-456"
 
-    mock_trips.find_one.return_value = {
+    mock_db_client.get_trip.return_value = {
         "trip_id": mock_trip_id,
         "device_id": mock_device_id,
         "ship_name": "Test Ship",

@@ -9,8 +9,12 @@ from fastapi.testclient import TestClient
 # Add backend to path so we can import server
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../backend"))
 
-# Mock MongoClient before importing app to avoid connection errors
-with patch("pymongo.MongoClient") as mock_mongo:
+# Mock DynamoDB before importing app to avoid connection errors
+with patch('boto3.resource') as mock_boto3:
+    mock_table = MagicMock()
+    mock_dynamodb = MagicMock()
+    mock_dynamodb.Table.return_value = mock_table
+    mock_boto3.return_value = mock_dynamodb
     from backend.server import app
 
 # Import exceptions from the same path as server.py uses
@@ -20,9 +24,8 @@ client = TestClient(app)
 
 
 @patch("backend.server.LLMClient")
-@patch("backend.server.trips_col")
-@patch("backend.server.plans_col")
-def test_generate_plan_success(mock_plans, mock_trips, mock_llm_client_class):
+@patch("backend.server.db_client")
+def test_generate_plan_success(mock_db_client, mock_llm_client_class):
     # 1. Setup mocks
     mock_device_id = "test-device-123"
     mock_trip_id = "trip-456"
@@ -31,7 +34,7 @@ def test_generate_plan_success(mock_plans, mock_trips, mock_llm_client_class):
     # Mock environment variable for API key
     with patch.dict(os.environ, {"GROQ_API_KEY": "test-api-key"}):
         # Mock Trip in DB
-        mock_trips.find_one.return_value = {
+        mock_db_client.get_trip.return_value = {
             "trip_id": mock_trip_id,
             "device_id": mock_device_id,
             "ship_name": "Test Ship",
@@ -47,6 +50,11 @@ def test_generate_plan_success(mock_plans, mock_trips, mock_llm_client_class):
                 }
             ],
         }
+        
+        # Mock successful plan creation
+        def create_plan_side_effect(plan):
+            return plan
+        mock_db_client.create_plan.side_effect = create_plan_side_effect
 
         # Mock LLM Client
         mock_llm_instance = MagicMock()
@@ -108,14 +116,17 @@ def test_generate_plan_success(mock_plans, mock_trips, mock_llm_client_class):
         assert "expert cruise port day planner" in call_kwargs[
             "system_instruction"
         ].lower()
+        
+        # Verify plan was saved to DynamoDB
+        assert mock_db_client.create_plan.called
 
 
 def test_generate_plan_missing_api_key():
     # Mock missing API key env var
     with patch.dict(os.environ, {"GROQ_API_KEY": ""}, clear=True):
         # Mock port/trip lookup to bypass it
-        with patch("backend.server.trips_col") as mock_trips:
-            mock_trips.find_one.return_value = {
+        with patch("backend.server.db_client") as mock_db_client:
+            mock_db_client.get_trip.return_value = {
                 "trip_id": "t",
                 "device_id": "d",
                 "ship_name": "Test Ship",
@@ -155,9 +166,8 @@ def test_generate_plan_missing_api_key():
 
 
 @patch("backend.server.LLMClient")
-@patch("backend.server.trips_col")
-@patch("backend.server.plans_col")
-def test_generate_plan_quota_exceeded(mock_plans, mock_trips, mock_llm_client_class):
+@patch("backend.server.db_client")
+def test_generate_plan_quota_exceeded(mock_db_client, mock_llm_client_class):
     """Test handling of API quota exceeded errors."""
     mock_device_id = "test-device-123"
     mock_trip_id = "trip-456"
@@ -165,7 +175,7 @@ def test_generate_plan_quota_exceeded(mock_plans, mock_trips, mock_llm_client_cl
 
     with patch.dict(os.environ, {"GROQ_API_KEY": "test-api-key"}):
         # Mock Trip in DB
-        mock_trips.find_one.return_value = {
+        mock_db_client.get_trip.return_value = {
             "trip_id": mock_trip_id,
             "device_id": mock_device_id,
             "ship_name": "Test Ship",
@@ -222,16 +232,15 @@ def test_generate_plan_quota_exceeded(mock_plans, mock_trips, mock_llm_client_cl
 
 
 @patch("backend.server.LLMClient")
-@patch("backend.server.trips_col")
-@patch("backend.server.plans_col")
-def test_generate_plan_auth_error(mock_plans, mock_trips, mock_llm_client_class):
+@patch("backend.server.db_client")
+def test_generate_plan_auth_error(mock_db_client, mock_llm_client_class):
     """Test handling of API authentication errors."""
     mock_device_id = "test-device-123"
     mock_trip_id = "trip-456"
     mock_port_id = "port-789"
 
     with patch.dict(os.environ, {"GROQ_API_KEY": "invalid-key"}):
-        mock_trips.find_one.return_value = {
+        mock_db_client.get_trip.return_value = {
             "trip_id": mock_trip_id,
             "device_id": mock_device_id,
             "ship_name": "Test Ship",

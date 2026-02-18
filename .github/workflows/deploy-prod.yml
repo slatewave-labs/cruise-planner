@@ -40,11 +40,89 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Start DynamoDB Local
+        run: |
+          docker run -d -p 8000:8000 amazon/dynamodb-local:latest \
+            -jar DynamoDBLocal.jar -sharedDb -inMemory
+          echo "DynamoDB Local container started"
+          sleep 5  # Give DynamoDB Local time to initialize
+
+      - name: Wait for DynamoDB Local to be ready
+        run: |
+          echo "Waiting for DynamoDB Local to start..."
+          pip install boto3  # Install AWS SDK for testing
+          for i in {1..30}; do
+            if python3 -c "import boto3; dynamodb = boto3.client('dynamodb', endpoint_url='http://localhost:8000', region_name='us-east-1', aws_access_key_id='dummy', aws_secret_access_key='dummy'); dynamodb.list_tables()" 2>/dev/null; then
+              echo "DynamoDB Local is ready!"
+              exit 0
+            fi
+            echo "Attempt $i: DynamoDB Local not ready yet, waiting..."
+            sleep 2
+          done
+          echo "DynamoDB Local failed to start"
+          docker ps -a
+          docker logs $(docker ps -aq --filter ancestor=amazon/dynamodb-local:latest)
+          exit 1
+
       - name: Install backend dependencies
         run: |
           cd backend
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx black flake8 isort
+
+      - name: Create DynamoDB test table
+        run: |
+          python3 << 'EOF'
+          import boto3
+          
+          # Create DynamoDB client
+          dynamodb = boto3.client(
+              'dynamodb',
+              endpoint_url='http://localhost:8000',
+              region_name='us-east-1',
+              aws_access_key_id='dummy',
+              aws_secret_access_key='dummy'
+          )
+          
+          # Create table
+          try:
+              dynamodb.create_table(
+                  TableName='shoreexplorer_test',
+                  KeySchema=[
+                      {'AttributeName': 'PK', 'KeyType': 'HASH'},
+                      {'AttributeName': 'SK', 'KeyType': 'RANGE'}
+                  ],
+                  AttributeDefinitions=[
+                      {'AttributeName': 'PK', 'AttributeType': 'S'},
+                      {'AttributeName': 'SK', 'AttributeType': 'S'},
+                      {'AttributeName': 'GSI1PK', 'AttributeType': 'S'},
+                      {'AttributeName': 'GSI1SK', 'AttributeType': 'S'}
+                  ],
+                  GlobalSecondaryIndexes=[
+                      {
+                          'IndexName': 'GSI1',
+                          'KeySchema': [
+                              {'AttributeName': 'GSI1PK', 'KeyType': 'HASH'},
+                              {'AttributeName': 'GSI1SK', 'KeyType': 'RANGE'}
+                          ],
+                          'Projection': {'ProjectionType': 'ALL'},
+                          'ProvisionedThroughput': {
+                              'ReadCapacityUnits': 5,
+                              'WriteCapacityUnits': 5
+                          }
+                      }
+                  ],
+                  BillingMode='PROVISIONED',
+                  ProvisionedThroughput={
+                      'ReadCapacityUnits': 5,
+                      'WriteCapacityUnits': 5
+                  }
+              )
+              print("Table 'shoreexplorer_test' created successfully!")
+          except Exception as e:
+              print(f"Error creating table: {e}")
+              raise
+          EOF
 
       - name: Backend lint
         run: cd backend && black --check . && isort --check-only . && flake8 .
@@ -54,8 +132,11 @@ jobs:
           cd backend
           pytest tests/ -v --tb=short
         env:
-          MONGO_URL: mongodb://localhost:27017
-          DB_NAME: shoreexplorer_test
+          DYNAMODB_TABLE_NAME: shoreexplorer_test
+          AWS_DEFAULT_REGION: us-east-1
+          DYNAMODB_ENDPOINT_URL: http://localhost:8000
+          AWS_ACCESS_KEY_ID: dummy
+          AWS_SECRET_ACCESS_KEY: dummy
           GROQ_API_KEY: test-key-not-real
 
       - uses: actions/setup-node@v4
@@ -71,12 +152,6 @@ jobs:
           yarn test --watchAll=false --ci
         env:
           CI: true
-
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
 
   # ─────────────────────────────────────────────────
   # Deploy to production (requires approval)
@@ -225,9 +300,11 @@ jobs:
               \"essential\": true,
               \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
               \"secrets\": [
-                {\"name\": \"MONGO_URL\", \"valueFrom\": \"${SECRET_ARN}:MONGO_URL::\"},
-                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"},
-                {\"name\": \"DB_NAME\", \"valueFrom\": \"${SECRET_ARN}:DB_NAME::\"}
+                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}
+              ],
+              \"environment\": [
+                {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"${PROJECT_NAME}-${ENVIRONMENT}\"},
+                {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"${AWS_REGION}\"}
               ],
               \"logConfiguration\": {
                 \"logDriver\": \"awslogs\",
