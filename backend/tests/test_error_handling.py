@@ -11,12 +11,11 @@ from fastapi.testclient import TestClient
 # Import app from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-# Mock MongoClient before importing app
-with patch("pymongo.MongoClient") as mock_mongo:
+# Mock DynamoDB client before importing app
+with patch("boto3.resource") as mock_boto_resource:
     # Configure mock to simulate successful connection
-    mock_mongo_instance = MagicMock()
-    mock_mongo_instance.admin.command.return_value = {"ok": 1}
-    mock_mongo.return_value = mock_mongo_instance
+    mock_dynamodb = MagicMock()
+    mock_boto_resource.return_value = mock_dynamodb
     from server import app
 
 client = TestClient(app)
@@ -25,10 +24,10 @@ client = TestClient(app)
 class TestHealthCheck:
     """Test the enhanced health check endpoint."""
 
-    @patch("server.mongo_client")
-    def test_health_check_all_services_healthy(self, mock_mongo_client):
+    @patch("server.db_client")
+    def test_health_check_all_services_healthy(self, mock_db_client):
         """Test health check when all services are healthy."""
-        mock_mongo_client.admin.command.return_value = {"ok": 1}
+        mock_db_client.health_check.return_value = True
 
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             response = client.get("/api/health")
@@ -39,7 +38,7 @@ class TestHealthCheck:
         assert data["checks"]["database"] == "healthy"
         assert data["checks"]["ai_service"] == "configured"
 
-    @patch("server.mongo_client", None)
+    @patch("server.db_client", None)
     def test_health_check_database_not_configured(self):
         """Test health check when database is not configured."""
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
@@ -50,10 +49,10 @@ class TestHealthCheck:
         assert data["status"] == "degraded"
         assert data["checks"]["database"] == "not_configured"
 
-    @patch("server.mongo_client")
-    def test_health_check_ai_service_not_configured(self, mock_mongo_client):
+    @patch("server.db_client")
+    def test_health_check_ai_service_not_configured(self, mock_db_client):
         """Test health check when AI service is not configured."""
-        mock_mongo_client.admin.command.return_value = {"ok": 1}
+        mock_db_client.health_check.return_value = True
 
         with patch.dict(os.environ, {}, clear=True):
             response = client.get("/api/health")
@@ -67,8 +66,7 @@ class TestHealthCheck:
 class TestDatabaseErrors:
     """Test database connection error handling."""
 
-    @patch("server.mongo_client", None)
-    @patch("server.trips_col", None)
+    @patch("server.db_client", None)
     def test_trip_creation_fails_when_db_unavailable(self):
         """Test that trip creation fails gracefully when database is unavailable."""
         response = client.post(
@@ -87,16 +85,15 @@ class TestDatabaseErrors:
 class TestNotFoundErrors:
     """Test 404 error responses with detailed messages."""
 
-    @patch("server.trips_col")
-    def test_get_trip_not_found(self, mock_trips):
+    @patch("server.db_client")
+    def test_get_trip_not_found(self, mock_db_client):
         """Test getting a non-existent trip returns detailed error."""
-        mock_trips.find_one.return_value = None
+        mock_db_client.get_trip.return_value = None
+        mock_db_client.health_check.return_value = True
 
-        with patch("server.mongo_client") as mock_client:
-            mock_client.admin.command.return_value = {"ok": 1}
-            response = client.get(
-                "/api/trips/nonexistent-id", headers={"X-Device-Id": "test-device"}
-            )
+        response = client.get(
+            "/api/trips/nonexistent-id", headers={"X-Device-Id": "test-device"}
+        )
 
         assert response.status_code == 404
         data = response.json()
@@ -105,16 +102,15 @@ class TestNotFoundErrors:
         assert "trip_id" in data["detail"]
         assert data["detail"]["trip_id"] == "nonexistent-id"
 
-    @patch("server.plans_col")
-    def test_get_plan_not_found(self, mock_plans):
+    @patch("server.db_client")
+    def test_get_plan_not_found(self, mock_db_client):
         """Test getting a non-existent plan returns detailed error."""
-        mock_plans.find_one.return_value = None
+        mock_db_client.get_plan.return_value = None
+        mock_db_client.health_check.return_value = True
 
-        with patch("server.mongo_client") as mock_client:
-            mock_client.admin.command.return_value = {"ok": 1}
-            response = client.get(
-                "/api/plans/nonexistent-id", headers={"X-Device-Id": "test-device"}
-            )
+        response = client.get(
+            "/api/plans/nonexistent-id", headers={"X-Device-Id": "test-device"}
+        )
 
         assert response.status_code == 404
         data = response.json()
@@ -169,11 +165,10 @@ class TestWeatherAPIErrors:
 class TestPlanGenerationErrors:
     """Test plan generation error scenarios."""
 
-    @patch("server.trips_col")
-    @patch("server.plans_col")
-    def test_generate_plan_missing_api_key(self, mock_plans, mock_trips):
+    @patch("server.db_client")
+    def test_generate_plan_missing_api_key(self, mock_db_client):
         """Test plan generation fails gracefully when API key is missing."""
-        mock_trips.find_one.return_value = {
+        mock_db_client.get_trip.return_value = {
             "trip_id": "trip-123",
             "device_id": "test-device",
             "ship_name": "Test Ship",
@@ -189,25 +184,24 @@ class TestPlanGenerationErrors:
                 }
             ],
         }
+        mock_db_client.health_check.return_value = True
 
-        with patch("server.mongo_client") as mock_client:
-            mock_client.admin.command.return_value = {"ok": 1}
-            with patch.dict(os.environ, {}, clear=True):
-                with patch("httpx.AsyncClient"):
-                    response = client.post(
-                        "/api/plans/generate",
-                        json={
-                            "trip_id": "trip-123",
-                            "port_id": "port-456",
-                            "preferences": {
-                                "party_type": "solo",
-                                "activity_level": "light",
-                                "transport_mode": "walking",
-                                "budget": "free",
-                            },
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("httpx.AsyncClient"):
+                response = client.post(
+                    "/api/plans/generate",
+                    json={
+                        "trip_id": "trip-123",
+                        "port_id": "port-456",
+                        "preferences": {
+                            "party_type": "solo",
+                            "activity_level": "light",
+                            "transport_mode": "walking",
+                            "budget": "free",
                         },
-                        headers={"X-Device-Id": "test-device"},
-                    )
+                    },
+                    headers={"X-Device-Id": "test-device"},
+                )
 
         assert response.status_code == 503
         data = response.json()
@@ -216,15 +210,12 @@ class TestPlanGenerationErrors:
         assert "troubleshooting" in data["detail"]
 
     @patch("server.LLMClient")
-    @patch("server.trips_col")
-    @patch("server.plans_col")
-    def test_generate_plan_quota_exceeded(
-        self, mock_plans, mock_trips, mock_llm_client_class
-    ):
+    @patch("server.db_client")
+    def test_generate_plan_quota_exceeded(self, mock_db_client, mock_llm_client_class):
         """Test plan generation handles quota exceeded errors."""
         from llm_client import LLMQuotaExceededError
 
-        mock_trips.find_one.return_value = {
+        mock_db_client.get_trip.return_value = {
             "trip_id": "trip-123",
             "device_id": "test-device",
             "ship_name": "Test Ship",
@@ -240,6 +231,7 @@ class TestPlanGenerationErrors:
                 }
             ],
         }
+        mock_db_client.health_check.return_value = True
 
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
@@ -247,24 +239,22 @@ class TestPlanGenerationErrors:
             "Quota exceeded for this project"
         )
 
-        with patch("server.mongo_client") as mock_client:
-            mock_client.admin.command.return_value = {"ok": 1}
-            with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
-                with patch("httpx.AsyncClient"):
-                    response = client.post(
-                        "/api/plans/generate",
-                        json={
-                            "trip_id": "trip-123",
-                            "port_id": "port-456",
-                            "preferences": {
-                                "party_type": "solo",
-                                "activity_level": "light",
-                                "transport_mode": "walking",
-                                "budget": "free",
-                            },
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+            with patch("httpx.AsyncClient"):
+                response = client.post(
+                    "/api/plans/generate",
+                    json={
+                        "trip_id": "trip-123",
+                        "port_id": "port-456",
+                        "preferences": {
+                            "party_type": "solo",
+                            "activity_level": "light",
+                            "transport_mode": "walking",
+                            "budget": "free",
                         },
-                        headers={"X-Device-Id": "test-device"},
-                    )
+                    },
+                    headers={"X-Device-Id": "test-device"},
+                )
 
         assert response.status_code == 503
         data = response.json()
@@ -273,15 +263,14 @@ class TestPlanGenerationErrors:
         assert "retry_after" in data["detail"]
 
     @patch("server.LLMClient")
-    @patch("server.trips_col")
-    @patch("server.plans_col")
+    @patch("server.db_client")
     def test_generate_plan_authentication_error(
-        self, mock_plans, mock_trips, mock_llm_client_class
+        self, mock_db_client, mock_llm_client_class
     ):
         """Test plan generation handles authentication errors."""
         from llm_client import LLMAuthenticationError
 
-        mock_trips.find_one.return_value = {
+        mock_db_client.get_trip.return_value = {
             "trip_id": "trip-123",
             "device_id": "test-device",
             "ship_name": "Test Ship",
@@ -297,6 +286,7 @@ class TestPlanGenerationErrors:
                 }
             ],
         }
+        mock_db_client.health_check.return_value = True
 
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
@@ -304,24 +294,22 @@ class TestPlanGenerationErrors:
             "Invalid API key provided - 401 authentication failed"
         )
 
-        with patch("server.mongo_client") as mock_client:
-            mock_client.admin.command.return_value = {"ok": 1}
-            with patch.dict(os.environ, {"GROQ_API_KEY": "invalid-key"}):
-                with patch("httpx.AsyncClient"):
-                    response = client.post(
-                        "/api/plans/generate",
-                        json={
-                            "trip_id": "trip-123",
-                            "port_id": "port-456",
-                            "preferences": {
-                                "party_type": "solo",
-                                "activity_level": "light",
-                                "transport_mode": "walking",
-                                "budget": "free",
-                            },
+        with patch.dict(os.environ, {"GROQ_API_KEY": "invalid-key"}):
+            with patch("httpx.AsyncClient"):
+                response = client.post(
+                    "/api/plans/generate",
+                    json={
+                        "trip_id": "trip-123",
+                        "port_id": "port-456",
+                        "preferences": {
+                            "party_type": "solo",
+                            "activity_level": "light",
+                            "transport_mode": "walking",
+                            "budget": "free",
                         },
-                        headers={"X-Device-Id": "test-device"},
-                    )
+                    },
+                    headers={"X-Device-Id": "test-device"},
+                )
 
         assert response.status_code == 503
         data = response.json()
@@ -329,15 +317,14 @@ class TestPlanGenerationErrors:
         assert data["detail"]["error"] == "ai_service_auth_failed"
 
     @patch("server.LLMClient")
-    @patch("server.trips_col")
-    @patch("server.plans_col")
+    @patch("server.db_client")
     def test_generate_plan_with_malformed_json_response(
-        self, mock_plans, mock_trips, mock_llm_client_class
+        self, mock_db_client, mock_llm_client_class
     ):
         """Test plan generation handles malformed JSON from AI."""
         import json as json_module
 
-        mock_trips.find_one.return_value = {
+        mock_db_client.get_trip.return_value = {
             "trip_id": "trip-123",
             "device_id": "test-device",
             "ship_name": "Test Ship",
@@ -353,6 +340,7 @@ class TestPlanGenerationErrors:
                 }
             ],
         }
+        mock_db_client.health_check.return_value = True
 
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
@@ -363,24 +351,22 @@ class TestPlanGenerationErrors:
             "Expecting value", "This is not valid JSON {broken", 0
         )
 
-        with patch("server.mongo_client") as mock_client:
-            mock_client.admin.command.return_value = {"ok": 1}
-            with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
-                with patch("httpx.AsyncClient"):
-                    response = client.post(
-                        "/api/plans/generate",
-                        json={
-                            "trip_id": "trip-123",
-                            "port_id": "port-456",
-                            "preferences": {
-                                "party_type": "solo",
-                                "activity_level": "light",
-                                "transport_mode": "walking",
-                                "budget": "free",
-                            },
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+            with patch("httpx.AsyncClient"):
+                response = client.post(
+                    "/api/plans/generate",
+                    json={
+                        "trip_id": "trip-123",
+                        "port_id": "port-456",
+                        "preferences": {
+                            "party_type": "solo",
+                            "activity_level": "light",
+                            "transport_mode": "walking",
+                            "budget": "free",
                         },
-                        headers={"X-Device-Id": "test-device"},
-                    )
+                    },
+                    headers={"X-Device-Id": "test-device"},
+                )
 
         # Should still return 200 but with parse_error flag
         assert response.status_code == 200
