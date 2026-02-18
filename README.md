@@ -314,7 +314,7 @@ Here is a complete reference of every environment variable the app uses:
 |----------|----------|-------------|----------------------|
 | `MONGO_URL` | Yes | MongoDB connection string. Points to your database. Use `mongodb://localhost:27017` for local or Atlas connection string for cloud. | `mongodb://localhost:27017` |
 | `DB_NAME` | Yes | Name of the MongoDB database to use. | `shoreexplorer` |
-| `GOOGLE_API_KEY` | Yes | Google Gemini API key for AI plan generation. Without this, the "Generate Day Plan" feature will not work. Get it from [Google AI Studio](https://aistudio.google.com/apikey). | *(You must provide your own key)* |
+| `GROQ_API_KEY` | Yes | Groq API key for AI plan generation. Without this, the "Generate Day Plan" feature will not work. Get it free from [Groq Console](https://console.groq.com/keys). See [GROQ_SETUP.md](GROQ_SETUP.md) for details. | *(You must provide your own key)* |
 
 ### Frontend (`frontend/.env`)
 
@@ -373,11 +373,12 @@ sudo systemctl start mongod
 **Windows:**
 MongoDB should run as a service automatically. If not, search for "Services" in the Start menu, find "MongoDB Server", and click "Start".
 
-### "GOOGLE_API_KEY" errors or AI plan generation fails
+### "GROQ_API_KEY" errors or AI plan generation fails
 - Double-check that your key is correct in `backend/.env`
 - Make sure there are no extra spaces or quotes around the key
-- Verify your key is valid at [Google AI Studio](https://aistudio.google.com/apikey)
-- Check that you haven't exceeded the free tier limits (15 requests/minute, 1500 requests/day)
+- Verify your key starts with `gsk_` and is valid at [Groq Console](https://console.groq.com/keys)
+- Check that you haven't exceeded the free tier limits (30 requests/minute, 14,400 requests/day)
+- See [GROQ_SETUP.md](GROQ_SETUP.md) for complete troubleshooting
 
 ### Frontend shows a blank page
 - Make sure the backend is running first (Terminal 1)
