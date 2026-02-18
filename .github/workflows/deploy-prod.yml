@@ -180,6 +180,121 @@ jobs:
           docker push "${{ steps.vars.outputs.frontend_image }}:${ENVIRONMENT}-latest"
 
       # ── Deploy to ECS (rolling deployment) ─────────────────────
+      # First, register updated task definitions with correct env vars
+      - name: Get secrets ARN
+        id: secrets
+        run: |
+          SECRET_ARN=$(aws secretsmanager describe-secret \
+            --secret-id "${PROJECT_NAME}-${ENVIRONMENT}-secrets" \
+            --query 'ARN' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+          
+          if [[ -z "$SECRET_ARN" ]]; then
+            echo "Warning: Could not find secrets ARN, skipping task definition update"
+            echo "secret_arn=" >> "$GITHUB_OUTPUT"
+          else
+            echo "secret_arn=${SECRET_ARN}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Register backend task definition
+        if: steps.secrets.outputs.secret_arn != ''
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          SECRET_ARN="${{ steps.secrets.outputs.secret_arn }}"
+          
+          # Get IAM role ARNs
+          EXECUTION_ROLE_ARN=$(aws iam get-role \
+            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" \
+            --query 'Role.Arn' --output text --region "$AWS_REGION")
+          TASK_ROLE_ARN=$(aws iam get-role \
+            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role" \
+            --query 'Role.Arn' --output text --region "$AWS_REGION")
+          
+          # Register backend task definition with GROQ_API_KEY
+          aws ecs register-task-definition \
+            --family "${PROJECT_NAME}-${ENVIRONMENT}-backend-task" \
+            --network-mode awsvpc \
+            --requires-compatibilities FARGATE \
+            --cpu 256 \
+            --memory 512 \
+            --execution-role-arn "$EXECUTION_ROLE_ARN" \
+            --task-role-arn "$TASK_ROLE_ARN" \
+            --container-definitions "[{
+              \"name\": \"backend\",
+              \"image\": \"${ECR_BASE}/${BACKEND_ECR_REPO}:latest\",
+              \"essential\": true,
+              \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
+              \"secrets\": [
+                {\"name\": \"MONGO_URL\", \"valueFrom\": \"${SECRET_ARN}:MONGO_URL::\"},
+                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"},
+                {\"name\": \"DB_NAME\", \"valueFrom\": \"${SECRET_ARN}:DB_NAME::\"}
+              ],
+              \"logConfiguration\": {
+                \"logDriver\": \"awslogs\",
+                \"options\": {
+                  \"awslogs-group\": \"/ecs/${PROJECT_NAME}-${ENVIRONMENT}-backend\",
+                  \"awslogs-region\": \"${AWS_REGION}\",
+                  \"awslogs-stream-prefix\": \"ecs\"
+                }
+              },
+              \"healthCheck\": {
+                \"command\": [\"CMD-SHELL\", \"python -c \\\"import urllib.request; exit(0 if urllib.request.urlopen('http://localhost:8001/api/health').status == 200 else 1)\\\"\"],
+                \"interval\": 30,
+                \"timeout\": 10,
+                \"retries\": 3,
+                \"startPeriod\": 60
+              }
+            }]" \
+            --tags "key=Project,value=${PROJECT_NAME}" "key=Environment,value=${ENVIRONMENT}" \
+            --region "$AWS_REGION"
+
+      - name: Register frontend task definition
+        if: steps.secrets.outputs.secret_arn != ''
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          
+          # Get IAM role ARNs
+          EXECUTION_ROLE_ARN=$(aws iam get-role \
+            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" \
+            --query 'Role.Arn' --output text --region "$AWS_REGION")
+          TASK_ROLE_ARN=$(aws iam get-role \
+            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role" \
+            --query 'Role.Arn' --output text --region "$AWS_REGION")
+          
+          # Register frontend task definition
+          aws ecs register-task-definition \
+            --family "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task" \
+            --network-mode awsvpc \
+            --requires-compatibilities FARGATE \
+            --cpu 256 \
+            --memory 512 \
+            --execution-role-arn "$EXECUTION_ROLE_ARN" \
+            --task-role-arn "$TASK_ROLE_ARN" \
+            --container-definitions "[{
+              \"name\": \"frontend\",
+              \"image\": \"${ECR_BASE}/${FRONTEND_ECR_REPO}:latest\",
+              \"essential\": true,
+              \"portMappings\": [{\"containerPort\": 80, \"protocol\": \"tcp\"}],
+              \"logConfiguration\": {
+                \"logDriver\": \"awslogs\",
+                \"options\": {
+                  \"awslogs-group\": \"/ecs/${PROJECT_NAME}-${ENVIRONMENT}-frontend\",
+                  \"awslogs-region\": \"${AWS_REGION}\",
+                  \"awslogs-stream-prefix\": \"ecs\"
+                }
+              },
+              \"healthCheck\": {
+                \"command\": [\"CMD-SHELL\", \"wget --quiet --tries=1 --spider http://localhost/ || exit 1\"],
+                \"interval\": 30,
+                \"timeout\": 5,
+                \"retries\": 3,
+                \"startPeriod\": 30
+              }
+            }]" \
+            --tags "key=Project,value=${PROJECT_NAME}" "key=Environment,value=${ENVIRONMENT}" \
+            --region "$AWS_REGION"
+
       - name: Update backend ECS service
         run: |
           aws ecs update-service \
