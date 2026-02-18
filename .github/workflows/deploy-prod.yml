@@ -40,6 +40,28 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Start DynamoDB Local
+        run: |
+          docker run -d -p 8000:8000 amazon/dynamodb-local:latest \
+            -jar DynamoDBLocal.jar -sharedDb -inMemory
+          echo "DynamoDB Local container started"
+
+      - name: Wait for DynamoDB Local to be ready
+        run: |
+          echo "Waiting for DynamoDB Local to start..."
+          for i in {1..30}; do
+            if curl -f http://localhost:8000/ 2>/dev/null; then
+              echo "DynamoDB Local is ready!"
+              exit 0
+            fi
+            echo "Attempt $i: DynamoDB Local not ready yet, waiting..."
+            sleep 2
+          done
+          echo "DynamoDB Local failed to start"
+          docker ps -a
+          docker logs $(docker ps -aq --filter ancestor=amazon/dynamodb-local:latest)
+          exit 1
+
       - name: Install backend dependencies
         run: |
           cd backend
@@ -74,12 +96,6 @@ jobs:
           yarn test --watchAll=false --ci
         env:
           CI: true
-
-    services:
-      dynamodb-local:
-        image: amazon/dynamodb-local:latest
-        ports:
-          - 8000:8000
 
   # ─────────────────────────────────────────────────
   # Deploy to production (requires approval)
