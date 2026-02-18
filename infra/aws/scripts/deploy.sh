@@ -176,6 +176,7 @@ EOF
     aws ecs update-service \
         --cluster "$ECS_CLUSTER_NAME" \
         --service "$BACKEND_SERVICE_NAME" \
+        --task-definition "$BACKEND_TASK_FAMILY" \
         --force-new-deployment \
         --region "$AWS_REGION" --output text >/dev/null
 
@@ -188,6 +189,7 @@ EOF
     aws ecs update-service \
         --cluster "$ECS_CLUSTER_NAME" \
         --service "$FRONTEND_SERVICE_NAME" \
+        --task-definition "$FRONTEND_TASK_FAMILY" \
         --force-new-deployment \
         --region "$AWS_REGION" --output text >/dev/null
 
