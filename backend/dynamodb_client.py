@@ -14,6 +14,7 @@ Design decisions:
 
 import logging
 import os
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import boto3
@@ -112,14 +113,16 @@ class DynamoDBClient:
         Returns:
             Created trip data
         """
-        item = {
-            "PK": f"TRIP#{trip['trip_id']}",
-            "SK": "METADATA",
-            "entity_type": "trip",
-            "GSI1PK": f"DEVICE#{trip['device_id']}",
-            "GSI1SK": trip["created_at"],
-            **trip,
-        }
+        item = self._convert_floats(
+            {
+                "PK": f"TRIP#{trip['trip_id']}",
+                "SK": "METADATA",
+                "entity_type": "trip",
+                "GSI1PK": f"DEVICE#{trip['device_id']}",
+                "GSI1SK": trip["created_at"],
+                **trip,
+            }
+        )
         try:
             self.table.put_item(Item=item)
             logger.debug(f"Created trip {trip['trip_id']}")
@@ -208,12 +211,15 @@ class DynamoDBClient:
             return None
 
         try:
+            # Convert floats to Decimals for DynamoDB compatibility
+            converted_updates = self._convert_floats(updates)
+
             # Build update expression
             update_expr_parts = []
             expr_attr_names = {}
             expr_attr_values = {}
 
-            for key, value in updates.items():
+            for key, value in converted_updates.items():
                 # DynamoDB doesn't allow updating PK/SK
                 if key in ["PK", "SK", "GSI1PK", "GSI1SK"]:
                     continue
@@ -240,7 +246,8 @@ class DynamoDBClient:
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 logger.warning(
-                    f"Update condition failed for trip {trip_id} - item doesn't exist or wrong device"
+                    f"Update condition failed for trip {trip_id} "
+                    f"- item doesn't exist or wrong device"
                 )
                 return None
             logger.error(f"Failed to update trip {trip_id}: {str(e)}")
@@ -285,14 +292,16 @@ class DynamoDBClient:
         Returns:
             Created plan data
         """
-        item = {
-            "PK": f"PLAN#{plan['plan_id']}",
-            "SK": "METADATA",
-            "entity_type": "plan",
-            "GSI1PK": f"DEVICE#{plan['device_id']}",
-            "GSI1SK": plan["generated_at"],
-            **plan,
-        }
+        item = self._convert_floats(
+            {
+                "PK": f"PLAN#{plan['plan_id']}",
+                "SK": "METADATA",
+                "entity_type": "plan",
+                "GSI1PK": f"DEVICE#{plan['device_id']}",
+                "GSI1SK": plan["generated_at"],
+                **plan,
+            }
+        )
         try:
             self.table.put_item(Item=item)
             logger.debug(f"Created plan {plan['plan_id']}")
@@ -482,9 +491,50 @@ class DynamoDBClient:
 
     # --- Helper Methods ---
 
+    @staticmethod
+    def _convert_floats(obj: Any) -> Any:
+        """
+        Recursively convert Python float values to Decimal for DynamoDB.
+
+        DynamoDB does not support Python float types. All numeric values
+        must be stored as Decimal. This method handles nested dicts and lists.
+
+        Args:
+            obj: Any Python object (dict, list, float, etc.)
+
+        Returns:
+            Object with all floats converted to Decimal
+        """
+        if isinstance(obj, float):
+            return Decimal(str(obj))
+        elif isinstance(obj, dict):
+            return {k: DynamoDBClient._convert_floats(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [DynamoDBClient._convert_floats(i) for i in obj]
+        return obj
+
+    @staticmethod
+    def _convert_decimals(obj: Any) -> Any:
+        """
+        Recursively convert Decimal values back to float for API responses.
+
+        Args:
+            obj: Any Python object (dict, list, Decimal, etc.)
+
+        Returns:
+            Object with all Decimals converted to float
+        """
+        if isinstance(obj, Decimal):
+            return float(obj)
+        elif isinstance(obj, dict):
+            return {k: DynamoDBClient._convert_decimals(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [DynamoDBClient._convert_decimals(i) for i in obj]
+        return obj
+
     def _clean_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Remove DynamoDB internal fields from an item.
+        Remove DynamoDB internal fields from an item and convert Decimals to floats.
 
         Args:
             item: DynamoDB item
@@ -495,4 +545,4 @@ class DynamoDBClient:
         cleaned = dict(item)
         for key in ["PK", "SK", "GSI1PK", "GSI1SK", "entity_type"]:
             cleaned.pop(key, None)
-        return cleaned
+        return self._convert_decimals(cleaned)
