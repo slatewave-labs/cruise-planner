@@ -66,11 +66,6 @@ jobs:
         image: amazon/dynamodb-local:latest
         ports:
           - 8000:8000
-        options: >-
-          --health-cmd "curl -f http://localhost:8000/ || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -85,6 +80,20 @@ jobs:
         run: |
           pip install -r backend/requirements.txt
           pip install pytest pytest-asyncio httpx pytest-cov requests uvicorn
+
+      - name: Wait for DynamoDB Local to be ready
+        run: |
+          echo "Waiting for DynamoDB Local to start..."
+          for i in {1..30}; do
+            if curl -f http://localhost:8000/ 2>/dev/null; then
+              echo "DynamoDB Local is ready!"
+              exit 0
+            fi
+            echo "Attempt $i: DynamoDB Local not ready yet, waiting..."
+            sleep 2
+          done
+          echo "DynamoDB Local failed to start"
+          exit 1
 
       - name: Run all pytest tests (Unit & Integration)
         run: |

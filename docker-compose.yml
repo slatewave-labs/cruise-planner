@@ -13,11 +13,6 @@ services:
       - dynamodb_data:/home/dynamodblocal/data
     networks:
       - app-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   backend:
     build:
@@ -33,8 +28,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-dummy}
       - GROQ_API_KEY=${GROQ_API_KEY}
     depends_on:
-      dynamodb-local:
-        condition: service_healthy
+      - dynamodb-local
     networks:
       - app-network
     restart: unless-stopped
