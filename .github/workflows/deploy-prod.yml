@@ -54,8 +54,11 @@ jobs:
           cd backend
           pytest tests/ -v --tb=short
         env:
-          MONGO_URL: mongodb://localhost:27017
-          DB_NAME: shoreexplorer_test
+          DYNAMODB_TABLE_NAME: shoreexplorer_test
+          AWS_DEFAULT_REGION: us-east-1
+          DYNAMODB_ENDPOINT_URL: http://localhost:8000
+          AWS_ACCESS_KEY_ID: dummy
+          AWS_SECRET_ACCESS_KEY: dummy
           GROQ_API_KEY: test-key-not-real
 
       - uses: actions/setup-node@v4
@@ -73,10 +76,10 @@ jobs:
           CI: true
 
     services:
-      mongodb:
-        image: mongo:7
+      dynamodb-local:
+        image: amazon/dynamodb-local:latest
         ports:
-          - 27017:27017
+          - 8000:8000
 
   # ─────────────────────────────────────────────────
   # Deploy to production (requires approval)
@@ -225,9 +228,11 @@ jobs:
               \"essential\": true,
               \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
               \"secrets\": [
-                {\"name\": \"MONGO_URL\", \"valueFrom\": \"${SECRET_ARN}:MONGO_URL::\"},
-                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"},
-                {\"name\": \"DB_NAME\", \"valueFrom\": \"${SECRET_ARN}:DB_NAME::\"}
+                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}
+              ],
+              \"environment\": [
+                {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"${PROJECT_NAME}-${ENVIRONMENT}\"},
+                {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"${AWS_REGION}\"}
               ],
               \"logConfiguration\": {
                 \"logDriver\": \"awslogs\",
