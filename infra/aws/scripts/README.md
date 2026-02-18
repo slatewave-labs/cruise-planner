@@ -74,6 +74,7 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
 |--------|---------|-------------|
 | `config.sh` | Shared configuration (sourced by other scripts) | N/A - not run directly |
 | `update-groq-api-key.sh` | Update GROQ_API_KEY in Secrets Manager | When you need to change or add your Groq API key |
+| `verify-task-definitions.sh` | Verify task definitions use GROQ_API_KEY | After deployment to verify configuration is correct |
 
 ---
 
@@ -135,6 +136,41 @@ This automated script will:
 - Verify the update was successful
 
 > **Note**: Get a free Groq API key at https://console.groq.com/keys
+
+### Verify Task Definitions
+
+After deployment or environment variable changes, verify your task definitions are configured correctly:
+
+```bash
+# Verify test environment
+./verify-task-definitions.sh test
+
+# Verify production environment
+./verify-task-definitions.sh prod
+```
+
+This will check:
+- ECS task definitions reference `GROQ_API_KEY` (not `GOOGLE_API_KEY`)
+- AWS Secrets Manager contains `GROQ_API_KEY`
+- All required secrets are present
+
+**Example output:**
+```
+Checking backend task definition...
+  Backend secrets: ["MONGO_URL","GROQ_API_KEY","DB_NAME"]
+  ✅ Backend uses GROQ_API_KEY
+  ✅ Backend does not reference GOOGLE_API_KEY
+
+Checking AWS Secrets Manager...
+  Available keys in secret:
+    - MONGO_URL
+    - GROQ_API_KEY
+    - DB_NAME
+  ✅ Secret contains GROQ_API_KEY
+  ✅ Secret does not contain GOOGLE_API_KEY
+
+✅ All checks passed! Task definitions and secrets are configured correctly.
+```
 
 ### Update Other Environment Variables
 
