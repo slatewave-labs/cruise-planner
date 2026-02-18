@@ -241,6 +241,8 @@ You'll need this number later:
 > 3. Paste the value
 > 4. Click **"Add secret"**
 
+> **Optional Domain Secrets:** If you plan to use custom domains (e.g., `test.shoreexplorer.com`), see [GitHub Secrets Guide](GITHUB-SECRETS.md) for configuring `TEST_DOMAIN` and `PROD_DOMAIN` secrets.
+
 ### Also Add GitHub Environments
 
 > Environments allow you to have separate test and production deployments.

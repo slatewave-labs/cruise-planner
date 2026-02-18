@@ -230,35 +230,79 @@ See [HTTPS-SETUP.md](HTTPS-SETUP.md) for detailed HTTPS configuration and wildca
 
 ## 🔄 Updating Backend URL
 
-After DNS is configured, update your frontend to use the custom domain:
+After DNS is configured, you need to configure your deployments to use the custom domain instead of the ALB DNS name.
 
-### Option 1: Update Secrets (Recommended)
+### Option 1: GitHub Secrets (Recommended for CI/CD)
+
+**This is the best approach if you're using GitHub Actions for deployments.**
+
+The GitHub workflows automatically configure `REACT_APP_BACKEND_URL` based on domain secrets. Simply add the base domain to your GitHub repository secrets:
+
+#### For Test Environment:
+
+1. Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions**
+2. Click **"New repository secret"**
+3. Add the secret:
+   - **Name:** `TEST_DOMAIN`
+   - **Value:** `shore-explorer.com` (your base domain, without the subdomain)
+4. The workflow will automatically use `http://test.shore-explorer.com` for `REACT_APP_BACKEND_URL`
+
+#### For Production Environment:
+
+1. In the same location, click **"New repository secret"**
+2. Add the secret:
+   - **Name:** `PROD_DOMAIN`
+   - **Value:** `shore-explorer.com` (your base domain)
+3. The workflow will automatically use `http://shore-explorer.com` for `REACT_APP_BACKEND_URL`
+
+**Next:** Trigger a new deployment to apply the changes:
+```bash
+# For test: Push to main branch or manually trigger workflow
+git push origin main
+
+# For production: Create a release tag
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+See [GitHub Workflows README](../../.github/workflows/README.md#configuring-custom-domains) for more details.
+
+### Option 2: Manual Build with Environment Variable
+
+**Use this for local builds or manual deployments outside GitHub Actions.**
+
+```bash
+# Set backend URL as environment variable
+export REACT_APP_BACKEND_URL="http://test.shore-explorer.com"
+
+# Rebuild and deploy
+cd /path/to/cruise-planner/infra/aws/scripts
+./build-and-deploy.sh test
+```
+
+The build script will use this environment variable when building the frontend Docker image.
+
+### Option 3: Update AWS Secrets Manager (Advanced)
+
+**Not typically needed** - Use this only if you're managing secrets directly in AWS.
 
 Update the secrets in AWS Secrets Manager:
 ```bash
 # Get current secrets
 SECRETS_ARN=$(cat .secrets-outputs-test.env | grep SECRET_ARN | cut -d'=' -f2)
 
-# Update REACT_APP_BACKEND_URL
+# Update all secrets including REACT_APP_BACKEND_URL
 aws secretsmanager put-secret-value \
   --secret-id "$SECRETS_ARN" \
   --secret-string '{
     "MONGO_URL": "mongodb+srv://...",
     "DB_NAME": "shoreexplorer",
     "GOOGLE_API_KEY": "your-key",
-    "REACT_APP_BACKEND_URL": "http://test.shoreexplorer.com"
+    "REACT_APP_BACKEND_URL": "http://test.shore-explorer.com"
   }'
 ```
 
-### Option 2: Rebuild with Environment Variable
-
-```bash
-# Set backend URL as environment variable
-export REACT_APP_BACKEND_URL="http://test.shoreexplorer.com"
-
-# Rebuild and deploy
-./build-and-deploy.sh test
-```
+**Note:** This approach requires you to rebuild and redeploy manually.
 
 ---
 
