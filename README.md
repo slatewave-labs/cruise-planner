@@ -52,8 +52,11 @@ Before you begin, you'll need to install some software on your computer. Don't w
 | **Node.js** (v18 or newer) | Runs the frontend (the part you see in the browser) | [nodejs.org/en/download](https://nodejs.org/en/download) |
 | **Yarn** | Installs frontend code packages | Installed via Node.js (see Step 1) |
 | **Python** (v3.9 or newer) | Runs the backend (the server that handles data) | [python.org/downloads](https://www.python.org/downloads/) |
-| **MongoDB** (v6 or newer) | The database that stores your trips and plans | [mongodb.com/try/download/community](https://www.mongodb.com/try/download/community) |
+| **Docker** (optional) | For running DynamoDB Local in development | [docker.com/get-docker](https://www.docker.com/get-docker/) |
+| **AWS CLI** (for production) | For deploying to AWS and managing DynamoDB | [aws.amazon.com/cli](https://aws.amazon.com/cli/) |
 | **Git** | Downloads the project code | [git-scm.com/downloads](https://git-scm.com/downloads/) |
+
+**Note**: For local development, we use **DynamoDB Local** (runs via Docker or standalone). For production, we use **AWS DynamoDB** (fully managed, serverless database).
 
 You will also need one API key:
 
@@ -102,17 +105,17 @@ yarn --version
    ```
    You should see something like `Python 3.11.x` or `Python 3.12.x`
 
-#### Install MongoDB
-1. Go to [mongodb.com/try/download/community](https://www.mongodb.com/try/download/community)
-2. Select your operating system and download the installer
-3. Run the installer (accept all defaults)
-4. MongoDB should start automatically as a background service
+#### Install Docker (for local DynamoDB)
+1. Go to [docker.com/get-docker](https://www.docker.com/get-docker/)
+2. Download Docker Desktop for your operating system
+3. Install and start Docker Desktop
+4. Verify installation:
+   ```
+   docker --version
+   ```
+   You should see `Docker version 20.x.x` or newer
 
-**To check MongoDB is running:**
-```
-mongosh --eval "db.runCommand({ ping: 1 })"
-```
-You should see `{ ok: 1 }`. If you get an error, see the [Troubleshooting](#troubleshooting-common-issues) section.
+**Note**: Docker is used to run DynamoDB Local for development. In production, we use AWS DynamoDB (managed service).
 
 #### Install Git
 1. Go to [git-scm.com/downloads](https://git-scm.com/downloads/)
@@ -183,18 +186,24 @@ You need to create a file called `.env` inside the `backend` folder. This file t
 **Mac / Linux:**
 ```bash
 cat > .env << 'EOF'
-MONGO_URL=mongodb://localhost:27017
-DB_NAME=shoreexplorer
+DYNAMODB_TABLE_NAME=shoreexplorer
+AWS_DEFAULT_REGION=us-east-1
+DYNAMODB_ENDPOINT_URL=http://localhost:8000
+AWS_ACCESS_KEY_ID=dummy
+AWS_SECRET_ACCESS_KEY=dummy
 GROQ_API_KEY=your-groq-api-key-here
 EOF
 ```
 
 **Windows (manually):**
 1. Open Notepad (or any text editor)
-2. Paste the following three lines:
+2. Paste the following lines:
    ```
-   MONGO_URL=mongodb://localhost:27017
-   DB_NAME=shoreexplorer
+   DYNAMODB_TABLE_NAME=shoreexplorer
+   AWS_DEFAULT_REGION=us-east-1
+   DYNAMODB_ENDPOINT_URL=http://localhost:8000
+   AWS_ACCESS_KEY_ID=dummy
+   AWS_SECRET_ACCESS_KEY=dummy
    GROQ_API_KEY=your-groq-api-key-here
    ```
 3. Save the file as `.env` (not `.env.txt`) inside the `backend` folder
@@ -205,9 +214,14 @@ EOF
 
 | Variable | What to Put | Example |
 |----------|------------|---------|
-| `MONGO_URL` | The address of your MongoDB database. If you installed MongoDB locally with defaults, **leave this as-is**. For MongoDB Atlas, use your connection string. | `mongodb://localhost:27017` or `mongodb+srv://user:pass@cluster.mongodb.net/` |
-| `DB_NAME` | The name of the database. **Leave this as-is** unless you want a custom name. | `shoreexplorer` |
+| `DYNAMODB_TABLE_NAME` | The name of your DynamoDB table. **Leave this as-is** for local development. | `shoreexplorer` |
+| `AWS_DEFAULT_REGION` | AWS region for DynamoDB. **Leave this as-is** for local development. | `us-east-1` |
+| `DYNAMODB_ENDPOINT_URL` | URL for DynamoDB Local. **Leave this as-is** when using Docker Compose. | `http://localhost:8000` |
+| `AWS_ACCESS_KEY_ID` | Dummy credentials for local DynamoDB. **Leave this as-is**. | `dummy` |
+| `AWS_SECRET_ACCESS_KEY` | Dummy credentials for local DynamoDB. **Leave this as-is**. | `dummy` |
 | `GROQ_API_KEY` | Your Groq API key for AI-powered day plan generation. Replace `your-groq-api-key-here` with your actual key from Groq Console. | `gsk_abc123...` |
+
+**Note**: The `dummy` AWS credentials are only for local development with DynamoDB Local. For production deployments to AWS, real AWS credentials are managed through IAM roles.
 
 > **Where do I get my Groq API Key?**
 > 1. Go to [Groq Console](https://console.groq.com/keys)
@@ -265,10 +279,49 @@ EOF
 
 ### Step 5: Start the App
 
-You'll need **two terminal windows** running at the same time - one for the backend and one for the frontend.
+There are two ways to start the app: using **Docker Compose** (recommended, easier) or **manually** (more control).
 
-#### Terminal 1: Start the Backend
+#### Option A: Using Docker Compose (Recommended)
 
+This method starts everything (frontend, backend, and DynamoDB Local) with a single command:
+
+```bash
+cd ~/Desktop/shoreexplorer
+docker-compose up --build
+```
+
+After a few moments, you should see:
+```
+dynamodb-local_1  | Initializing DynamoDB Local
+backend_1         | INFO:  Uvicorn running on http://0.0.0.0:8001
+frontend_1        | Compiled successfully!
+```
+
+**The app is now running:**
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8001
+- DynamoDB Local: http://localhost:8000
+
+Open your browser to `http://localhost:3000` to see the ShoreExplorer landing page.
+
+**To stop:** Press `Ctrl+C` in the terminal, then run `docker-compose down`
+
+#### Option B: Manual Setup (Advanced)
+
+If you prefer to run each service separately (useful for development):
+
+**Terminal 1: Start DynamoDB Local**
+```bash
+docker run -p 8000:8000 amazon/dynamodb-local
+```
+
+**Terminal 2: Initialize DynamoDB table**
+```bash
+cd ~/Desktop/shoreexplorer
+./infra/aws/scripts/init-dynamodb-local.sh
+```
+
+**Terminal 3: Start the Backend**
 ```bash
 cd ~/Desktop/shoreexplorer/backend
 source venv/bin/activate   # Mac/Linux (or venv\Scripts\activate on Windows)
@@ -277,15 +330,12 @@ uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 
 You should see:
 ```
+INFO:     Successfully connected to DynamoDB table 'shoreexplorer'
 INFO:     Uvicorn running on http://0.0.0.0:8001
 INFO:     Application startup complete.
 ```
 
-**Leave this terminal running.** Don't close it.
-
-#### Terminal 2: Start the Frontend
-
-Open a new terminal window and run:
+**Terminal 4: Start the Frontend**
 ```bash
 cd ~/Desktop/shoreexplorer/frontend
 yarn start
@@ -312,8 +362,11 @@ Here is a complete reference of every environment variable the app uses:
 
 | Variable | Required | Description | Default for Local Dev |
 |----------|----------|-------------|----------------------|
-| `MONGO_URL` | Yes | MongoDB connection string. Points to your database. Use `mongodb://localhost:27017` for local or Atlas connection string for cloud. | `mongodb://localhost:27017` |
-| `DB_NAME` | Yes | Name of the MongoDB database to use. | `shoreexplorer` |
+| `DYNAMODB_TABLE_NAME` | Yes | Name of the DynamoDB table for storing trips and plans. | `shoreexplorer` |
+| `AWS_DEFAULT_REGION` | Yes | AWS region for DynamoDB. For local development with DynamoDB Local, this can be any valid region. | `us-east-1` |
+| `DYNAMODB_ENDPOINT_URL` | No | Custom endpoint for DynamoDB Local. Only needed for local development. Omit this for production (uses real AWS DynamoDB). | `http://localhost:8000` |
+| `AWS_ACCESS_KEY_ID` | Conditional | AWS credentials. Use `dummy` for local DynamoDB. For production, managed via IAM roles (not needed in env file). | `dummy` |
+| `AWS_SECRET_ACCESS_KEY` | Conditional | AWS credentials. Use `dummy` for local DynamoDB. For production, managed via IAM roles (not needed in env file). | `dummy` |
 | `GROQ_API_KEY` | Yes | Groq API key for AI plan generation. Without this, the "Generate Day Plan" feature will not work. Get it free from [Groq Console](https://console.groq.com/keys). See [GROQ_SETUP.md](GROQ_SETUP.md) for details. | *(You must provide your own key)* |
 
 ### Frontend (`frontend/.env`)
@@ -322,7 +375,7 @@ Here is a complete reference of every environment variable the app uses:
 |----------|----------|-------------|----------------------|
 | `REACT_APP_BACKEND_URL` | Yes | The URL where the backend API is running. The frontend sends all data requests to this address. | `http://localhost:8001` |
 
-> **Important:** Do not add quotes around the values. Write `MONGO_URL=mongodb://localhost:27017` not `MONGO_URL="mongodb://localhost:27017"`
+> **Important:** Do not add quotes around the values. Write `DYNAMODB_TABLE_NAME=shoreexplorer` not `DYNAMODB_TABLE_NAME="shoreexplorer"`
 
 > **Important:** Do not add comments or extra text in the `.env` files. Each line should be exactly `KEY=value`.
 
@@ -357,21 +410,32 @@ Once the app is running in your browser:
 
 ## Troubleshooting Common Issues
 
-### "MongoDB connection refused" or backend won't start
-MongoDB needs to be running before you start the backend.
+### "Database service is currently unavailable" or backend won't start
 
-**Mac (Homebrew):**
+**If using Docker Compose:**
+Make sure Docker is running and start all services together:
 ```bash
-brew services start mongodb-community
+docker-compose up --build
 ```
 
-**Linux:**
+**If running manually:**
+DynamoDB Local needs to be running before you start the backend.
+
+1. Start DynamoDB Local in a separate terminal:
 ```bash
-sudo systemctl start mongod
+docker run -p 8000:8000 amazon/dynamodb-local
 ```
 
-**Windows:**
-MongoDB should run as a service automatically. If not, search for "Services" in the Start menu, find "MongoDB Server", and click "Start".
+2. Initialize the table (only needed once):
+```bash
+./infra/aws/scripts/init-dynamodb-local.sh
+```
+
+3. Verify it's running:
+```bash
+curl http://localhost:8000/
+```
+You should see a response from DynamoDB Local.
 
 ### "GROQ_API_KEY" errors or AI plan generation fails
 - Double-check that your key is correct in `backend/.env`
@@ -381,14 +445,15 @@ MongoDB should run as a service automatically. If not, search for "Services" in 
 - See [GROQ_SETUP.md](GROQ_SETUP.md) for complete troubleshooting
 
 ### Frontend shows a blank page
-- Make sure the backend is running first (Terminal 1)
+- Make sure the backend is running first
 - Check that `frontend/.env` has `REACT_APP_BACKEND_URL=http://localhost:8001`
 - If you changed the `.env` file while the frontend was running, stop the frontend (press `Ctrl+C`) and restart it with `yarn start`
 
 ### "Port already in use" error
-Another programme is using port 3000 or 8001. Either:
+Another programme is using port 3000, 8001, or 8000. Either:
 - Close the other programme, or
 - Change the port:
+  - DynamoDB Local: `docker run -p 8001:8000 amazon/dynamodb-local` (and update `DYNAMODB_ENDPOINT_URL` in backend/.env)
   - Backend: `uvicorn server:app --host 0.0.0.0 --port 8002 --reload` (and update `frontend/.env` to `REACT_APP_BACKEND_URL=http://localhost:8002`)
   - Frontend: `PORT=3001 yarn start`
 
@@ -465,7 +530,7 @@ Full terms and conditions for each service are available in the app at the **Ter
 
 ## Infrastructure & Deployment
 
-This application has been migrated from the Emergent platform to run on AWS with MongoDB Atlas M0.
+This application runs on AWS with DynamoDB for database storage.
 
 ### 🚨 Connection Issues?
 
@@ -475,12 +540,14 @@ If you're getting a "connection closed" error when accessing the deployed enviro
 
 ### Quick Deployment Options
 
-1. **Docker Compose** (Local/VPS) - See root `docker-compose.yml`
-2. **AWS Deployment** - See `infra/deployment/AWS-DEPLOYMENT.md` for complete guide
+1. **Docker Compose** (Local/VPS) - See root `docker-compose.yml` (includes DynamoDB Local)
+2. **AWS Deployment** - See `infra/aws/DYNAMODB-SETUP.md` for database setup, then `infra/deployment/AWS-DEPLOYMENT.md` for complete guide
 3. **Production Infrastructure** - See scaffolds below
 
 ### AWS Troubleshooting & Diagnostics
 
+- **DynamoDB Setup:** See [infra/aws/DYNAMODB-SETUP.md](./infra/aws/DYNAMODB-SETUP.md) for non-technical setup guide
+- **Create Tables:** Run `./infra/aws/scripts/create-dynamodb-tables.sh <env>` to provision DynamoDB tables
 - **Quick Fix:** Run `./infra/aws/scripts/quick-fix-alb.sh test` to auto-fix common issues
 - **Diagnostics:** Run `./infra/aws/scripts/diagnose-alb.sh test` for detailed health check
 - **DNS Setup:** Run `./infra/aws/scripts/09-setup-dns-subdomain.sh test yourdomain.com` to configure subdomains
@@ -492,8 +559,10 @@ If you're getting a "connection closed" error when accessing the deployed enviro
 
 The `infra/` folder contains **scaffold files** (marked with TODO comments) for production infrastructure. These are ready to be picked up and completed:
 
-- **`infra/deployment/AWS-DEPLOYMENT.md`** - Complete AWS deployment guide with MongoDB Atlas M0 setup
-- **`infra/github-actions/ci.yml`** - CI pipeline with unit tests, integration tests (PACT), and E2E tests (Playwright)
+- **`infra/aws/DYNAMODB-SETUP.md`** - Non-technical DynamoDB setup guide
+- **`infra/aws/scripts/create-dynamodb-tables.sh`** - Script to provision DynamoDB tables for dev/test/prod
+- **`infra/deployment/AWS-DEPLOYMENT.md`** - Complete AWS deployment guide
+- **`infra/github-actions/ci.yml`** - CI pipeline with unit tests, integration tests, and E2E tests
 - **`infra/github-actions/cd.yml`** - CD pipeline with blue/green deployment to beta and production
 - **`infra/feature-flags/config.json`** - Feature flag configuration with 0-100% rollout settings per environment
 - **`infra/monitoring/setup.md`** - Monitoring stack recommendations (Sentry, Grafana, UptimeRobot)
