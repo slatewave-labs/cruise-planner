@@ -3,14 +3,19 @@ Integration tests for Port Management within Trips
 Tests adding, updating, and deleting ports from trips
 """
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, Mock
 from fastapi.testclient import TestClient
 import sys
 import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../backend'))
 
-with patch('pymongo.MongoClient') as mock_mongo:
+# Mock DynamoDB before importing app
+with patch('boto3.resource') as mock_boto3:
+    mock_table = MagicMock()
+    mock_dynamodb = MagicMock()
+    mock_dynamodb.Table.return_value = mock_table
+    mock_boto3.return_value = mock_dynamodb
     from backend.server import app
 
 client = TestClient(app)
@@ -31,16 +36,24 @@ VALID_PORT_DATA = {
 }
 
 
-@patch('backend.server.trips_col')
-def test_add_port_to_trip_success(mock_trips):
+@patch('backend.server.db_client')
+def test_add_port_to_trip_success(mock_db_client):
     """Test successfully adding a port to a trip"""
     # Mock trip exists
-    mock_trips.find_one.return_value = {
+    existing_trip = {
         "trip_id": TEST_TRIP_ID,
         "device_id": VALID_DEVICE_ID,
         "ship_name": "Test Ship",
         "ports": []
     }
+    mock_db_client.get_trip.return_value = existing_trip
+    
+    # Mock successful update
+    updated_trip = {
+        **existing_trip,
+        "ports": [{**VALID_PORT_DATA, "port_id": "port-123"}]
+    }
+    mock_db_client.update_trip.return_value = updated_trip
     
     response = client.post(
         f"/api/trips/{TEST_TRIP_ID}/ports",
@@ -55,13 +68,14 @@ def test_add_port_to_trip_success(mock_trips):
     assert data["latitude"] == VALID_PORT_DATA["latitude"]
     
     # Verify update was called
-    assert mock_trips.update_one.called
+    assert mock_db_client.update_trip.called
 
 
-@patch('backend.server.trips_col')
-def test_add_port_trip_not_found(mock_trips):
+@patch('backend.server.db_client')
+def test_add_port_trip_not_found(mock_db_client):
     """Test adding port to non-existent trip"""
-    mock_trips.find_one.return_value = None
+    # DynamoDB returns None when trip not found
+    mock_db_client.get_trip.return_value = None
     
     response = client.post(
         f"/api/trips/nonexistent/ports",
@@ -106,11 +120,11 @@ def test_add_port_invalid_coordinates():
     assert response.status_code in [200, 422, 404]
 
 
-@patch('backend.server.trips_col')
-def test_update_port_success(mock_trips):
+@patch('backend.server.db_client')
+def test_update_port_success(mock_db_client):
     """Test updating an existing port"""
     # Mock trip with existing port
-    mock_trips.find_one.return_value = {
+    existing_trip = {
         "trip_id": TEST_TRIP_ID,
         "device_id": VALID_DEVICE_ID,
         "ports": [{
@@ -118,9 +132,18 @@ def test_update_port_success(mock_trips):
             **VALID_PORT_DATA
         }]
     }
+    mock_db_client.get_trip.return_value = existing_trip
     
     # Mock successful update
-    mock_trips.update_one.return_value = MagicMock(matched_count=1)
+    updated_trip = {
+        **existing_trip,
+        "ports": [{
+            "port_id": TEST_PORT_ID,
+            **VALID_PORT_DATA,
+            "arrival": "2023-10-01T09:00:00",
+        }]
+    }
+    mock_db_client.update_trip.return_value = updated_trip
     
     updated_data = {
         **VALID_PORT_DATA,
@@ -139,11 +162,19 @@ def test_update_port_success(mock_trips):
     assert "updated" in data["message"].lower()
 
 
-@patch('backend.server.trips_col')
-def test_update_port_not_found(mock_trips):
+@patch('backend.server.db_client')
+def test_update_port_not_found(mock_db_client):
     """Test updating non-existent port"""
-    # Mock update that matches no documents
-    mock_trips.update_one.return_value = MagicMock(matched_count=0)
+    # Mock trip exists but port doesn't
+    existing_trip = {
+        "trip_id": TEST_TRIP_ID,
+        "device_id": VALID_DEVICE_ID,
+        "ports": []
+    }
+    mock_db_client.get_trip.return_value = existing_trip
+    
+    # Update returns None when port not found
+    mock_db_client.update_trip.return_value = None
     
     response = client.put(
         f"/api/trips/{TEST_TRIP_ID}/ports/nonexistent",
@@ -154,11 +185,28 @@ def test_update_port_not_found(mock_trips):
     assert response.status_code == 404
 
 
-@patch('backend.server.trips_col')
-def test_delete_port_success(mock_trips):
+@patch('backend.server.db_client')
+def test_delete_port_success(mock_db_client):
     """Test deleting a port from a trip"""
-    # Mock successful update
-    mock_trips.update_one.return_value = MagicMock(matched_count=1)
+    # Mock trip with port
+    existing_trip = {
+        "trip_id": TEST_TRIP_ID,
+        "device_id": VALID_DEVICE_ID,
+        "ports": [{
+            "port_id": TEST_PORT_ID,
+            **VALID_PORT_DATA
+        }]
+    }
+    mock_db_client.get_trip.return_value = existing_trip
+    
+    # Mock successful deletion
+    updated_trip = {
+        **existing_trip,
+        "ports": []
+    }
+    mock_db_client.update_trip.return_value = updated_trip
+    # Mock cascade delete of plans
+    mock_db_client.delete_plans_by_port.return_value = 0
     
     response = client.delete(
         f"/api/trips/{TEST_TRIP_ID}/ports/{TEST_PORT_ID}",
@@ -170,14 +218,22 @@ def test_delete_port_success(mock_trips):
     assert "message" in data
     
     # Verify update was called to remove port
-    assert mock_trips.update_one.called
+    assert mock_db_client.update_trip.called
 
 
-@patch('backend.server.trips_col')
-def test_delete_port_not_found(mock_trips):
+@patch('backend.server.db_client')
+def test_delete_port_not_found(mock_db_client):
     """Test deleting non-existent port"""
-    # Mock update that matches no documents
-    mock_trips.update_one.return_value = MagicMock(matched_count=0)
+    # Mock trip exists but port doesn't
+    existing_trip = {
+        "trip_id": TEST_TRIP_ID,
+        "device_id": VALID_DEVICE_ID,
+        "ports": []
+    }
+    mock_db_client.get_trip.return_value = existing_trip
+    
+    # Update returns None when port not found
+    mock_db_client.update_trip.return_value = None
     
     response = client.delete(
         f"/api/trips/{TEST_TRIP_ID}/ports/nonexistent",
@@ -187,11 +243,11 @@ def test_delete_port_not_found(mock_trips):
     assert response.status_code == 404
 
 
-@patch('backend.server.trips_col')
-def test_multiple_ports_in_trip(mock_trips):
+@patch('backend.server.db_client')
+def test_multiple_ports_in_trip(mock_db_client):
     """Test managing multiple ports in a single trip"""
     # Mock trip with multiple ports
-    mock_trips.find_one.return_value = {
+    existing_trip = {
         "trip_id": TEST_TRIP_ID,
         "device_id": VALID_DEVICE_ID,
         "ports": [
@@ -199,6 +255,15 @@ def test_multiple_ports_in_trip(mock_trips):
             {"port_id": "port-2", "name": "Rome", **VALID_PORT_DATA, "country": "Italy"},
         ]
     }
+    mock_db_client.get_trip.return_value = existing_trip
+    
+    # Mock successful deletion
+    updated_trip = {
+        **existing_trip,
+        "ports": [{"port_id": "port-2", "name": "Rome", **VALID_PORT_DATA, "country": "Italy"}]
+    }
+    mock_db_client.update_trip.return_value = updated_trip
+    mock_db_client.delete_plans_by_port.return_value = 0
     
     # Delete one port
     response = client.delete(
@@ -209,16 +274,16 @@ def test_multiple_ports_in_trip(mock_trips):
     assert response.status_code == 200
 
 
-@patch('backend.server.trips_col')
-def test_port_isolation_between_devices(mock_trips):
+@patch('backend.server.db_client')
+def test_port_isolation_between_devices(mock_db_client):
     """Test that devices cannot modify each other's trip ports"""
     device_a = "device-a"
     device_b = "device-b"
     
-    # Device A's trip
-    mock_trips.find_one.return_value = None  # Trip not found for device B
-    
     # Device B tries to add port to Device A's trip
+    # DynamoDB returns None for device B (trip not found)
+    mock_db_client.get_trip.return_value = None
+    
     response = client.post(
         f"/api/trips/{TEST_TRIP_ID}/ports",
         json=VALID_PORT_DATA,
@@ -228,20 +293,28 @@ def test_port_isolation_between_devices(mock_trips):
     assert response.status_code == 404
 
 
-@patch('backend.server.trips_col')
-def test_add_port_with_special_characters_in_name(mock_trips):
+@patch('backend.server.db_client')
+def test_add_port_with_special_characters_in_name(mock_db_client):
     """Test adding port with special characters in name"""
-    mock_trips.find_one.return_value = {
+    existing_trip = {
         "trip_id": TEST_TRIP_ID,
         "device_id": VALID_DEVICE_ID,
         "ports": []
     }
+    mock_db_client.get_trip.return_value = existing_trip
     
     special_port = {
         **VALID_PORT_DATA,
         "name": "São Paulo (Santos)",
         "country": "Côte d'Ivoire"
     }
+    
+    # Mock successful update
+    updated_trip = {
+        **existing_trip,
+        "ports": [{**special_port, "port_id": "port-123"}]
+    }
+    mock_db_client.update_trip.return_value = updated_trip
     
     response = client.post(
         f"/api/trips/{TEST_TRIP_ID}/ports",

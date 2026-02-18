@@ -57,17 +57,17 @@ jobs:
           mypy . --ignore-missing-imports
         continue-on-error: true  # Type checking is advisory for now
 
-  # Backend tests - Run unit and integration tests with MongoDB
+  # Backend tests - Run unit and integration tests with DynamoDB Local
   backend-test:
     name: Backend Tests (Unit & Integration)
     runs-on: ubuntu-latest
     services:
-      mongodb:
-        image: mongo:7
+      dynamodb-local:
+        image: amazon/dynamodb-local:latest
         ports:
-          - 27017:27017
+          - 8000:8000
         options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-cmd "curl -f http://localhost:8000/ || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -91,8 +91,11 @@ jobs:
           # Use pytest.ini from root which includes backend/tests, tests/unit, tests/integration
           pytest -v --cov=backend --cov-report=xml --cov-report=term
         env:
-          MONGO_URL: mongodb://localhost:27017
-          DB_NAME: shoreexplorer_test
+          DYNAMODB_TABLE_NAME: shoreexplorer_test
+          AWS_DEFAULT_REGION: us-east-1
+          DYNAMODB_ENDPOINT_URL: http://localhost:8000
+          AWS_ACCESS_KEY_ID: dummy
+          AWS_SECRET_ACCESS_KEY: dummy
           GROQ_API_KEY: mock-key-for-testing
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
 

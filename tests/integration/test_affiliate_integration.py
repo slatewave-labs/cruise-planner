@@ -10,7 +10,14 @@ from unittest.mock import Mock, patch
 # Add backend directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../backend"))
 
-from server import app
+# Mock DynamoDB before importing app
+with patch('boto3.resource') as mock_boto3:
+    mock_table = Mock()
+    mock_dynamodb = Mock()
+    mock_dynamodb.Table.return_value = mock_table
+    mock_boto3.return_value = mock_dynamodb
+    from server import app
+
 from affiliate_config import add_affiliate_params
 from fastapi.testclient import TestClient
 
@@ -24,15 +31,10 @@ def test_client():
 @pytest.fixture
 def mock_db(monkeypatch):
     """Mock database operations."""
-    mock_trips_col = Mock()
-    mock_plans_col = Mock()
-    mock_mongo_client = Mock()
-    
-    # Mock the admin.command ping to succeed
-    mock_mongo_client.admin.command.return_value = {"ok": 1}
+    mock_db_client = Mock()
     
     # Mock successful trip lookup
-    mock_trips_col.find_one.return_value = {
+    mock_db_client.get_trip.return_value = {
         "trip_id": "test-trip-123",
         "device_id": "test-device",
         "ship_name": "Test Ship",
@@ -50,16 +52,15 @@ def mock_db(monkeypatch):
     }
     
     # Mock successful plan save
-    mock_plans_col.insert_one.return_value = Mock(inserted_id="test-plan-789")
+    def create_plan_side_effect(plan):
+        return plan
+    mock_db_client.create_plan.side_effect = create_plan_side_effect
     
-    # Patch the collections in the server module
+    # Patch the db_client in the server module
     import server
-    monkeypatch.setattr("server.trips_col", mock_trips_col)
-    monkeypatch.setattr("server.plans_col", mock_plans_col)
-    monkeypatch.setattr("server.mongo_client", mock_mongo_client)
-    monkeypatch.setattr("server.db", Mock())
+    monkeypatch.setattr("server.db_client", mock_db_client)
     
-    return mock_trips_col, mock_plans_col
+    return mock_db_client
 
 
 class TestAffiliateLinksInPlanGeneration:
