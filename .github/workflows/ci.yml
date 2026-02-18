@@ -179,16 +179,6 @@ jobs:
   backend-integrity:
     name: Backend Integrity (E2E)
     runs-on: ubuntu-latest
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -203,6 +193,66 @@ jobs:
         run: |
           pip install -r backend/requirements.txt
           pip install requests uvicorn
+
+      - name: Start DynamoDB Local
+        run: |
+          docker run -d -p 8000:8000 amazon/dynamodb-local:latest \
+            -jar DynamoDBLocal.jar -sharedDb -inMemory
+          echo "DynamoDB Local container started"
+
+      - name: Wait for DynamoDB Local to be ready
+        run: |
+          echo "Waiting for DynamoDB Local to start..."
+          sleep 5
+          python3 -c "import boto3; boto3.client('dynamodb', endpoint_url='http://localhost:8000', region_name='us-east-1', aws_access_key_id='dummy', aws_secret_access_key='dummy').list_tables()"
+          echo "DynamoDB Local is ready!"
+
+      - name: Create DynamoDB test table
+        run: |
+          python3 << 'EOF'
+          import boto3
+          
+          dynamodb = boto3.client(
+              'dynamodb',
+              endpoint_url='http://localhost:8000',
+              region_name='us-east-1',
+              aws_access_key_id='dummy',
+              aws_secret_access_key='dummy'
+          )
+          
+          # Create table with same schema as production
+          table_name = 'shoreexplorer_integrity'
+          
+          try:
+              dynamodb.create_table(
+                  TableName=table_name,
+                  KeySchema=[
+                      {'AttributeName': 'PK', 'KeyType': 'HASH'},
+                      {'AttributeName': 'SK', 'KeyType': 'RANGE'}
+                  ],
+                  AttributeDefinitions=[
+                      {'AttributeName': 'PK', 'AttributeType': 'S'},
+                      {'AttributeName': 'SK', 'AttributeType': 'S'},
+                      {'AttributeName': 'GSI1PK', 'AttributeType': 'S'},
+                      {'AttributeName': 'GSI1SK', 'AttributeType': 'S'}
+                  ],
+                  BillingMode='PAY_PER_REQUEST',
+                  GlobalSecondaryIndexes=[
+                      {
+                          'IndexName': 'GSI1',
+                          'KeySchema': [
+                              {'AttributeName': 'GSI1PK', 'KeyType': 'HASH'},
+                              {'AttributeName': 'GSI1SK', 'KeyType': 'RANGE'}
+                          ],
+                          'Projection': {'ProjectionType': 'ALL'}
+                      }
+                  ]
+              )
+              print(f"Created table: {table_name}")
+          except Exception as e:
+              print(f"Error creating table: {e}")
+              raise
+          EOF
 
       - name: Run System Integrity Tests
         run: |
@@ -230,8 +280,11 @@ jobs:
           kill $SERVER_PID
           exit $RESULT
         env:
-          MONGO_URL: mongodb://localhost:27017
-          DB_NAME: shoreexplorer_integrity
+          DYNAMODB_TABLE_NAME: shoreexplorer_integrity
+          AWS_DEFAULT_REGION: us-east-1
+          DYNAMODB_ENDPOINT_URL: http://localhost:8000
+          AWS_ACCESS_KEY_ID: dummy
+          AWS_SECRET_ACCESS_KEY: dummy
           GROQ_API_KEY: mock-key-for-testing
 
   # Frontend linting - Check code style
