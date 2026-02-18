@@ -89,74 +89,29 @@ The tests mock the Groq API client, so no real API calls are made during testing
 
 ### Production Deployment (AWS ECS)
 
-#### Option 1: Using AWS Secrets Manager (Recommended)
+> **📚 Complete AWS Setup Guide**: For detailed instructions including automated scripts, troubleshooting, and IAM permissions, see **[infra/aws/AWS_GROQ_SETUP.md](./infra/aws/AWS_GROQ_SETUP.md)**
 
-1. **Store the API key in AWS Secrets Manager**:
-   ```bash
-   aws secretsmanager create-secret \
-     --name /shoreexplorer/prod/groq-api-key \
-     --description "Groq API key for ShoreExplorer production" \
-     --secret-string "gsk_your_actual_api_key_here" \
-     --region us-east-1
-   ```
+#### Quick Setup (AWS)
 
-2. **Update ECS task definition** to reference the secret:
-   ```json
-   {
-     "name": "GROQ_API_KEY",
-     "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:/shoreexplorer/prod/groq-api-key"
-   }
-   ```
+ShoreExplorer stores all secrets (MONGO_URL, GROQ_API_KEY, DB_NAME) in a **single JSON secret** in AWS Secrets Manager.
 
-3. **Grant ECS task role permission** to read the secret:
-   ```json
-   {
-     "Effect": "Allow",
-     "Action": [
-       "secretsmanager:GetSecretValue"
-     ],
-     "Resource": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:/shoreexplorer/prod/groq-api-key*"
-   }
-   ```
+**✅ Recommended: Use the automated update script**
 
-#### Option 2: Using Environment Variables in ECS Task Definition
+```bash
+# For test environment
+./infra/aws/scripts/update-groq-api-key.sh test gsk_your_api_key_here
 
-In your ECS task definition JSON:
-
-```json
-{
-  "containerDefinitions": [
-    {
-      "name": "backend",
-      "environment": [
-        {
-          "name": "GROQ_API_KEY",
-          "value": "gsk_your_actual_api_key_here"
-        }
-      ]
-    }
-  ]
-}
+# For production
+./infra/aws/scripts/update-groq-api-key.sh prod gsk_your_api_key_here
 ```
 
-> **Warning**: This stores the key in plain text in your task definition. Use Secrets Manager for better security.
+This script will:
+- Update only the GROQ_API_KEY in your existing secret
+- Keep MONGO_URL and DB_NAME unchanged
+- Optionally restart your ECS service
+- Verify the update succeeded
 
-#### Option 3: Using GitHub Actions Secrets (for CI/CD)
-
-1. Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions**
-2. Click **"New repository secret"**
-3. Name: `GROQ_API_KEY`
-4. Value: `gsk_your_actual_api_key_here`
-5. Click **"Add secret"**
-
-6. Update your `.github/workflows/deploy-prod.yml`:
-   ```yaml
-   - name: Deploy to ECS
-     env:
-       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-     run: |
-       # Your deployment script
-   ```
+**📖 For complete instructions, IAM permissions, and troubleshooting**, see [infra/aws/AWS_GROQ_SETUP.md](./infra/aws/AWS_GROQ_SETUP.md)
 
 ### Docker Deployment
 

@@ -24,8 +24,8 @@ You are **Security Engineer**, a security engineer who thinks like an attacker b
 - **Auth**: Currently none (MVP) — plan for it
 - **Database**: MongoDB (NoSQL injection is real)
 - **AI Integration**: User input goes into LLM prompts (prompt injection risk)
-- **API Keys**: `GOOGLE_API_KEY` for Gemini, `MONGO_URL` for database
-- **External APIs**: Open-Meteo (no auth), Google Gemini (API key)
+- **API Keys**: `GROQ_API_KEY` for Groq LLM (Llama 3.3 70B), `MONGO_URL` for database
+- **External APIs**: Open-Meteo (no auth), Groq (API key)
 - **Frontend**: React (XSS protection via JSX, but watch `dangerouslySetInnerHTML`)
 
 ## Rules You Follow

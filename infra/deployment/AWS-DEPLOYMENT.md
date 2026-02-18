@@ -145,7 +145,7 @@ cd cruise-planner
 
 # Create .env file
 cat > .env << EOF
-GOOGLE_API_KEY=your-google-api-key-here
+GROQ_API_KEY=gsk_your-groq-api-key-here
 MONGO_URL=mongodb+srv://shoreexplorer:yourpassword@cluster.mongodb.net/?retryWrites=true&w=majority
 DB_NAME=shoreexplorer
 REACT_APP_BACKEND_URL=http://your-ec2-public-ip:8001
@@ -199,7 +199,7 @@ docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/shoreexplorer-frontend:
    - Container image: Select backend image
    - Port: 8001
    - Environment variables:
-     - `GOOGLE_API_KEY`
+     - `GROQ_API_KEY`
      - `MONGO_URL`
      - `DB_NAME`
 3. Create frontend service:
@@ -236,7 +236,7 @@ Point your domain to:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `GOOGLE_API_KEY` | Google Gemini API key | `AIzaSyC...` |
+| `GROQ_API_KEY` | Groq API key for AI plan generation | `gsk_abc123...` |
 | `MONGO_URL` | MongoDB Atlas connection string | `mongodb+srv://user:pass@cluster.mongodb.net/...` |
 | `DB_NAME` | Database name | `shoreexplorer` |
 | `REACT_APP_BACKEND_URL` | Backend URL for frontend | `https://api.yourdomain.com` |

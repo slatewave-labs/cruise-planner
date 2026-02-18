@@ -73,7 +73,7 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
 | `config.sh` | Shared configuration (sourced by other scripts) | N/A - not run directly |
-| `update-secrets.sh` | Update secrets in Secrets Manager | When API keys or DB credentials change |
+| `update-groq-api-key.sh` | Update GROQ_API_KEY in Secrets Manager | When you need to change or add your Groq API key |
 
 ---
 
@@ -85,7 +85,7 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
    - AWS CLI installed and configured
    - Docker installed
    - MongoDB Atlas cluster created
-   - Google Gemini API key obtained
+   - Groq API key obtained (free at https://console.groq.com/keys)
 
 2. **Run setup:**
    ```bash
@@ -116,13 +116,36 @@ This will:
 - Update ECS services
 - Wait for deployment to complete
 
-### Update Environment Variables
+### Update Groq API Key
 
-If you need to change MongoDB connection, API keys, etc.:
+If you need to change or add your Groq API key:
 
 ```bash
-./update-secrets.sh test
-# Follow prompts to update values
+# For test environment
+./update-groq-api-key.sh test gsk_your_new_api_key_here
+
+# For production environment
+./update-groq-api-key.sh prod gsk_your_new_api_key_here
+```
+
+This automated script will:
+- Update only the GROQ_API_KEY in AWS Secrets Manager
+- Keep your existing MONGO_URL and DB_NAME unchanged
+- Optionally restart your ECS backend service
+- Verify the update was successful
+
+> **Note**: Get a free Groq API key at https://console.groq.com/keys
+
+### Update Other Environment Variables
+
+If you need to change MongoDB connection or other secrets:
+
+```bash
+# Update all secrets manually
+export MONGO_URL="your-new-mongo-url"
+export GROQ_API_KEY="your-groq-key"
+
+./03-create-secrets.sh test  # This will update the existing secret
 
 # Then redeploy to pick up new values
 ./deploy.sh test

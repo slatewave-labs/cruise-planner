@@ -93,7 +93,7 @@ cd cruise-planner
 
 # Create environment file
 cat > .env << 'EOF'
-GOOGLE_API_KEY=your-google-api-key-here
+GROQ_API_KEY=gsk_your-groq-api-key-here
 MONGO_URL=mongodb+srv://shoreexplorer:your-password@cluster.mongodb.net/?retryWrites=true&w=majority
 DB_NAME=shoreexplorer
 REACT_APP_BACKEND_URL=http://your-ec2-public-ip:8001
