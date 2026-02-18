@@ -23,7 +23,7 @@ def test_health_check():
     """Test that health check endpoint works."""
     with patch("server.mongo_client") as mock_client:
         mock_client.admin.command.return_value = {"ok": 1}
-        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             response = client.get("/api/health")
             assert response.status_code == 200
             data = response.json()
@@ -31,12 +31,12 @@ def test_health_check():
             assert "checks" in data
 
 
-@patch("google.genai.Client")
+@patch("server.LLMClient")
 @patch("server.trips_col")
 @patch("server.plans_col")
 @patch("server.mongo_client")
 def test_generate_plan_success(
-    mock_mongo_client, mock_plans, mock_trips, mock_genai_client_class
+    mock_mongo_client, mock_plans, mock_trips, mock_llm_client_class
 ):
     """Test successful plan generation."""
     # Setup database mock
@@ -64,12 +64,12 @@ def test_generate_plan_success(
         ],
     }
 
-    # Mock Gemini
-    mock_genai_instance = MagicMock()
-    mock_genai_client_class.return_value = mock_genai_instance
-    mock_response = MagicMock()
-    mock_response.text = json.dumps({"plan_title": "Mock Plan", "activities": []})
-    mock_genai_instance.models.generate_content.return_value = mock_response
+    # Mock LLM Client
+    mock_llm_instance = MagicMock()
+    mock_llm_client_class.return_value = mock_llm_instance
+    plan_json = json.dumps({"plan_title": "Mock Plan", "activities": []})
+    mock_llm_instance.generate_day_plan.return_value = plan_json
+    mock_llm_instance.parse_json_response.return_value = json.loads(plan_json)
 
     payload = {
         "trip_id": mock_trip_id,
@@ -90,7 +90,7 @@ def test_generate_plan_success(
         mock_weather_response.status_code = 404  # Weather fail shouldn't break plan
         mock_client.get.return_value = mock_weather_response
 
-        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             response = client.post(
                 "/api/plans/generate",
                 json=payload,

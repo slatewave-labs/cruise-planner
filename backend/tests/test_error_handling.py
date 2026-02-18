@@ -215,11 +215,15 @@ class TestPlanGenerationErrors:
         assert data["detail"]["error"] == "ai_service_not_configured"
         assert "troubleshooting" in data["detail"]
 
-    @patch("google.genai.Client")
+    @patch("server.LLMClient")
     @patch("server.trips_col")
     @patch("server.plans_col")
-    def test_generate_plan_quota_exceeded(self, mock_plans, mock_trips, mock_genai):
+    def test_generate_plan_quota_exceeded(
+        self, mock_plans, mock_trips, mock_llm_client_class
+    ):
         """Test plan generation handles quota exceeded errors."""
+        from llm_client import LLMQuotaExceededError
+
         mock_trips.find_one.return_value = {
             "trip_id": "trip-123",
             "device_id": "test-device",
@@ -237,15 +241,15 @@ class TestPlanGenerationErrors:
             ],
         }
 
-        mock_genai_instance = MagicMock()
-        mock_genai.return_value = mock_genai_instance
-        mock_genai_instance.models.generate_content.side_effect = Exception(
+        mock_llm_instance = MagicMock()
+        mock_llm_client_class.return_value = mock_llm_instance
+        mock_llm_instance.generate_day_plan.side_effect = LLMQuotaExceededError(
             "Quota exceeded for this project"
         )
 
         with patch("server.mongo_client") as mock_client:
             mock_client.admin.command.return_value = {"ok": 1}
-            with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+            with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
                 with patch("httpx.AsyncClient"):
                     response = client.post(
                         "/api/plans/generate",
@@ -268,13 +272,15 @@ class TestPlanGenerationErrors:
         assert data["detail"]["error"] == "ai_service_quota_exceeded"
         assert "retry_after" in data["detail"]
 
-    @patch("google.genai.Client")
+    @patch("server.LLMClient")
     @patch("server.trips_col")
     @patch("server.plans_col")
     def test_generate_plan_authentication_error(
-        self, mock_plans, mock_trips, mock_genai
+        self, mock_plans, mock_trips, mock_llm_client_class
     ):
         """Test plan generation handles authentication errors."""
+        from llm_client import LLMAuthenticationError
+
         mock_trips.find_one.return_value = {
             "trip_id": "trip-123",
             "device_id": "test-device",
@@ -292,15 +298,15 @@ class TestPlanGenerationErrors:
             ],
         }
 
-        mock_genai_instance = MagicMock()
-        mock_genai.return_value = mock_genai_instance
-        mock_genai_instance.models.generate_content.side_effect = Exception(
+        mock_llm_instance = MagicMock()
+        mock_llm_client_class.return_value = mock_llm_instance
+        mock_llm_instance.generate_day_plan.side_effect = LLMAuthenticationError(
             "Invalid API key provided - 401 authentication failed"
         )
 
         with patch("server.mongo_client") as mock_client:
             mock_client.admin.command.return_value = {"ok": 1}
-            with patch.dict(os.environ, {"GOOGLE_API_KEY": "invalid-key"}):
+            with patch.dict(os.environ, {"GROQ_API_KEY": "invalid-key"}):
                 with patch("httpx.AsyncClient"):
                     response = client.post(
                         "/api/plans/generate",
@@ -322,13 +328,15 @@ class TestPlanGenerationErrors:
         assert "detail" in data
         assert data["detail"]["error"] == "ai_service_auth_failed"
 
-    @patch("google.genai.Client")
+    @patch("server.LLMClient")
     @patch("server.trips_col")
     @patch("server.plans_col")
     def test_generate_plan_with_malformed_json_response(
-        self, mock_plans, mock_trips, mock_genai
+        self, mock_plans, mock_trips, mock_llm_client_class
     ):
         """Test plan generation handles malformed JSON from AI."""
+        import json as json_module
+
         mock_trips.find_one.return_value = {
             "trip_id": "trip-123",
             "device_id": "test-device",
@@ -346,15 +354,18 @@ class TestPlanGenerationErrors:
             ],
         }
 
-        mock_genai_instance = MagicMock()
-        mock_genai.return_value = mock_genai_instance
-        mock_response = MagicMock()
-        mock_response.text = "This is not valid JSON {broken"
-        mock_genai_instance.models.generate_content.return_value = mock_response
+        mock_llm_instance = MagicMock()
+        mock_llm_client_class.return_value = mock_llm_instance
+        mock_llm_instance.generate_day_plan.return_value = (
+            "This is not valid JSON {broken"
+        )
+        mock_llm_instance.parse_json_response.side_effect = json_module.JSONDecodeError(
+            "Expecting value", "This is not valid JSON {broken", 0
+        )
 
         with patch("server.mongo_client") as mock_client:
             mock_client.admin.command.return_value = {"ok": 1}
-            with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+            with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
                 with patch("httpx.AsyncClient"):
                     response = client.post(
                         "/api/plans/generate",
