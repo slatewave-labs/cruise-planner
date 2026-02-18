@@ -82,10 +82,10 @@ jobs:
           # Use custom domain if configured, otherwise use ALB DNS
           if [[ -n "$CUSTOM_DOMAIN" ]]; then
             # Test environment uses subdomain
-            BACKEND_URL="http://test.${CUSTOM_DOMAIN}"
+            BACKEND_URL="https://test.${CUSTOM_DOMAIN}"
             echo "Using custom domain: test.${CUSTOM_DOMAIN}"
           elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
-            BACKEND_URL="http://${ALB_DNS}"
+            BACKEND_URL="https://${ALB_DNS}"
             echo "Using ALB DNS: ${ALB_DNS}"
           else
             BACKEND_URL="http://localhost:8001"
