@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Ship, Compass, FileText, Home } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 const navItems = [
   { path: '/', label: 'Home', icon: Home },
@@ -58,17 +57,7 @@ export default function Layout({ children }) {
 
       {/* Main Content */}
       <main className="flex-1 pb-24 md:pb-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-          >
-            {children}
-          </motion.div>
-        </AnimatePresence>
+        {children}
       </main>
 
       {/* Mobile Bottom Nav */}
