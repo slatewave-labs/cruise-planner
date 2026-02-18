@@ -59,7 +59,7 @@ You will also need one API key:
 
 | Key | What It's For | How to Get It |
 |-----|--------------|---------------|
-| **Google Gemini API Key** | Powers the AI that generates your day plans (Google Gemini 2.0 Flash) | Go to [Google AI Studio](https://aistudio.google.com/apikey), sign in with your Google account, and click "Create API Key". Free tier: 15 requests/minute, 1500 requests/day. |
+| **Groq API Key** | Powers the AI that generates your day plans using Llama 3.3 70B | Go to [Groq Console](https://console.groq.com/keys), sign up (free), and click "Create API Key". Free tier: 30 requests/minute, 14,400 requests/day. See [GROQ_SETUP.md](GROQ_SETUP.md) for detailed instructions. |
 
 > **No other API keys are needed.** The weather service (Open-Meteo) and maps (OpenStreetMap) are completely free and require no sign-up.
 
@@ -185,7 +185,7 @@ You need to create a file called `.env` inside the `backend` folder. This file t
 cat > .env << 'EOF'
 MONGO_URL=mongodb://localhost:27017
 DB_NAME=shoreexplorer
-GOOGLE_API_KEY=your-google-api-key-here
+GROQ_API_KEY=your-groq-api-key-here
 EOF
 ```
 
@@ -195,7 +195,7 @@ EOF
    ```
    MONGO_URL=mongodb://localhost:27017
    DB_NAME=shoreexplorer
-   GOOGLE_API_KEY=your-google-api-key-here
+   GROQ_API_KEY=your-groq-api-key-here
    ```
 3. Save the file as `.env` (not `.env.txt`) inside the `backend` folder
    - In the "Save as type" dropdown, select "All Files"
@@ -207,14 +207,16 @@ EOF
 |----------|------------|---------|
 | `MONGO_URL` | The address of your MongoDB database. If you installed MongoDB locally with defaults, **leave this as-is**. For MongoDB Atlas, use your connection string. | `mongodb://localhost:27017` or `mongodb+srv://user:pass@cluster.mongodb.net/` |
 | `DB_NAME` | The name of the database. **Leave this as-is** unless you want a custom name. | `shoreexplorer` |
-| `GOOGLE_API_KEY` | Your Google Gemini API key. Replace `your-google-api-key-here` with your actual key from Google AI Studio. | `AIzaSyC...` |
+| `GROQ_API_KEY` | Your Groq API key for AI-powered day plan generation. Replace `your-groq-api-key-here` with your actual key from Groq Console. | `gsk_abc123...` |
 
-> **Where do I get my Google API Key?**
-> 1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
-> 2. Sign in with your Google account
+> **Where do I get my Groq API Key?**
+> 1. Go to [Groq Console](https://console.groq.com/keys)
+> 2. Sign up for free (no credit card required)
 > 3. Click **"Create API Key"**
-> 4. Copy your key (starts with `AIza...`) and paste it into the `.env` file
-> 5. Free tier limits: 15 requests per minute, 1 million tokens per minute, 1500 requests per day
+> 4. Give it a name (e.g., "ShoreExplorer Dev") and click **"Submit"**
+> 5. Copy your key (starts with `gsk_...`) and paste it into the `.env` file
+> 6. Free tier limits: 30 requests per minute, 14,400 requests per day
+> 7. For detailed setup instructions, see [GROQ_SETUP.md](GROQ_SETUP.md)
 
 ---
 

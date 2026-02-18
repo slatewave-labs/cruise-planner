@@ -57,8 +57,8 @@ BACKEND_TASK_DEF=$(cat <<EOF
                     "valueFrom": "${SECRET_ARN}:MONGO_URL::"
                 },
                 {
-                    "name": "GOOGLE_API_KEY",
-                    "valueFrom": "${SECRET_ARN}:GOOGLE_API_KEY::"
+                    "name": "GROQ_API_KEY",
+                    "valueFrom": "${SECRET_ARN}:GROQ_API_KEY::"
                 },
                 {
                     "name": "DB_NAME",

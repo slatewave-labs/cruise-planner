@@ -13,7 +13,7 @@
 | 2 | Install the AWS command-line tool | 5 min | Easy |
 | 3 | Create a "robot user" for deployments | 10 min | Medium |
 | 4 | Set up MongoDB Atlas (free database) | 10 min | Easy |
-| 5 | Get a Google Gemini API key | 5 min | Easy |
+| 5 | Get a Groq API key | 5 min | Easy |
 | 6 | Add secrets to GitHub | 5 min | Easy |
 
 **Total time: ~45 minutes**
@@ -203,9 +203,9 @@ You'll need this number later:
 
 ---
 
-## Step 5: Get a Google Gemini API Key
+## Step 5: Get a Groq API Key
 
-> The Gemini API powers the AI that generates day plans. The free tier gives you 1,500 requests per day.
+> The Groq API powers the AI that generates day plans. The free tier gives you 14,400 requests per day.
 
 1. Go to **https://aistudio.google.com/apikey**
 2. Sign in with your Google account
@@ -233,7 +233,7 @@ You'll need this number later:
 | `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID | Step 1 |
 | `AWS_REGION` | `us-east-1` (or your chosen region) | Step 3c |
 | `MONGO_URL` | Your full MongoDB connection string | Step 4d |
-| `GOOGLE_API_KEY` | Your Gemini API key | Step 5 |
+| `GROQ_API_KEY` | Your Groq API key | Step 5 |
 
 > **How to add each secret:**
 > 1. Click **"New repository secret"**
@@ -374,7 +374,7 @@ This will check:
 | Service | Monthly Cost |
 |---------|-------------|
 | MongoDB Atlas M0 | **Free** |
-| Google Gemini API (free tier) | **Free** |
+| Groq API (free tier) | **Free** |
 | ECS Fargate (test) | ~$10-15 |
 | ECS Fargate (prod) | ~$10-15 |
 | ALB (x2) | ~$16 each |

@@ -90,18 +90,17 @@ class TestAffiliateLinksInPlanGeneration:
         # May have static tracking param or be unchanged
         assert "mcid=cruise-planner-app" in result_url or result_url == original_url
 
-    @patch("server.genai.Client")
+    @patch("server.LLMClient")
     def test_plan_generation_processes_affiliate_links(
-        self, mock_genai_client, test_client, mock_db, monkeypatch
+        self, mock_llm_client_class, test_client, mock_db, monkeypatch
     ):
         """Test that generated plans have affiliate parameters added to booking URLs."""
-        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.setenv("GROQ_API_KEY", "test-key")
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-viator-affiliate")
         monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "test-gyg-affiliate")
         
-        # Mock Gemini API response with booking URLs
-        mock_response = Mock()
-        mock_response.text = """{
+        # Mock LLM API response with booking URLs
+        plan_json = """{
             "plan_title": "Barcelona Highlights",
             "summary": "Explore the best of Barcelona in one day",
             "return_by": "17:00",
@@ -144,9 +143,12 @@ class TestAffiliateLinksInPlanGeneration:
             "safety_tips": ["Watch for pickpockets"]
         }"""
         
-        mock_genai_instance = Mock()
-        mock_genai_instance.models.generate_content.return_value = mock_response
-        mock_genai_client.return_value = mock_genai_instance
+        import json
+        
+        mock_llm_instance = Mock()
+        mock_llm_instance.generate_day_plan.return_value = plan_json
+        mock_llm_instance.parse_json_response.return_value = json.loads(plan_json)
+        mock_llm_client_class.return_value = mock_llm_instance
         
         # Make request to generate plan
         response = test_client.post(

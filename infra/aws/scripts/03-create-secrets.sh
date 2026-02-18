@@ -21,15 +21,15 @@ if [[ -z "${MONGO_URL:-}" ]]; then
     echo "  Set them as environment variables before running this script:"
     echo ""
     echo "    export MONGO_URL='mongodb+srv://user:pass@cluster.mongodb.net/...'"
-    echo "    export GOOGLE_API_KEY='AIza...'"
+    echo "    export GROQ_API_KEY='gsk_...'"
     echo ""
     echo "  Then re-run this script."
     echo ""
     read -rp "  Or enter your MongoDB connection string now: " MONGO_URL
 fi
 
-if [[ -z "${GOOGLE_API_KEY:-}" ]]; then
-    read -rp "  Enter your Google Gemini API key: " GOOGLE_API_KEY
+if [[ -z "${GROQ_API_KEY:-}" ]]; then
+    read -rp "  Enter your Groq API key: " GROQ_API_KEY
 fi
 
 DB_NAME="${DB_NAME:-shoreexplorer}"
@@ -40,7 +40,7 @@ DB_NAME="${DB_NAME:-shoreexplorer}"
 SECRET_VALUE=$(cat <<EOF
 {
     "MONGO_URL": "$MONGO_URL",
-    "GOOGLE_API_KEY": "$GOOGLE_API_KEY",
+    "GROQ_API_KEY": "$GROQ_API_KEY",
     "DB_NAME": "$DB_NAME"
 }
 EOF
@@ -87,5 +87,5 @@ echo "  ARN:    $SECRET_ARN"
 echo ""
 echo "  To update secrets later:"
 echo "    aws secretsmanager update-secret --secret-id $SECRET_NAME \\"
-echo "      --secret-string '{\"MONGO_URL\":\"...\",\"GOOGLE_API_KEY\":\"...\",\"DB_NAME\":\"shoreexplorer\"}'"
+echo "      --secret-string '{\"MONGO_URL\":\"...\",\"GROQ_API_KEY\":\"...\",\"DB_NAME\":\"shoreexplorer\"}'"
 echo ""
