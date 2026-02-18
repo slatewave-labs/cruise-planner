@@ -168,6 +168,52 @@ Checking AWS Secrets Manager...
     - DB_NAME
   ✅ Secret contains GROQ_API_KEY
   ✅ Secret does not contain GOOGLE_API_KEY
+```
+
+### Verify Secrets Architecture
+
+To verify that your environment-specific secrets are correctly configured:
+
+```bash
+# Verify both test and production environments
+./verify-secrets-architecture.sh all
+
+# Or verify a specific environment
+./verify-secrets-architecture.sh test
+./verify-secrets-architecture.sh prod
+```
+
+This comprehensive verification checks:
+- AWS Secrets Manager has separate secrets for each environment
+- Each secret contains required keys (MONGO_URL, GROQ_API_KEY, DB_NAME)
+- ECS task definitions reference the correct environment-specific secrets
+- Secret ARNs in task definitions match the environment
+
+**Example output:**
+```
+╔════════════════════════════════════════════════════════════╗
+║  Checking AWS Secrets Manager for 'test' environment
+╚════════════════════════════════════════════════════════════╝
+
+✅ Secret exists: shoreexplorer-test-secrets
+ℹ️  ARN: arn:aws:secretsmanager:us-east-1:123456789:secret:shoreexplorer-test-secrets
+ℹ️  Keys: MONGO_URL, GROQ_API_KEY, DB_NAME
+✅ Required key 'MONGO_URL' is present
+✅ Required key 'GROQ_API_KEY' is present
+✅ Required key 'DB_NAME' is present
+
+╔════════════════════════════════════════════════════════════╗
+║  Checking ECS Task Definition: shoreexplorer-test-backend-task
+╚════════════════════════════════════════════════════════════╝
+
+✅ Task definition exists: shoreexplorer-test-backend-task
+✅ Secrets are configured in task definition
+✅ Secret reference found: MONGO_URL
+  → arn:aws:secretsmanager:us-east-1:123:secret:shoreexplorer-test-secrets:MONGO_URL::
+✅ Secret ARN correctly references 'test' environment
+```
+
+> **Why is this important?** This verifies that test and production use separate secrets in AWS Secrets Manager, preventing accidental data mixing between environments.
 
 ✅ All checks passed! Task definitions and secrets are configured correctly.
 ```
