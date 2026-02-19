@@ -1,5 +1,7 @@
-# AWS Manual Setup Guide - ShoreExplorer
+# AWS Manual Setup Guide — ShoreExplorer
 
+> Last updated: 2026-02-19
+>
 > **This guide is written for non-technical users.** Follow each step carefully.
 > After completing these manual steps, you can run the automated scripts to create everything else.
 
@@ -12,11 +14,12 @@
 | 1 | Create an AWS Account | 10 min | Easy |
 | 2 | Install the AWS command-line tool | 5 min | Easy |
 | 3 | Create a "robot user" for deployments | 10 min | Medium |
-| 4 | Set up MongoDB Atlas (free database) | 10 min | Easy |
-| 5 | Get a Groq API key | 5 min | Easy |
-| 6 | Add secrets to GitHub | 5 min | Easy |
+| 4 | Get a Groq API key (for AI plan generation) | 5 min | Easy |
+| 5 | Add secrets to GitHub | 5 min | Easy |
 
-**Total time: ~45 minutes**
+**Total time: ~35 minutes**
+
+> **Note:** The database (DynamoDB) is created automatically by the setup scripts in Step 6. No separate database account is needed.
 
 ---
 
@@ -112,6 +115,7 @@ You'll need this number later:
    - `SecretsManagerReadWrite`
    - `CloudWatchLogsFullAccess`
    - `IAMFullAccess`
+   - `AmazonDynamoDBFullAccess`
 8. Click **"Next"**
 9. Click **"Create user"**
 
@@ -150,77 +154,26 @@ You'll need this number later:
 
 ---
 
-## Step 4: Set Up MongoDB Atlas (Free Database)
+## Step 4: Get a Groq API Key
 
-> MongoDB Atlas is a cloud database service. The free tier gives you 512MB of storage — more than enough to start.
+> The Groq API powers the AI that generates day plans using the Llama 3.3 70B model. The free tier gives you 14,400 requests per day.
 
-1. Go to **https://www.mongodb.com/cloud/atlas/register**
-2. Create an account (you can sign up with Google)
-3. When prompted, choose:
-   - **Organization name:** ShoreExplorer
-   - **Project name:** shoreexplorer
-
-### 4a. Create a Free Cluster
-
-1. Click **"Build a Database"** (or **"Create"**)
-2. Select **"M0 FREE"** (the free forever option)
-3. Choose:
-   - **Provider:** AWS
-   - **Region:** US East (N. Virginia) — or whichever is closest to you
-   - **Cluster Name:** `shoreexplorer-cluster`
-4. Click **"Create Deployment"**
-
-### 4b. Create a Database User
-
-1. You'll be prompted to create a database user
-2. Choose **"Username and Password"**
-3. Set:
-   - **Username:** `shoreexplorer`
-   - **Password:** Click "Autogenerate Secure Password"
-4. **Copy the password and save it!**
-5. Click **"Create Database User"**
-
-### 4c. Allow Connections from Anywhere
-
-1. Under **"Where would you like to connect from?"**, choose **"My Local Environment"**
-2. Click **"Add IP Address"**
-3. In the IP Address field, type: `0.0.0.0/0`
-   > This allows connections from anywhere. It's fine for getting started.
-4. Click **"Add Entry"**
-5. Click **"Finish and Close"**
-
-### 4d. Get Your Connection String
-
-1. On the cluster overview page, click **"Connect"**
-2. Choose **"Drivers"**
-3. Select **Python** and version **3.12 or later**
-4. Copy the connection string. It looks like:
-   ```
-   mongodb+srv://shoreexplorer:<password>@shoreexplorer-cluster.xxxxx.mongodb.net/?retryWrites=true&w=majority
-   ```
-5. **Replace `<password>` with the password you saved in step 4b**
-6. **Save this complete connection string** — you'll need it in Step 6
-
----
-
-## Step 5: Get a Groq API Key
-
-> The Groq API powers the AI that generates day plans. The free tier gives you 14,400 requests per day.
-
-1. Go to **https://aistudio.google.com/apikey**
-2. Sign in with your Google account
+1. Go to **https://console.groq.com/keys**
+2. Sign up for a free account (no credit card required)
 3. Click **"Create API Key"**
-4. If prompted, select an existing Google Cloud project or create a new one
-5. Your API key will appear (it starts with `AIza...`)
-6. **Copy and save this key** — you'll need it in Step 6
+4. Give it a name (e.g., "ShoreExplorer") and click **"Submit"**
+5. Your API key will appear (it starts with `gsk_...`)
+6. **Copy and save this key** — you'll need it in Step 5
+
+See [GROQ_SETUP.md](/GROQ_SETUP.md) for detailed instructions.
 
 ---
 
-## Step 6: Add Secrets to GitHub
+## Step 5: Add Secrets to GitHub
 
-> GitHub needs your AWS credentials and API keys to deploy the app automatically.
+> GitHub needs your AWS credentials to deploy the app. The Groq API key is stored in AWS Secrets Manager (not GitHub) — the deployment scripts handle this automatically.
 
-1. Go to your GitHub repository: **https://github.com/billysandle95/cruise-planner**
+1. Go to your GitHub repository page
 2. Click **"Settings"** (tab at the top of the repo)
 3. In the left sidebar, click **"Secrets and variables"** → **"Actions"**
 4. Click the **"New repository secret"** button
@@ -232,8 +185,8 @@ You'll need this number later:
 | `AWS_SECRET_ACCESS_KEY` | Your AWS secret access key | Step 3b |
 | `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID | Step 1 |
 | `AWS_REGION` | `us-east-1` (or your chosen region) | Step 3c |
-| `MONGO_URL` | Your full MongoDB connection string | Step 4d |
-| `GROQ_API_KEY` | Your Groq API key | Step 5 |
+
+> **Note:** `GROQ_API_KEY` is stored in **AWS Secrets Manager**, not GitHub. The deployment scripts add it there automatically. See [SECRETS-ARCHITECTURE.md](SECRETS-ARCHITECTURE.md) for details on why.
 
 > **How to add each secret:**
 > 1. Click **"New repository secret"**
@@ -259,9 +212,9 @@ You'll need this number later:
 
 ---
 
-## Step 7: Run the Automated Setup Scripts
+## Step 6: Run the Automated Setup Scripts
 
-> Now that the manual setup is done, you can run scripts to create everything in AWS.
+> Now that the manual setup is done, you can run scripts to create everything in AWS (including the DynamoDB table).
 
 1. Open Terminal
 2. Navigate to the project folder:
@@ -285,7 +238,7 @@ You'll need this number later:
 
 ---
 
-## Step 8: Deploy Your App
+## Step 7: Deploy Your App
 
 > After the infrastructure is ready, deploy using GitHub Actions.
 
@@ -297,7 +250,7 @@ You'll need this number later:
    git commit -m "Set up AWS infrastructure"
    git push origin main
    ```
-2. Go to **https://github.com/billysandle95/cruise-planner/actions**
+2. Go to your repository's **Actions** tab on GitHub
 3. You'll see the deployment running automatically
 4. The **test** environment deploys automatically on every push to `main`
 5. The **production** environment deploys when you create a release tag
@@ -334,7 +287,7 @@ Run the automated diagnostic script to check your deployment:
 
 ```bash
 ./infra/aws/scripts/diagnose-alb.sh test   # For test environment
-./infra/aws/scripts/diagnose-alb.sh prod  # For production
+./infra/aws/scripts/diagnose-alb.sh prod   # For production
 ```
 
 This will check:
@@ -349,7 +302,7 @@ This will check:
 #### "Access Denied" errors when running scripts
 - Make sure you completed Step 3 (IAM User) correctly
 - Run `aws sts get-caller-identity` to verify your credentials
-- Make sure all 7 policies are attached to the user
+- Make sure all 8 policies are attached to the user
 
 #### "Resource already exists" errors
 - This is usually fine — the scripts skip resources that already exist
@@ -362,18 +315,13 @@ This will check:
 - Check security groups allow port 80
 - See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for detailed diagnosis
 
-#### MongoDB connection errors
-- Verify your connection string in Secrets Manager
-- Make sure MongoDB Atlas allows connections from `0.0.0.0/0`
-- Check: did you replace `<password>` in the connection string?
-
 ---
 
 ## Cost Summary
 
 | Service | Monthly Cost |
 |---------|-------------|
-| MongoDB Atlas M0 | **Free** |
+| DynamoDB (on-demand, 25 GB free) | ~$0-1 |
 | Groq API (free tier) | **Free** |
 | ECS Fargate (test) | ~$10-15 |
 | ECS Fargate (prod) | ~$10-15 |
@@ -393,7 +341,6 @@ This will check:
 | What | Where |
 |------|-------|
 | AWS Console | https://console.aws.amazon.com |
-| MongoDB Atlas | https://cloud.mongodb.com |
-| Google AI Studio | https://aistudio.google.com/apikey |
-| GitHub Actions | https://github.com/billysandle95/cruise-planner/actions |
+| Groq Console | https://console.groq.com/keys |
+| GitHub Actions | Your repository → Actions tab |
 | AWS CLI Docs | https://docs.aws.amazon.com/cli/ |

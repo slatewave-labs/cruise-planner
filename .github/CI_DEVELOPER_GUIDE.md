@@ -149,7 +149,7 @@ When you push, GitHub Actions runs:
    - Frontend: ESLint
 
 2. **Testing** (3-5 min)
-   - Backend: pytest with MongoDB
+   - Backend: pytest with DynamoDB Local
    - Frontend: Jest with React Testing Library
 
 3. **Building** (3-5 min)

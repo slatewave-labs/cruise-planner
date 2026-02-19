@@ -1,45 +1,31 @@
-# TODO: Integration Tests for ShoreExplorer
+# Integration Tests
 
-## PACT Contract Testing
+> Last updated: 2026-02-19
 
-### Overview
-PACT tests verify that the frontend (consumer) and backend (provider) agree on API contracts.
+Integration tests for ShoreExplorer API endpoints using **pytest**. Tests run against a live FastAPI server with DynamoDB Local.
 
-### Setup
+## Test Files
+
+| File | What It Tests |
+|------|---------------|
+| `test_trip_crud.py` | Trip create, read, update, delete operations |
+| `test_port_management.py` | Add, update, remove ports within trips |
+| `test_ports_weather.py` | Port search API and weather forecast proxy |
+| `test_ai_integration.py` | AI plan generation endpoint (mocked LLM) |
+| `test_affiliate_integration.py` | Affiliate link injection in plans |
+| `test_api_privacy.py` | Device-based data isolation (multi-tenancy) |
+
+## Running Tests
+
 ```bash
-# Backend (Provider)
-pip install pact-python
+# Start DynamoDB Local first
+docker run -d -p 8000:8000 amazon/dynamodb-local
 
-# Frontend (Consumer)  
-yarn add --dev @pact-foundation/pact
+# Run integration tests
+cd /path/to/cruise-planner
+python -m pytest tests/integration/ -v
 ```
 
-### Contracts to Test
+## CI
 
-#### 1. Trip Management
-- `GET /api/trips` → Returns array of trips
-- `POST /api/trips` → Creates trip, returns trip object
-- `GET /api/trips/:id` → Returns single trip with ports
-- `PUT /api/trips/:id` → Updates trip
-- `DELETE /api/trips/:id` → Deletes trip
-
-#### 2. Port Management
-- `POST /api/trips/:id/ports` → Adds port to trip
-- `PUT /api/trips/:id/ports/:portId` → Updates port
-- `DELETE /api/trips/:id/ports/:portId` → Removes port
-
-#### 3. Weather API
-- `GET /api/weather?latitude=X&longitude=Y&date=Z` → Returns weather data
-
-#### 4. Plan Generation
-- `POST /api/plans/generate` → Generates day plan (may take 15-30s)
-- `GET /api/plans/:id` → Returns saved plan
-
-### External API Integration Tests
-- Open-Meteo weather API connectivity
-- Gemini 3 Flash LLM API connectivity
-- Response format validation
-
-### PACT Broker (TODO)
-- Set up Pactflow or self-hosted PACT Broker
-- URL: https://pactflow.io/ (free tier: 5 integrations)
+Integration tests run automatically in CI with DynamoDB Local started via Docker. See `.github/workflows/ci.yml` for the full configuration.

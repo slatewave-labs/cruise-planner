@@ -214,9 +214,11 @@ aws secretsmanager get-secret-value \
 ```
 
 Required secrets:
-- `MONGO_URL`
 - `GROQ_API_KEY`
-- `DB_NAME`
+
+Required environment variables:
+- `DYNAMODB_TABLE_NAME`
+- `AWS_DEFAULT_REGION`
 
 ---
 
@@ -351,9 +353,9 @@ docker build -t shoreexplorer-frontend:local --build-arg REACT_APP_BACKEND_URL=h
 
 # Run backend
 docker run -p 8001:8001 \
-  -e MONGO_URL="your-mongo-url" \
+  -e DYNAMODB_TABLE_NAME="shoreexplorer" \
+  -e AWS_DEFAULT_REGION="us-east-1" \
   -e GROQ_API_KEY="your-api-key" \
-  -e DB_NAME="shoreexplorer" \
   shoreexplorer-backend:local
 
 # In another terminal, run frontend

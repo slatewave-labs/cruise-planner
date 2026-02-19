@@ -92,7 +92,7 @@
 - **Fix:** Run `black . && isort .` in backend/
 
 ### Backend Tests
-- **Tools:** pytest with MongoDB service
+- **Tools:** pytest with DynamoDB Local
 - **Checks:** Unit tests, integration tests, code coverage
 - **Fails if:** Any test fails
 - **Fix:** Run `pytest tests/ -v` in backend/ and fix failing tests

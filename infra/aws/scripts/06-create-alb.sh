@@ -91,7 +91,7 @@ create_target_group() {
 }
 
 BACKEND_TG_ARN=$(create_target_group "$BACKEND_TG_NAME" 8001 "/api/health")
-FRONTEND_TG_ARN=$(create_target_group "$FRONTEND_TG_NAME" 80 "/")
+FRONTEND_TG_ARN=$(create_target_group "$FRONTEND_TG_NAME" 8080 "/")
 
 # ---------------------------------------------------------------------------
 # Create HTTP Listener (port 80)

@@ -227,7 +227,7 @@ jobs:
               \"name\": \"frontend\",
               \"image\": \"${ECR_BASE}/${FRONTEND_ECR_REPO}:latest\",
               \"essential\": true,
-              \"portMappings\": [{\"containerPort\": 80, \"protocol\": \"tcp\"}],
+              \"portMappings\": [{\"containerPort\": 8080, \"protocol\": \"tcp\"}],
               \"logConfiguration\": {
                 \"logDriver\": \"awslogs\",
                 \"options\": {
@@ -237,7 +237,7 @@ jobs:
                 }
               },
               \"healthCheck\": {
-                \"command\": [\"CMD-SHELL\", \"wget --quiet --tries=1 --spider http://localhost/ || exit 1\"],
+                \"command\": [\"CMD-SHELL\", \"wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1\"],
                 \"interval\": 30,
                 \"timeout\": 5,
                 \"retries\": 3,
@@ -256,14 +256,63 @@ jobs:
             --force-new-deployment \
             --region "$AWS_REGION"
 
+      - name: Ensure frontend port 8080 infrastructure
+        id: frontend-infra
+        run: |
+          # Environments originally provisioned with port 80 need their
+          # ECS security-group rule and service load-balancer config updated
+          # to port 8080 (non-root nginx). This step is idempotent.
+
+          # --- Security group: allow port 8080 from ALB ---
+          ECS_SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${PROJECT_NAME}-${ENVIRONMENT}-ecs-sg" \
+            --query 'SecurityGroups[0].GroupId' --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          ALB_SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${PROJECT_NAME}-${ENVIRONMENT}-alb-sg" \
+            --query 'SecurityGroups[0].GroupId' --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -n "$ECS_SG_ID" && "$ECS_SG_ID" != "None" && -n "$ALB_SG_ID" && "$ALB_SG_ID" != "None" ]]; then
+            aws ec2 authorize-security-group-ingress \
+              --group-id "$ECS_SG_ID" \
+              --protocol tcp --port 8080 --source-group "$ALB_SG_ID" \
+              --region "$AWS_REGION" 2>/dev/null || true
+            echo "✅ ECS security group allows port 8080 from ALB"
+          else
+            echo "⚠️  Could not find security groups — skipping SG update"
+          fi
+
+          # --- Retrieve frontend target group ARN from current service ---
+          FRONTEND_TG_ARN=$(aws ecs describe-services \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
+            --query 'services[0].loadBalancers[0].targetGroupArn' \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          echo "frontend_tg_arn=${FRONTEND_TG_ARN}" >> "$GITHUB_OUTPUT"
+
       - name: Update frontend ECS service
         run: |
-          aws ecs update-service \
-            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-            --service "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
-            --task-definition "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task" \
-            --force-new-deployment \
+          FRONTEND_TG_ARN="${{ steps.frontend-infra.outputs.frontend_tg_arn }}"
+
+          # Build update-service arguments
+          ARGS=(
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
+            --task-definition "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task"
+            --force-new-deployment
             --region "$AWS_REGION"
+          )
+
+          # Ensure ECS registers targets on port 8080 (migrates services
+          # originally created with containerPort 80)
+          if [[ -n "$FRONTEND_TG_ARN" && "$FRONTEND_TG_ARN" != "None" ]]; then
+            ARGS+=(--load-balancers "targetGroupArn=${FRONTEND_TG_ARN},containerName=frontend,containerPort=8080")
+          fi
+
+          aws ecs update-service "${ARGS[@]}"
 
       - name: Wait for deployment to stabilize
         run: |

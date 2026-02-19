@@ -4,7 +4,7 @@
 
 ShoreExplorer uses [Groq](https://groq.com/) for AI-powered day plan generation. Groq provides:
 
-- **14,400 requests per day** on the free tier (vs. 1,500/day with Google Gemini)
+- **14,400 requests per day** on the free tier
 - **Fast inference speeds**: Sub-second response times with Llama 3.3 70B
 - **No credit card required** for free tier
 - **High-quality structured JSON output** for cruise port itineraries
@@ -55,9 +55,12 @@ ShoreExplorer uses [Groq](https://groq.com/) for AI-powered day plan generation.
    # Groq LLM API for plan generation
    GROQ_API_KEY=gsk_your_actual_api_key_here
    
-   # MongoDB connection (local development)
-   MONGO_URL=mongodb://localhost:27017
-   DB_NAME=shoreexplorer
+   # DynamoDB (local development)
+   DYNAMODB_TABLE_NAME=shoreexplorer
+   AWS_DEFAULT_REGION=us-east-1
+   DYNAMODB_ENDPOINT_URL=http://localhost:8000
+   AWS_ACCESS_KEY_ID=dummy
+   AWS_SECRET_ACCESS_KEY=dummy
    ```
 
 3. **Verify the setup** by starting the backend:
@@ -93,7 +96,7 @@ The tests mock the Groq API client, so no real API calls are made during testing
 
 #### Quick Setup (AWS)
 
-ShoreExplorer stores all secrets (MONGO_URL, GROQ_API_KEY, DB_NAME) in a **single JSON secret** in AWS Secrets Manager.
+ShoreExplorer stores application secrets (including `GROQ_API_KEY`) in **AWS Secrets Manager**.
 
 **✅ Recommended: Use the automated update script**
 
@@ -107,7 +110,7 @@ ShoreExplorer stores all secrets (MONGO_URL, GROQ_API_KEY, DB_NAME) in a **singl
 
 This script will:
 - Update only the GROQ_API_KEY in your existing secret
-- Keep MONGO_URL and DB_NAME unchanged
+- Keep other secrets unchanged
 - Optionally restart your ECS service
 - Verify the update succeeded
 
@@ -123,8 +126,11 @@ services:
     build: ./backend
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - MONGO_URL=mongodb://mongo:27017
-      - DB_NAME=shoreexplorer
+      - DYNAMODB_TABLE_NAME=shoreexplorer
+      - DYNAMODB_ENDPOINT_URL=http://dynamodb-local:8000
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
     env_file:
       - ./backend/.env  # Load from .env file
 ```
@@ -232,36 +238,6 @@ If you exceed the free tier limits, you'll receive a 503 error with `ai_service_
    self.model = "llama-3.1-8b-instant"  # Faster, less expensive
    ```
 3. Adjust the temperature in the plan generation call (lower = more deterministic)
-
----
-
-## Migration from Google Gemini
-
-If you were previously using Google Gemini:
-
-1. **Old environment variable**: `GOOGLE_API_KEY` → **New**: `GROQ_API_KEY`
-2. **Update `.env` file**:
-   ```bash
-   # Remove this line:
-   # GOOGLE_API_KEY=your-old-gemini-key
-   
-   # Add this line:
-   GROQ_API_KEY=gsk_your_new_groq_key
-   ```
-3. **Update AWS Secrets Manager** (if applicable):
-   ```bash
-   # Delete old secret
-   aws secretsmanager delete-secret \
-     --secret-id /shoreexplorer/prod/google-api-key \
-     --force-delete-without-recovery
-   
-   # Create new secret
-   aws secretsmanager create-secret \
-     --name /shoreexplorer/prod/groq-api-key \
-     --secret-string "gsk_your_groq_key"
-   ```
-4. **Update GitHub Actions secrets**: Replace `GOOGLE_API_KEY` with `GROQ_API_KEY`
-5. **Redeploy** the application
 
 ---
 
