@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -20,6 +21,7 @@ from llm_client import (
     LLMClient,
     LLMQuotaExceededError,
 )
+from metrics import emit_ai_generation_metric, emit_request_metric
 from ports_data import CRUISE_PORTS
 
 load_dotenv()
@@ -50,7 +52,7 @@ app.add_middleware(
 )
 
 
-# Request ID middleware for correlation
+# Request ID middleware for correlation and metrics
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
@@ -63,8 +65,27 @@ async def add_request_id(request: Request, call_next):
             "path": request.url.path,
         },
     )
+    start = time.monotonic()
     response = await call_next(request)
+    latency_ms = (time.monotonic() - start) * 1000
     response.headers["X-Request-ID"] = request_id
+    emit_request_metric(
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        latency_ms=latency_ms,
+    )
+    logger.info(
+        f"Response: {request.method} {request.url.path} "
+        f"status={response.status_code} latency={latency_ms:.1f}ms",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "latency_ms": round(latency_ms, 1),
+        },
+    )
     return response
 
 
@@ -878,6 +899,8 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         )
 
     # Call LLM API
+    ai_start = time.monotonic()
+    ai_success = False
     try:
         logger.info(f"Calling LLM API for plan generation (port: {port_name})")
         system_instruction = (
@@ -889,9 +912,13 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             system_instruction=system_instruction,
             temperature=0.7,
         )
+        ai_success = True
         logger.info("LLM API call successful")
     except LLMQuotaExceededError as e:
         logger.error(f"LLM API quota exceeded: {str(e)}")
+        emit_ai_generation_metric(
+            latency_ms=(time.monotonic() - ai_start) * 1000, success=False
+        )
         raise HTTPException(
             status_code=503,
             detail={
@@ -909,6 +936,9 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         )
     except LLMAuthenticationError as e:
         logger.error(f"LLM API authentication failed: {str(e)}")
+        emit_ai_generation_metric(
+            latency_ms=(time.monotonic() - ai_start) * 1000, success=False
+        )
         raise HTTPException(
             status_code=503,
             detail={
@@ -927,6 +957,9 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     except LLMAPIError as e:
         # Generic LLM API failure
         logger.error(f"LLM API error: {str(e)}")
+        emit_ai_generation_metric(
+            latency_ms=(time.monotonic() - ai_start) * 1000, success=False
+        )
         raise HTTPException(
             status_code=503,
             detail={
@@ -938,6 +971,11 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
                 "technical_details": str(e),
             },
         )
+
+    # Emit success metric for the LLM call
+    emit_ai_generation_metric(
+        latency_ms=(time.monotonic() - ai_start) * 1000, success=ai_success
+    )
 
     # Parse JSON response
     try:
