@@ -445,7 +445,7 @@ def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
                 },
             )
 
-        logger.info(f"Added port {port['port_id']} to trip {trip_id}")
+        logger.info("Successfully added a port to a trip")
         return port
     except HTTPException:
         raise
