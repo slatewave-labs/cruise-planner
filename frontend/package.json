@@ -46,6 +46,7 @@
   },
   "resolutions": {
     "resolve-url-loader": "5.0.0",
-    "webpack-dev-server": "5.2.3"
+    "webpack-dev-server": "5.2.3",
+    "bfj": "9.1.3"
   }
 }
