@@ -13,6 +13,7 @@ with patch("boto3.resource") as mock_boto_resource:
     # Configure mock to simulate successful connection
     mock_dynamodb = MagicMock()
     mock_boto_resource.return_value = mock_dynamodb
+    import server
     from server import app
 
 client = TestClient(app)
@@ -94,3 +95,36 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
 
     assert response.status_code == 200
     assert response.json()["plan"]["plan_title"] == "Mock Plan"
+
+
+def test_cors_allowed_origin():
+    """Allowed origin receives Access-Control-Allow-Origin header."""
+    allowed = server._allowed_origins[0]
+    with patch("server.db_client") as mock_db_client:
+        mock_db_client.health_check.return_value = True
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+            response = client.get("/api/health", headers={"Origin": allowed})
+    assert response.headers.get("access-control-allow-origin") == allowed
+
+
+def test_cors_disallowed_origin():
+    """Unknown origin does not receive Access-Control-Allow-Origin header."""
+    with patch("server.db_client") as mock_db_client:
+        mock_db_client.health_check.return_value = True
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+            response = client.get(
+                "/api/health", headers={"Origin": "http://evil.example.com"}
+            )
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_cors_origins_parsed_from_env():
+    """ALLOWED_ORIGINS env var is split on commas into individual origins."""
+    raw = "https://app.example.com, https://staging.example.com"
+    result = [o.strip() for o in raw.split(",") if o.strip()]
+    assert result == ["https://app.example.com", "https://staging.example.com"]
+
+
+def test_cors_no_wildcard():
+    """Wildcard '*' is never used as an allowed origin."""
+    assert "*" not in server._allowed_origins
