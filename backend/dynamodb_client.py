@@ -1,15 +1,15 @@
 """
-DynamoDB client for ShoreExplorer.
+Generic DynamoDB client for single-table design patterns.
 
-This module provides a clean abstraction layer over AWS DynamoDB operations,
-replacing the previous MongoDB implementation. It uses boto3 for AWS SDK integration
-and follows the same patterns as the MongoDB implementation for easy migration.
+This module provides a clean abstraction layer over AWS DynamoDB operations
+using the single-table design pattern. It uses boto3 for AWS SDK integration
+and provides generic CRUD operations suitable for any application.
 
 Design decisions:
 - Single table design with composite keys (PK, SK) for efficiency and cost optimization
-- GSI for device_id queries (required for multi-tenancy isolation)
-- Denormalized data (embedded ports in trips) to minimize read operations
-- On-demand billing mode for unpredictable traffic patterns (MVP optimization)
+- Generic entity type support through configurable partition keys
+- Denormalized data to minimize read operations
+- On-demand billing mode for unpredictable traffic patterns
 """
 
 import logging
@@ -25,17 +25,16 @@ logger = logging.getLogger(__name__)
 
 class DynamoDBClient:
     """
-    DynamoDB client wrapper for ShoreExplorer data operations.
+    Generic DynamoDB client wrapper for single-table design operations.
 
     Table structure:
-    - PK (Partition Key): Entity type and ID (e.g., "TRIP#uuid", "PLAN#uuid")
-    - SK (Sort Key): Entity type (e.g., "METADATA")
-    - GSI1PK: device_id for device-based queries
-    - GSI1SK: created_at or generated_at for sorting
+    - PK (Partition Key): Entity type and ID (e.g., "ITEM#abc123")
+    - SK (Sort Key): Fixed value "METADATA" for main entity records
+    - entity_type: Field to track the type of entity stored
 
     This allows:
-    1. Direct access by ID (PK + SK)
-    2. Query all items for a device (GSI1PK + GSI1SK)
+    1. Direct access by ID using PK + SK
+    2. Entity type filtering for scans
     3. Efficient single-table design with minimal cost
     """
 
@@ -50,15 +49,13 @@ class DynamoDBClient:
 
         Args:
             table_name: DynamoDB table name
-                (defaults to env var DYNAMODB_TABLE_NAME)
+                (defaults to env var DYNAMODB_TABLE_NAME or "myapp")
             region_name: AWS region
                 (defaults to env var AWS_DEFAULT_REGION or us-east-1)
             endpoint_url: Custom endpoint URL
                 (for DynamoDB Local in development)
         """
-        self.table_name = table_name or os.environ.get(
-            "DYNAMODB_TABLE_NAME", "shoreexplorer"
-        )
+        self.table_name = table_name or os.environ.get("DYNAMODB_TABLE_NAME", "myapp")
         self.region_name = region_name or os.environ.get(
             "AWS_DEFAULT_REGION", "us-east-1"
         )
@@ -84,7 +81,7 @@ class DynamoDBClient:
 
     def ping(self) -> bool:
         """
-        Test connection to DynamoDB (equivalent to MongoDB ping).
+        Test connection to DynamoDB.
 
         Returns:
             True if connection is healthy
@@ -101,114 +98,135 @@ class DynamoDBClient:
             logger.error(f"DynamoDB ping failed: {str(e)}")
             raise
 
-    # --- Trip Operations ---
+    # --- Generic CRUD Operations ---
 
-    def create_trip(self, trip: Dict[str, Any]) -> Dict[str, Any]:
+    def put_item(
+        self, item: Dict[str, Any], partition_key: str = "item_id"
+    ) -> Dict[str, Any]:
         """
-        Create a new trip.
+        Store an item using single-table design pattern.
 
         Args:
-            trip: Trip data with trip_id, device_id, ship_name, etc.
+            item: Item data including the partition key field
+            partition_key: Name of the ID field in the item (e.g., "item_id", "user_id")
 
         Returns:
-            Created trip data
+            The original item data
+
+        Raises:
+            KeyError: If partition_key field not found in item
+            BotoCoreError, ClientError: If DynamoDB operation fails
         """
-        item = self._convert_floats(
+        if partition_key not in item:
+            raise KeyError(f"Item must contain '{partition_key}' field")
+
+        pk_value = item[partition_key]
+        # Extract entity type from partition_key: "item_id" -> "item"
+        entity_type = partition_key.replace("_id", "")
+
+        # Build DynamoDB item with PK/SK pattern
+        db_item = self._convert_floats(
             {
-                "PK": f"TRIP#{trip['trip_id']}",
+                "PK": f"{entity_type.upper()}#{pk_value}",
                 "SK": "METADATA",
-                "entity_type": "trip",
-                "GSI1PK": f"DEVICE#{trip['device_id']}",
-                "GSI1SK": trip["created_at"],
-                **trip,
+                "entity_type": entity_type,
+                **item,
             }
         )
+
         try:
-            self.table.put_item(Item=item)
-            logger.debug(f"Created trip {trip['trip_id']}")
-            return trip
+            self.table.put_item(Item=db_item)
+            logger.debug(f"Created {entity_type} {pk_value}")
+            return item
         except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to create trip: {str(e)}")
+            logger.error(f"Failed to create {entity_type}: {str(e)}")
             raise
 
-    def get_trip(self, trip_id: str, device_id: str) -> Optional[Dict[str, Any]]:
+    def get_item(
+        self, item_id: str, partition_key: str = "item_id"
+    ) -> Optional[Dict[str, Any]]:
         """
-        Get a specific trip by ID.
+        Get an item by its ID.
 
         Args:
-            trip_id: Trip UUID
-            device_id: Device ID (for authorization)
+            item_id: The item's unique identifier
+            partition_key: Name of the ID field (e.g., "item_id", "user_id")
 
         Returns:
-            Trip data or None if not found
+            Item data or None if not found
+
+        Raises:
+            BotoCoreError, ClientError: If DynamoDB operation fails
         """
+        entity_type = partition_key.replace("_id", "")
+
         try:
             response = self.table.get_item(
-                Key={"PK": f"TRIP#{trip_id}", "SK": "METADATA"}
+                Key={"PK": f"{entity_type.upper()}#{item_id}", "SK": "METADATA"}
             )
             item = response.get("Item")
-            if item and item.get("device_id") == device_id:
-                # Remove DynamoDB internal fields
+            if item:
                 return self._clean_item(item)
             return None
         except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to get trip {trip_id}: {str(e)}")
+            logger.error(f"Failed to get {entity_type} {item_id}: {str(e)}")
             raise
 
-    def list_trips(
-        self, device_id: str, skip: int = 0, limit: int = 100
+    def scan_items(
+        self, entity_type: str = "item", limit: int = 100
     ) -> List[Dict[str, Any]]:
         """
-        List all trips for a device.
+        Scan for items of a specific entity type.
+
+        Note: Scan operations are expensive. Use sparingly and consider
+        adding a GSI for frequently queried access patterns.
 
         Args:
-            device_id: Device ID
-            skip: Number of items to skip (pagination)
+            entity_type: Type of entity to scan for (e.g., "item", "user")
             limit: Maximum number of items to return
 
         Returns:
-            List of trip data
+            List of items matching the entity type
+
+        Raises:
+            BotoCoreError, ClientError: If DynamoDB operation fails
         """
         try:
-            # Query GSI1 by device_id, sorted by created_at descending
-            response = self.table.query(
-                IndexName="GSI1",
-                KeyConditionExpression="GSI1PK = :device_pk",
-                FilterExpression="entity_type = :entity_type",
-                ExpressionAttributeValues={
-                    ":device_pk": f"DEVICE#{device_id}",
-                    ":entity_type": "trip",
-                },
-                ScanIndexForward=False,  # Descending order (newest first)
-                Limit=skip + limit,  # DynamoDB doesn't support skip, so we fetch more
+            response = self.table.scan(
+                FilterExpression="entity_type = :et",
+                ExpressionAttributeValues={":et": entity_type},
+                Limit=limit,
             )
-
             items = response.get("Items", [])
-            # Manual skip implementation (DynamoDB limitation)
-            items = items[skip : skip + limit]
+            logger.debug(f"Scanned {len(items)} {entity_type} items")
             return [self._clean_item(item) for item in items]
         except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to list trips for device {device_id}: {str(e)}")
+            logger.error(f"Failed to scan {entity_type} items: {str(e)}")
             raise
 
-    def update_trip(
-        self, trip_id: str, device_id: str, updates: Dict[str, Any]
+    def update_item(
+        self, item_id: str, updates: Dict[str, Any], partition_key: str = "item_id"
     ) -> Optional[Dict[str, Any]]:
         """
-        Update a trip.
+        Update an item by ID.
 
         Args:
-            trip_id: Trip UUID
-            device_id: Device ID (for authorization)
-            updates: Fields to update
+            item_id: The item's unique identifier
+            updates: Dictionary of fields to update
+            partition_key: Name of the ID field (e.g., "item_id", "user_id")
 
         Returns:
-            Updated trip data or None if not found
+            Updated item data or None if not found
+
+        Raises:
+            BotoCoreError, ClientError: If DynamoDB operation fails
         """
-        # First verify the trip exists and belongs to this device
-        existing = self.get_trip(trip_id, device_id)
+        # First check if item exists
+        existing = self.get_item(item_id, partition_key)
         if not existing:
             return None
+
+        entity_type = partition_key.replace("_id", "")
 
         try:
             # Convert floats to Decimals for DynamoDB compatibility
@@ -221,272 +239,75 @@ class DynamoDBClient:
 
             for key, value in converted_updates.items():
                 # DynamoDB doesn't allow updating PK/SK
-                if key in ["PK", "SK", "GSI1PK", "GSI1SK"]:
+                if key in ["PK", "SK", "entity_type"]:
                     continue
+                # Use attribute names to handle reserved keywords
                 safe_key = f"#{key}"
                 update_expr_parts.append(f"{safe_key} = :{key}")
                 expr_attr_names[safe_key] = key
                 expr_attr_values[f":{key}"] = value
 
+            if not update_expr_parts:
+                # No fields to update
+                logger.debug(
+                    f"No updateable fields provided for {entity_type} {item_id}"
+                )
+                return existing
+
             update_expression = "SET " + ", ".join(update_expr_parts)
 
-            # Add condition to ensure trip exists and belongs to this device
-            expr_attr_values[":device_pk"] = f"DEVICE#{device_id}"
-
             response = self.table.update_item(
-                Key={"PK": f"TRIP#{trip_id}", "SK": "METADATA"},
+                Key={"PK": f"{entity_type.upper()}#{item_id}", "SK": "METADATA"},
                 UpdateExpression=update_expression,
-                ConditionExpression="attribute_exists(PK) AND GSI1PK = :device_pk",
+                ConditionExpression="attribute_exists(PK)",
                 ExpressionAttributeNames=expr_attr_names,
                 ExpressionAttributeValues=expr_attr_values,
                 ReturnValues="ALL_NEW",
             )
-            logger.debug(f"Updated trip {trip_id}")
+            logger.debug(f"Updated {entity_type} {item_id}")
             return self._clean_item(response["Attributes"])
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 logger.warning(
-                    f"Update condition failed for trip {trip_id} "
-                    f"- item doesn't exist or wrong device"
+                    f"Update condition failed for {entity_type} "
+                    f"{item_id} - item doesn't exist"
                 )
                 return None
-            logger.error(f"Failed to update trip {trip_id}: {str(e)}")
+            logger.error(f"Failed to update {entity_type} {item_id}: {str(e)}")
             raise
         except BotoCoreError as e:
-            logger.error(f"Failed to update trip {trip_id}: {str(e)}")
+            logger.error(f"Failed to update {entity_type} {item_id}: {str(e)}")
             raise
 
-    def delete_trip(self, trip_id: str, device_id: str) -> bool:
+    def delete_item(self, item_id: str, partition_key: str = "item_id") -> bool:
         """
-        Delete a trip.
+        Delete an item by ID.
 
         Args:
-            trip_id: Trip UUID
-            device_id: Device ID (for authorization)
+            item_id: The item's unique identifier
+            partition_key: Name of the ID field (e.g., "item_id", "user_id")
 
         Returns:
             True if deleted, False if not found
+
+        Raises:
+            BotoCoreError, ClientError: If DynamoDB operation fails
         """
-        # Verify ownership first
-        existing = self.get_trip(trip_id, device_id)
+        # Verify item exists first
+        existing = self.get_item(item_id, partition_key)
         if not existing:
             return False
 
+        entity_type = partition_key.replace("_id", "")
+
         try:
-            self.table.delete_item(Key={"PK": f"TRIP#{trip_id}", "SK": "METADATA"})
-            logger.debug(f"Deleted trip {trip_id}")
+            self.table.delete_item(
+                Key={"PK": f"{entity_type.upper()}#{item_id}", "SK": "METADATA"}
+            )
+            logger.debug(f"Deleted {entity_type} {item_id}")
             return True
         except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to delete trip {trip_id}: {str(e)}")
-            raise
-
-    # --- Plan Operations ---
-
-    def create_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create a new day plan.
-
-        Args:
-            plan: Plan data with plan_id, device_id, trip_id, port_id, etc.
-
-        Returns:
-            Created plan data
-        """
-        item = self._convert_floats(
-            {
-                "PK": f"PLAN#{plan['plan_id']}",
-                "SK": "METADATA",
-                "entity_type": "plan",
-                "GSI1PK": f"DEVICE#{plan['device_id']}",
-                "GSI1SK": plan["generated_at"],
-                **plan,
-            }
-        )
-        try:
-            self.table.put_item(Item=item)
-            logger.debug(f"Created plan {plan['plan_id']}")
-            return plan
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to create plan: {str(e)}")
-            raise
-
-    def get_plan(self, plan_id: str, device_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a specific plan by ID.
-
-        Args:
-            plan_id: Plan UUID
-            device_id: Device ID (for authorization)
-
-        Returns:
-            Plan data or None if not found
-        """
-        try:
-            response = self.table.get_item(
-                Key={"PK": f"PLAN#{plan_id}", "SK": "METADATA"}
-            )
-            item = response.get("Item")
-            if item and item.get("device_id") == device_id:
-                return self._clean_item(item)
-            return None
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to get plan {plan_id}: {str(e)}")
-            raise
-
-    def list_plans(
-        self,
-        device_id: str,
-        trip_id: Optional[str] = None,
-        port_id: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """
-        List plans for a device, optionally filtered by trip or port.
-
-        Args:
-            device_id: Device ID
-            trip_id: Optional trip ID filter
-            port_id: Optional port ID filter
-            skip: Number of items to skip
-            limit: Maximum number of items to return
-
-        Returns:
-            List of plan data
-        """
-        try:
-            query_kwargs = {
-                "IndexName": "GSI1",
-                "KeyConditionExpression": "GSI1PK = :device_pk",
-                "ExpressionAttributeValues": {":device_pk": f"DEVICE#{device_id}"},
-                "ScanIndexForward": False,  # Descending (newest first)
-                "Limit": skip + limit,
-            }
-
-            # Add filter expressions for trip_id and port_id
-            filter_expressions = ["entity_type = :entity_type"]
-            query_kwargs["ExpressionAttributeValues"][":entity_type"] = "plan"
-
-            if trip_id:
-                filter_expressions.append("trip_id = :trip_id")
-                query_kwargs["ExpressionAttributeValues"][":trip_id"] = trip_id
-
-            if port_id:
-                filter_expressions.append("port_id = :port_id")
-                query_kwargs["ExpressionAttributeValues"][":port_id"] = port_id
-
-            if filter_expressions:
-                query_kwargs["FilterExpression"] = " AND ".join(filter_expressions)
-
-            response = self.table.query(**query_kwargs)
-            items = response.get("Items", [])
-            items = items[skip : skip + limit]
-            return [self._clean_item(item) for item in items]
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to list plans for device {device_id}: {str(e)}")
-            raise
-
-    def delete_plan(self, plan_id: str, device_id: str) -> bool:
-        """
-        Delete a plan.
-
-        Args:
-            plan_id: Plan UUID
-            device_id: Device ID (for authorization)
-
-        Returns:
-            True if deleted, False if not found
-        """
-        # Verify ownership first
-        existing = self.get_plan(plan_id, device_id)
-        if not existing:
-            return False
-
-        try:
-            self.table.delete_item(Key={"PK": f"PLAN#{plan_id}", "SK": "METADATA"})
-            logger.debug(f"Deleted plan {plan_id}")
-            return True
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to delete plan {plan_id}: {str(e)}")
-            raise
-
-    def delete_plans_by_trip(self, trip_id: str) -> int:
-        """
-        Delete all plans for a specific trip.
-
-        Args:
-            trip_id: Trip UUID
-
-        Returns:
-            Number of plans deleted
-        """
-        # Query all plans for this trip (across all devices that have access)
-        # This is a cascade delete operation when a trip is deleted
-        try:
-            # Scan for all plans with this trip_id
-            response = self.table.scan(
-                FilterExpression="entity_type = :entity_type AND trip_id = :trip_id",
-                ExpressionAttributeValues={
-                    ":entity_type": "plan",
-                    ":trip_id": trip_id,
-                },
-            )
-
-            items = response.get("Items", [])
-            deleted_count = 0
-
-            # DynamoDB doesn't support batch delete with conditions,
-            # so we delete one by one
-            for item in items:
-                try:
-                    self.table.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
-                    deleted_count += 1
-                except (BotoCoreError, ClientError) as e:
-                    logger.warning(
-                        f"Failed to delete plan {item.get('plan_id')}: {str(e)}"
-                    )
-
-            logger.debug(f"Deleted {deleted_count} plans for trip {trip_id}")
-            return deleted_count
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to delete plans for trip {trip_id}: {str(e)}")
-            raise
-
-    def delete_plans_by_port(self, port_id: str) -> int:
-        """
-        Delete all plans for a specific port.
-
-        Args:
-            port_id: Port UUID
-
-        Returns:
-            Number of plans deleted
-        """
-        try:
-            response = self.table.scan(
-                FilterExpression="entity_type = :entity_type AND port_id = :port_id",
-                ExpressionAttributeValues={
-                    ":entity_type": "plan",
-                    ":port_id": port_id,
-                },
-            )
-
-            items = response.get("Items", [])
-            deleted_count = 0
-
-            for item in items:
-                try:
-                    self.table.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
-                    deleted_count += 1
-                except (BotoCoreError, ClientError) as e:
-                    logger.warning(
-                        f"Failed to delete plan {item.get('plan_id')}: {str(e)}"
-                    )
-
-            logger.debug(f"Deleted {deleted_count} plans for port {port_id}")
-            return deleted_count
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"Failed to delete plans for port {port_id}: {str(e)}")
+            logger.error(f"Failed to delete {entity_type} {item_id}: {str(e)}")
             raise
 
     # --- Helper Methods ---
@@ -540,9 +361,9 @@ class DynamoDBClient:
             item: DynamoDB item
 
         Returns:
-            Cleaned item without PK, SK, GSI fields
+            Cleaned item without PK, SK, entity_type fields
         """
         cleaned = dict(item)
-        for key in ["PK", "SK", "GSI1PK", "GSI1SK", "entity_type"]:
+        for key in ["PK", "SK", "entity_type"]:
             cleaned.pop(key, None)
         return self._convert_decimals(cleaned)

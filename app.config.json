@@ -1,0 +1,6 @@
+{
+  "app_name": "myapp",
+  "display_name": "My Application",
+  "description": "A full-stack application template with FastAPI, React, and AWS infrastructure",
+  "version": "0.1.0"
+}
