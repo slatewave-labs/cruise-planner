@@ -194,10 +194,10 @@ aws ec2 authorize-security-group-ingress \
 
 aws ec2 authorize-security-group-ingress \
     --group-id "$ECS_SG_ID" \
-    --protocol tcp --port 80 --source-group "$ALB_SG_ID" \
+    --protocol tcp --port 8080 --source-group "$ALB_SG_ID" \
     --region "$AWS_REGION" &>/dev/null 2>&1 || true
 
-print_success "ECS security group: allows traffic from ALB on ports 80 and 8001"
+print_success "ECS security group: allows traffic from ALB on ports 8080 and 8001"
 
 # ECS tasks need outbound internet for MongoDB Atlas, Gemini API, ECR pulls
 # Default SG allows all outbound, so no action needed.

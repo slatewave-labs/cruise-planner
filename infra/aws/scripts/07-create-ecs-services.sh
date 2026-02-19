@@ -116,7 +116,7 @@ FRONTEND_TASK_DEF=$(cat <<EOF
             "essential": true,
             "portMappings": [
                 {
-                    "containerPort": 80,
+                    "containerPort": 8080,
                     "protocol": "tcp"
                 }
             ],
@@ -129,7 +129,7 @@ FRONTEND_TASK_DEF=$(cat <<EOF
                 }
             },
             "healthCheck": {
-                "command": ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/ || exit 1"],
+                "command": ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1"],
                 "interval": 30,
                 "timeout": 5,
                 "retries": 3,
@@ -210,7 +210,7 @@ else
         --desired-count "$DESIRED_COUNT" \
         --launch-type FARGATE \
         --network-configuration "awsvpcConfiguration={subnets=[$PUBLIC_SUBNET_1_ID,$PUBLIC_SUBNET_2_ID],securityGroups=[$ECS_SG_ID],assignPublicIp=ENABLED}" \
-        --load-balancers "targetGroupArn=$FRONTEND_TG_ARN,containerName=frontend,containerPort=80" \
+        --load-balancers "targetGroupArn=$FRONTEND_TG_ARN,containerName=frontend,containerPort=8080" \
         --health-check-grace-period-seconds 60 \
         --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
         --tags key=Project,value="$TAG_PROJECT" key=Environment,value="$TAG_ENVIRONMENT" \

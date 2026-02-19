@@ -137,7 +137,7 @@ EOF
             "essential": true,
             "portMappings": [
                 {
-                    "containerPort": 80,
+                    "containerPort": 8080,
                     "protocol": "tcp"
                 }
             ],
@@ -150,7 +150,7 @@ EOF
                 }
             },
             "healthCheck": {
-                "command": ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/ || exit 1"],
+                "command": ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1"],
                 "interval": 30,
                 "timeout": 5,
                 "retries": 3,
