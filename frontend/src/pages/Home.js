@@ -1,25 +1,21 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Compass, Ship, Sun, MapPin, ArrowRight, Anchor } from 'lucide-react';
+import { Zap, Layers, Cpu, Cloud, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const features = [
-  { icon: Ship, title: 'Your Cruise, Your Plan', desc: 'Enter your ship and port schedule, and we handle the rest.' },
-  { icon: Sun, title: 'Weather-Smart', desc: 'Real-time weather data ensures your day plan suits the conditions.' },
-  { icon: MapPin, title: 'Circular Routes', desc: 'Adventures that start and end at your ship, with time to spare.' },
-  { icon: Compass, title: 'Personalised Plans', desc: 'Tailored itineraries crafted around your preferences, schedule, and style.' },
+  { icon: Zap, title: 'Fast API Backend', desc: 'High-performance Python FastAPI with async/await support and automatic API documentation.' },
+  { icon: Layers, title: 'React Frontend', desc: 'Modern React with Tailwind CSS, Framer Motion animations, and responsive design patterns.' },
+  { icon: Cpu, title: 'AI Integration', desc: 'Ready-to-use Groq LLM integration for AI-powered features and intelligent workflows.' },
+  { icon: Cloud, title: 'Cloud Ready', desc: 'AWS infrastructure with DynamoDB, containerized deployments, and production-ready patterns.' },
 ];
 
-export default function Landing() {
+export default function Home() {
   return (
-    <div data-testid="landing-page">
+    <div data-testid="home-page">
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1400&q=80)` }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/80 via-primary/60 to-primary/90" />
+        <div className="absolute inset-0 bg-gradient-to-br from-primary via-ocean-800 to-ocean-900" />
         <div className="relative px-6 py-20 md:py-32 max-w-5xl mx-auto text-center text-white">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -27,30 +23,30 @@ export default function Landing() {
             transition={{ duration: 0.6 }}
           >
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md rounded-full px-4 py-2 mb-6 text-sm font-medium">
-              <Anchor className="w-4 h-4" />
-              Cruise Port Day Planner
+              <Cloud className="w-4 h-4" />
+              Full-Stack Template
             </div>
             <h1 className="font-heading text-4xl md:text-6xl font-bold mb-6 leading-tight text-balance">
-              Make Every Port<br />an Adventure
+              Welcome to My App
             </h1>
             <p className="text-lg md:text-xl text-white/80 max-w-2xl mx-auto mb-10 leading-relaxed">
-              Personalised day plans for every cruise port of call. Smart routes, real-time weather, and activities tailored to your style.
+              A full-stack application template with React, FastAPI, and AWS infrastructure
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
-                to="/trips/new"
+                to="/items"
                 data-testid="get-started-btn"
                 className="inline-flex items-center gap-2 bg-accent text-white rounded-full px-8 py-4 text-lg font-bold shadow-lg hover:shadow-xl hover:bg-accent/90 transition-all active:scale-95 min-h-[48px]"
               >
-                Start Planning
+                Get Started
                 <ArrowRight className="w-5 h-5" />
               </Link>
               <Link
-                to="/trips"
-                data-testid="view-trips-btn"
+                to="/about"
+                data-testid="learn-more-btn"
                 className="inline-flex items-center gap-2 bg-white/15 backdrop-blur text-white rounded-full px-8 py-4 text-lg font-semibold hover:bg-white/25 transition-all min-h-[48px]"
               >
-                My Trips
+                Learn More
               </Link>
             </div>
           </motion.div>
@@ -60,10 +56,10 @@ export default function Landing() {
       {/* Features */}
       <section className="px-6 py-16 md:py-24 max-w-6xl mx-auto">
         <h2 className="font-heading text-3xl md:text-4xl font-bold text-center text-primary mb-4">
-          How It Works
+          What's Included
         </h2>
         <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-          From ship to shore and back again, ShoreExplorer plans your perfect day.
+          Everything you need to build modern full-stack applications
         </p>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((f, i) => {
@@ -93,17 +89,17 @@ export default function Landing() {
       <section className="px-6 py-16 md:py-20">
         <div className="max-w-3xl mx-auto bg-primary rounded-3xl p-8 md:p-12 text-center text-white">
           <h2 className="font-heading text-2xl md:text-3xl font-bold mb-4">
-            Ready to Explore?
+            Ready to Build?
           </h2>
           <p className="text-white/70 mb-8 max-w-md mx-auto">
-            Create your first trip and get the perfect day planned at each port of call.
+            Start exploring the template features and build your next great application.
           </p>
           <Link
-            to="/trips/new"
+            to="/items"
             data-testid="cta-start-btn"
             className="inline-flex items-center gap-2 bg-accent text-white rounded-full px-8 py-4 font-bold shadow-lg hover:shadow-xl hover:bg-accent/90 transition-all active:scale-95 min-h-[48px]"
           >
-            Create Your Trip
+            Get Started
             <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
