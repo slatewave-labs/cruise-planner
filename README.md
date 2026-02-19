@@ -1,5 +1,7 @@
 # ShoreExplorer - Cruise Port of Call Day Planner
 
+> Last updated: 2026-02-19
+
 Plan your perfect day ashore at every cruise port of call. ShoreExplorer uses AI to generate personalised itineraries based on your preferences, weather conditions, and cruise schedule.
 
 ---
@@ -471,8 +473,16 @@ The weather API (Open-Meteo) only provides forecasts up to 16 days in the future
 shoreexplorer/
 ├── backend/                    # Python FastAPI server
 │   ├── server.py               # Main API application (all endpoints)
+│   ├── llm_client.py           # Groq LLM integration (Llama 3.3 70B)
+│   ├── dynamodb_client.py      # AWS DynamoDB database client
+│   ├── affiliate_config.py     # Affiliate link configuration
+│   ├── ports_data.py           # Pre-loaded cruise port database
+│   ├── Dockerfile              # Backend container image
+│   ├── requirements.txt        # Python package list
 │   ├── .env                    # Backend environment variables (you create this)
-│   └── requirements.txt        # Python package list
+│   └── tests/                  # Backend unit tests
+│       ├── test_api.py
+│       └── test_error_handling.py
 │
 ├── frontend/                   # React web application
 │   ├── public/
@@ -480,8 +490,8 @@ shoreexplorer/
 │   │   └── manifest.json       # PWA configuration
 │   ├── src/
 │   │   ├── App.js              # Main app with page routing
-│   │   ├── index.js            # React entry point
-│   │   ├── index.css           # Global styles
+│   │   ├── api.js              # Centralised API calls (Axios)
+│   │   ├── utils.js            # Utility functions
 │   │   ├── pages/
 │   │   │   ├── Landing.js      # Home page with hero section
 │   │   │   ├── TripSetup.js    # Create/edit trip form
@@ -495,21 +505,42 @@ shoreexplorer/
 │   │       ├── MapView.js      # Leaflet map with route
 │   │       ├── WeatherCard.js  # Weather forecast display
 │   │       └── ActivityCard.js # Activity timeline item
+│   ├── Dockerfile              # Frontend container image (nginx)
+│   ├── nginx.conf              # Production nginx config
 │   ├── .env                    # Frontend environment variables (you create this)
 │   ├── package.json            # Node.js package list
 │   └── tailwind.config.js      # Tailwind CSS theme config
 │
-├── infra/                      # Infrastructure scaffolds (TODO)
-│   ├── github-actions/         # CI/CD pipeline templates
+├── infra/                      # Infrastructure & deployment
+│   ├── aws/                    # AWS setup guides & scripts
+│   │   ├── scripts/            # Deployment & diagnostics scripts
+│   │   ├── DYNAMODB-SETUP.md   # DynamoDB table setup guide
+│   │   ├── MANUAL-SETUP-GUIDE.md  # Step-by-step AWS setup
+│   │   ├── TROUBLESHOOTING.md  # AWS troubleshooting guide
+│   │   └── ...                 # DNS, HTTPS, secrets guides
+│   ├── deployment/             # AWS deployment guide
+│   │   └── AWS-DEPLOYMENT.md
 │   ├── feature-flags/          # Feature toggle configuration
-│   ├── monitoring/             # Observability setup guide
-│   └── deployment/             # Blue/green deployment docs
+│   └── github-actions/         # CI/CD utilities
 │
-├── tests/                      # Test scaffolds (TODO)
-│   ├── unit/                   # Unit test templates
-│   ├── integration/            # PACT contract test templates
-│   └── e2e/                    # Playwright E2E test templates
+├── tests/                      # Test suites
+│   ├── unit/                   # Unit tests (pytest)
+│   ├── integration/            # Integration tests (pytest)
+│   └── e2e/                    # End-to-end tests (Playwright)
 │
+├── .github/                    # CI/CD & GitHub configuration
+│   ├── workflows/              # GitHub Actions workflows
+│   │   ├── ci.yml              # Main CI pipeline (lint, test, build, security)
+│   │   ├── deploy-test.yml     # Deploy to test environment
+│   │   ├── deploy-prod.yml     # Deploy to production
+│   │   ├── e2e-test.yml        # E2E tests against test env
+│   │   └── e2e-prod.yml        # E2E tests against production
+│   └── ...                     # CI docs, branch protection guide
+│
+├── docker-compose.yml          # Local dev (frontend + backend + DynamoDB Local)
+├── design_guidelines.json      # UI/UX design system specification
+├── GROQ_SETUP.md               # Groq API key setup guide
+├── AFFILIATE_LINKS.md          # Affiliate link configuration guide
 └── README.md                   # This file
 ```
 
@@ -519,9 +550,9 @@ shoreexplorer/
 
 | Service | Used For | Cost | API Key Needed? |
 |---------|---------|------|-----------------|
+| **Groq** (Llama 3.3 70B) | AI day plan generation | Free tier (30 req/min, 14,400 req/day) | Yes ([Groq API Key](https://console.groq.com/keys)) |
 | **Open-Meteo** | Weather forecasts | Free | No |
 | **OpenStreetMap + Leaflet** | Interactive maps | Free | No |
-| **Google Gemini 2.0 Flash** | AI day plan generation | Free tier (15 req/min, 1500 req/day) | Yes (Google API Key) |
 | **Google Maps** (export only) | Route navigation export | Free (opens in user's browser) | No |
 
 Full terms and conditions for each service are available in the app at the **Terms** page.
@@ -532,56 +563,63 @@ Full terms and conditions for each service are available in the app at the **Ter
 
 This application runs on AWS with DynamoDB for database storage.
 
-### 🚨 Connection Issues?
-
-If you're getting a "connection closed" error when accessing the deployed environment:
-
-**→ See [CONNECTION-ERROR-FIX.md](./CONNECTION-ERROR-FIX.md) for the quick fix** (TL;DR: Use `http://` not `https://`)
-
 ### Quick Deployment Options
 
-1. **Docker Compose** (Local/VPS) - See root `docker-compose.yml` (includes DynamoDB Local)
-2. **AWS Deployment** - See `infra/aws/DYNAMODB-SETUP.md` for database setup, then `infra/deployment/AWS-DEPLOYMENT.md` for complete guide
-3. **Production Infrastructure** - See scaffolds below
+1. **Docker Compose** (Local/VPS) — See root `docker-compose.yml` (includes DynamoDB Local)
+2. **AWS Deployment** — See [infra/deployment/AWS-DEPLOYMENT.md](./infra/deployment/AWS-DEPLOYMENT.md) for the complete guide
+3. **Manual AWS Setup** — See [infra/aws/MANUAL-SETUP-GUIDE.md](./infra/aws/MANUAL-SETUP-GUIDE.md) for step-by-step instructions
 
-### AWS Troubleshooting & Diagnostics
+### AWS Guides
 
-- **DynamoDB Setup:** See [infra/aws/DYNAMODB-SETUP.md](./infra/aws/DYNAMODB-SETUP.md) for non-technical setup guide
-- **Create Tables:** Run `./infra/aws/scripts/create-dynamodb-tables.sh <env>` to provision DynamoDB tables
-- **Quick Fix:** Run `./infra/aws/scripts/quick-fix-alb.sh test` to auto-fix common issues
-- **Diagnostics:** Run `./infra/aws/scripts/diagnose-alb.sh test` for detailed health check
-- **DNS Setup:** Run `./infra/aws/scripts/09-setup-dns-subdomain.sh test yourdomain.com` to configure subdomains
-- **Custom Domain Config:** See [infra/aws/GITHUB-SECRETS.md](./infra/aws/GITHUB-SECRETS.md) to configure `REACT_APP_BACKEND_URL` with your domain
-- **HTTPS Setup:** Run `./infra/aws/scripts/08-setup-https.sh test yourdomain.com` to enable HTTPS
-- **Full Guide:** See [infra/aws/TROUBLESHOOTING.md](./infra/aws/TROUBLESHOOTING.md)
-- **DNS Guide:** See [infra/aws/DNS-SETUP.md](./infra/aws/DNS-SETUP.md)
-- **HTTPS Guide:** See [infra/aws/HTTPS-SETUP.md](./infra/aws/HTTPS-SETUP.md)
+| Guide | Description |
+|-------|-------------|
+| [AWS-DEPLOYMENT.md](./infra/deployment/AWS-DEPLOYMENT.md) | Complete deployment guide (ECS, ECR, ALB) |
+| [MANUAL-SETUP-GUIDE.md](./infra/aws/MANUAL-SETUP-GUIDE.md) | Non-technical step-by-step AWS setup |
+| [DYNAMODB-SETUP.md](./infra/aws/DYNAMODB-SETUP.md) | DynamoDB table provisioning |
+| [GITHUB-SECRETS.md](./infra/aws/GITHUB-SECRETS.md) | GitHub Actions secrets configuration |
+| [SECRETS-ARCHITECTURE.md](./infra/aws/SECRETS-ARCHITECTURE.md) | Two-tier secrets architecture (GitHub + AWS Secrets Manager) |
+| [DNS-SETUP.md](./infra/aws/DNS-SETUP.md) | Route 53 DNS configuration |
+| [HTTPS-SETUP.md](./infra/aws/HTTPS-SETUP.md) | ACM certificate and HTTPS setup |
+| [TROUBLESHOOTING.md](./infra/aws/TROUBLESHOOTING.md) | AWS troubleshooting (502/503/504 errors, ALB, ECS) |
+| [AWS_GROQ_SETUP.md](./infra/aws/AWS_GROQ_SETUP.md) | Groq API key setup in AWS |
+| [scripts/README.md](./infra/aws/scripts/README.md) | Deployment & diagnostics scripts reference |
 
-The `infra/` folder contains **scaffold files** (marked with TODO comments) for production infrastructure. These are ready to be picked up and completed:
+### CI/CD Pipeline
 
-- **`infra/aws/DYNAMODB-SETUP.md`** - Non-technical DynamoDB setup guide
-- **`infra/aws/scripts/create-dynamodb-tables.sh`** - Script to provision DynamoDB tables for dev/test/prod
-- **`infra/deployment/AWS-DEPLOYMENT.md`** - Complete AWS deployment guide
-- **`infra/github-actions/ci.yml`** - CI pipeline with unit tests, integration tests, and E2E tests
-- **`infra/github-actions/cd.yml`** - CD pipeline with blue/green deployment to beta and production
-- **`infra/feature-flags/config.json`** - Feature flag configuration with 0-100% rollout settings per environment
-- **`infra/monitoring/setup.md`** - Monitoring stack recommendations (Sentry, Grafana, UptimeRobot)
-- **`infra/deployment/README.md`** - Blue/green deployment architecture and environment setup guide
+The repository uses GitHub Actions for continuous integration and deployment:
+
+- **CI** (`.github/workflows/ci.yml`) — Runs on every PR: linting, unit tests, integration tests, E2E tests, Docker builds, security scanning (Semgrep + Trivy)
+- **Deploy to Test** (`.github/workflows/deploy-test.yml`) — Deploys to test environment
+- **Deploy to Prod** (`.github/workflows/deploy-prod.yml`) — Production deployment (tag-based or manual)
+- **E2E Tests** (`.github/workflows/e2e-test.yml`, `e2e-prod.yml`) — Playwright tests against deployed environments
+
+See [.github/workflows/README.md](./.github/workflows/README.md) for full workflow documentation.
 
 ---
 
 ## Quick Reference
 
-**Start everything (after initial setup):**
+**Start everything with Docker Compose (recommended):**
+```bash
+docker-compose up --build
+```
+Then open **http://localhost:3000** in your browser.
 
-Terminal 1 (backend):
+**Or start services manually (after initial setup):**
+
+Terminal 1 (DynamoDB Local):
+```bash
+docker run -p 8000:8000 amazon/dynamodb-local
+```
+
+Terminal 2 (backend):
 ```bash
 cd backend
 source venv/bin/activate
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-Terminal 2 (frontend):
+Terminal 3 (frontend):
 ```bash
 cd frontend
 yarn start
@@ -590,4 +628,4 @@ yarn start
 Then open **http://localhost:3000** in your browser.
 
 **Stop everything:**
-Press `Ctrl+C` in each terminal window.
+Press `Ctrl+C` in each terminal window, or `docker-compose down` if using Docker Compose.
