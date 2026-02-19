@@ -127,6 +127,19 @@ DYNAMODB_POLICY=$(cat <<EOF
                 "arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/${APP_NAME}-${ENVIRONMENT}",
                 "arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/${APP_NAME}-${ENVIRONMENT}/index/*"
             ]
+        },
+        {
+            "Sid": "CloudWatchMetrics",
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:PutMetricData"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals": {
+                    "cloudwatch:namespace": "${PROJECT_NAME}/${ENVIRONMENT}"
+                }
+            }
         }
     ]
 }

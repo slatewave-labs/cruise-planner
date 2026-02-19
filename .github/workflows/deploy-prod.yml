@@ -304,7 +304,9 @@ jobs:
               ],
               \"environment\": [
                 {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"${PROJECT_NAME}-${ENVIRONMENT}\"},
-                {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"${AWS_REGION}\"}
+                {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"${AWS_REGION}\"},
+                {\"name\": \"ENVIRONMENT\", \"value\": \"${ENVIRONMENT}\"},
+                {\"name\": \"ENABLE_CLOUDWATCH_METRICS\", \"value\": \"true\"}
               ],
               \"logConfiguration\": {
                 \"logDriver\": \"awslogs\",
@@ -522,6 +524,15 @@ jobs:
             exit 1
           fi
 
+      # ── Monitoring & Alerting ───────────────────────────────────
+      - name: Setup monitoring (dashboard + alarms)
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL || '' }}
+        run: |
+          chmod +x infra/aws/scripts/10-setup-monitoring.sh
+          bash infra/aws/scripts/10-setup-monitoring.sh "${ENVIRONMENT}"
+        continue-on-error: true  # Monitoring setup should not block deployment
+
       - name: Deployment summary
         if: always()
         env:
@@ -538,6 +549,8 @@ jobs:
           if [[ "${BACKEND_URL}" != "http://localhost:8001" ]]; then
             echo "| App URL | ${BACKEND_URL} |" >> "$GITHUB_STEP_SUMMARY"
             echo "| API Health | ${BACKEND_URL}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+            DASHBOARD_URL="https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards:name=${PROJECT_NAME}-${ENVIRONMENT}-dashboard"
+            echo "| Dashboard | [CloudWatch](${DASHBOARD_URL}) |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # ─────────────────────────────────────────────────

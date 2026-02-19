@@ -62,6 +62,9 @@ echo ""
 echo "  3. Or do both at once:"
 echo "     ./infra/aws/scripts/build-and-deploy.sh $ENVIRONMENT"
 echo ""
+echo "  4. Set up monitoring (after services are running):"
+echo "     ./infra/aws/scripts/10-setup-monitoring.sh $ENVIRONMENT"
+echo ""
 
 # Load and display the ALB URL
 ALB_FILE="$SCRIPT_DIR/.alb-outputs-${ENVIRONMENT}.env"

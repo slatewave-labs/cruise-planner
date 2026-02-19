@@ -107,6 +107,13 @@ BACKEND_LOG_GROUP="/ecs/${APP_NAME}-backend"
 FRONTEND_LOG_GROUP="/ecs/${APP_NAME}-frontend"
 
 # ---------------------------------------------------------------------------
+# Monitoring & Alerting
+# ---------------------------------------------------------------------------
+DASHBOARD_NAME="${APP_NAME}-dashboard"
+SNS_ALARM_TOPIC="${APP_NAME}-alarms"
+METRIC_NAMESPACE="${PROJECT_NAME}/${ENVIRONMENT}"
+
+# ---------------------------------------------------------------------------
 # Resource Tags
 # ---------------------------------------------------------------------------
 TAG_PROJECT="$PROJECT_NAME"
