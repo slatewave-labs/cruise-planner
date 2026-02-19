@@ -1,4 +1,4 @@
-# ShoreExplorer CI Pipeline
+# CI Pipeline
 # Runs on all PRs and pushes to main/develop
 # Ensures code quality, security, and functionality before merge
 
@@ -121,7 +121,7 @@ jobs:
           # Create table
           try:
               dynamodb.create_table(
-                  TableName='shoreexplorer_test',
+                  TableName='myapp_test',
                   KeySchema=[
                       {'AttributeName': 'PK', 'KeyType': 'HASH'},
                       {'AttributeName': 'SK', 'KeyType': 'RANGE'}
@@ -152,7 +152,7 @@ jobs:
                       'WriteCapacityUnits': 5
                   }
               )
-              print("Table 'shoreexplorer_test' created successfully!")
+              print("Table 'myapp_test' created successfully!")
           except Exception as e:
               print(f"Error creating table: {e}")
               raise
@@ -163,7 +163,7 @@ jobs:
           # Use pytest.ini from root which includes backend/tests, tests/unit, tests/integration
           pytest -v --cov=backend --cov-report=xml --cov-report=term
         env:
-          DYNAMODB_TABLE_NAME: shoreexplorer_test
+          DYNAMODB_TABLE_NAME: myapp_test
           AWS_DEFAULT_REGION: us-east-1
           DYNAMODB_ENDPOINT_URL: http://localhost:8000
           AWS_ACCESS_KEY_ID: dummy
@@ -225,7 +225,7 @@ jobs:
           )
           
           # Create table with same schema as production
-          table_name = 'shoreexplorer_integrity'
+          table_name = 'myapp_integrity'
           
           try:
               dynamodb.create_table(
@@ -284,7 +284,7 @@ jobs:
           kill $SERVER_PID
           exit $RESULT
         env:
-          DYNAMODB_TABLE_NAME: shoreexplorer_integrity
+          DYNAMODB_TABLE_NAME: myapp_integrity
           AWS_DEFAULT_REGION: us-east-1
           DYNAMODB_ENDPOINT_URL: http://localhost:8000
           AWS_ACCESS_KEY_ID: dummy
@@ -377,7 +377,7 @@ jobs:
           cd frontend
           yarn build
         env:
-          REACT_APP_BACKEND_URL: https://api.shoreexplorer.com
+          REACT_APP_BACKEND_URL: http://localhost:8001
           CI: true
 
       - name: Upload build artifacts
@@ -480,7 +480,7 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: false
-          tags: shoreexplorer-backend:test
+          tags: myapp-backend:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

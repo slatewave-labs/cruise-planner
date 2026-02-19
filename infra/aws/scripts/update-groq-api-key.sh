@@ -92,7 +92,7 @@ CURRENT_SECRET=$(aws secretsmanager get-secret-value \
 
 # Parse existing values
 MONGO_URL=$(echo "$CURRENT_SECRET" | jq -r '.MONGO_URL // empty')
-DB_NAME=$(echo "$CURRENT_SECRET" | jq -r '.DB_NAME // "shoreexplorer"')
+DB_NAME=$(echo "$CURRENT_SECRET" | jq -r '.DB_NAME // "myapp"')
 CURRENT_GROQ_KEY=$(echo "$CURRENT_SECRET" | jq -r '.GROQ_API_KEY // empty')
 
 if [[ -z "$MONGO_URL" ]]; then

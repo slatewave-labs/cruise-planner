@@ -1,4 +1,4 @@
-# ShoreExplorer E2E Tests — Test Environment
+# E2E Tests — Test Environment
 # Manual workflow dispatch to run Playwright tests against the test deployment
 name: E2E Tests (Test)
 

@@ -21,7 +21,7 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME:-shoreexplorer}
+      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME:-myapp}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
       - DYNAMODB_ENDPOINT_URL=${DYNAMODB_ENDPOINT_URL:-http://dynamodb-local:8000}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-dummy}

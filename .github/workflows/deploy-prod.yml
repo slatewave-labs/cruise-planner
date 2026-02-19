@@ -21,9 +21,9 @@ permissions:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
   ENVIRONMENT: prod
-  PROJECT_NAME: shoreexplorer
-  BACKEND_ECR_REPO: shoreexplorer-backend
-  FRONTEND_ECR_REPO: shoreexplorer-frontend
+  PROJECT_NAME: myapp
+  BACKEND_ECR_REPO: myapp-backend
+  FRONTEND_ECR_REPO: myapp-frontend
 
 jobs:
   # ─────────────────────────────────────────────────
@@ -87,7 +87,7 @@ jobs:
           # Create table
           try:
               dynamodb.create_table(
-                  TableName='shoreexplorer_test',
+                  TableName='myapp_test',
                   KeySchema=[
                       {'AttributeName': 'PK', 'KeyType': 'HASH'},
                       {'AttributeName': 'SK', 'KeyType': 'RANGE'}
@@ -118,7 +118,7 @@ jobs:
                       'WriteCapacityUnits': 5
                   }
               )
-              print("Table 'shoreexplorer_test' created successfully!")
+              print("Table 'myapp_test' created successfully!")
           except Exception as e:
               print(f"Error creating table: {e}")
               raise
@@ -132,7 +132,7 @@ jobs:
           cd backend
           pytest tests/ -v --tb=short
         env:
-          DYNAMODB_TABLE_NAME: shoreexplorer_test
+          DYNAMODB_TABLE_NAME: myapp_test
           AWS_DEFAULT_REGION: us-east-1
           DYNAMODB_ENDPOINT_URL: http://localhost:8000
           AWS_ACCESS_KEY_ID: dummy

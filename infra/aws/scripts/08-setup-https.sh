@@ -6,7 +6,7 @@
 # Uses a wildcard certificate (*.domain.com) to cover all subdomains.
 # Requires a domain name and DNS control for certificate validation.
 # Usage: ./infra/aws/scripts/08-setup-https.sh <test|prod> <domain-name> [certificate-arn]
-# Example: ./infra/aws/scripts/08-setup-https.sh test shoreexplorer.com
+# Example: ./infra/aws/scripts/08-setup-https.sh test myapp.com
 # =============================================================================
 
 set -euo pipefail

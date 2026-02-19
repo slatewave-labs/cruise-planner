@@ -60,7 +60,7 @@ BACKEND_TASK_DEF=$(cat <<EOF
             "environment": [
                 {
                     "name": "DYNAMODB_TABLE_NAME",
-                    "value": "shoreexplorer-${ENVIRONMENT}"
+                    "value": "myapp-${ENVIRONMENT}"
                 },
                 {
                     "name": "AWS_DEFAULT_REGION",

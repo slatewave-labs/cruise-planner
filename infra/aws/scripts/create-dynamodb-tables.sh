@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 ################################################################################
-# ShoreExplorer - DynamoDB Table Creation Script
+# My App - DynamoDB Table Creation Script
 ################################################################################
 # Creates DynamoDB tables for dev, test, and production environments.
 #
@@ -110,7 +110,7 @@ main() {
     check_aws_credentials
 
     # Set table name based on environment
-    TABLE_NAME="shoreexplorer-${ENVIRONMENT}"
+    TABLE_NAME="myapp-${ENVIRONMENT}"
     
     # Get AWS region (default to us-east-1 if not set)
     AWS_REGION=${AWS_DEFAULT_REGION:-us-east-1}
@@ -184,7 +184,7 @@ main() {
         --region "$AWS_REGION" \
         --tags \
             Key=Environment,Value="$ENVIRONMENT" \
-            Key=Application,Value=ShoreExplorer \
+            Key=Application,Value=My App \
             Key=ManagedBy,Value=Script \
         > /dev/null
 

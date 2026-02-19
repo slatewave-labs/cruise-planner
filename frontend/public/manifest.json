@@ -1,6 +1,6 @@
 {
-  "short_name": "ShoreExplorer",
-  "name": "ShoreExplorer - Cruise Port Planner",
+  "short_name": "My App",
+  "name": "My App - Application Template",
   "icons": [],
   "start_url": ".",
   "display": "standalone",

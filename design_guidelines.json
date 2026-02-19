@@ -1,10 +1,10 @@
 {
   "identity": {
-    "name": "ShoreExplorer",
-    "mission": "To be the most trusted, accessible, and premium cruise port companion for travelers aged 30-70.",
-    "tone": "Reliable, Relaxed, Premium, Adventurous",
-    "emotional_archetype": "Organic & Earthy (Trust, Calm, Ocean)",
-    "design_philosophy": "Digital Concierge - clearer than a map, friendlier than a schedule."
+    "name": "My App",
+    "mission": "A modern full-stack application template with premium design and accessibility patterns.",
+    "tone": "Professional, Clean, Modern, Accessible",
+    "emotional_archetype": "Organic & Earthy (Trust, Calm, Modern)",
+    "design_philosophy": "Clean and accessible design with generous spacing and clear hierarchy."
   },
   "typography": {
     "headings": {

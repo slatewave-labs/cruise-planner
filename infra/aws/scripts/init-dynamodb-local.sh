@@ -3,7 +3,7 @@
 ################################################################################
 # Initialize DynamoDB Local Table
 ################################################################################
-# This script creates the ShoreExplorer table in DynamoDB Local
+# This script creates the My App table in DynamoDB Local
 # for development and testing purposes.
 #
 # Usage:
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 # Configuration
-TABLE_NAME="${DYNAMODB_TABLE_NAME:-shoreexplorer}"
+TABLE_NAME="${DYNAMODB_TABLE_NAME:-myapp}"
 ENDPOINT_URL="${DYNAMODB_ENDPOINT_URL:-http://localhost:8000}"
 AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 

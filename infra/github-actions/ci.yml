@@ -2,7 +2,7 @@
 # This scaffold provides the foundation for CI/CD.
 # To activate: Move this file to .github/workflows/ci.yml in your GitHub repo.
 
-name: ShoreExplorer CI
+name: My App CI
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
           pytest tests/ -v
         env:
           MONGO_URL: mongodb://localhost:27017
-          DB_NAME: shoreexplorer_test
+          DB_NAME: myapp_test
 
   # TODO: Frontend unit tests
   frontend-tests:
@@ -67,8 +67,8 @@ jobs:
       - name: Run PACT tests
         run: |
           echo "TODO: Implement PACT consumer/provider contract tests"
-          echo "Provider: ShoreExplorer API"
-          echo "Consumer: ShoreExplorer Frontend"
+          echo "Provider: My App API"
+          echo "Consumer: My App Frontend"
           echo "Contracts to test:"
           echo "  - GET /api/trips"
           echo "  - POST /api/trips"

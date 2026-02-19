@@ -7,7 +7,7 @@
 # - Production environment: yourdomain.com (no subdomain)
 #
 # Usage: ./infra/aws/scripts/09-setup-dns-subdomain.sh <test|prod> <domain-name>
-# Example: ./infra/aws/scripts/09-setup-dns-subdomain.sh test shoreexplorer.com
+# Example: ./infra/aws/scripts/09-setup-dns-subdomain.sh test myapp.com
 # =============================================================================
 
 set -euo pipefail
@@ -48,8 +48,8 @@ if [[ $# -lt 2 ]]; then
     echo "Usage: $0 <test|prod> <domain-name>"
     echo ""
     echo "Examples:"
-    echo "  $0 test shoreexplorer.com    # Creates test.shoreexplorer.com"
-    echo "  $0 prod shoreexplorer.com    # Creates shoreexplorer.com (no subdomain)"
+    echo "  $0 test myapp.com    # Creates test.myapp.com"
+    echo "  $0 prod myapp.com    # Creates myapp.com (no subdomain)"
     echo ""
     exit 1
 fi

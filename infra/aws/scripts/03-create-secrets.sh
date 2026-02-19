@@ -17,7 +17,7 @@ print_status "Creating Secrets for '$ENVIRONMENT' environment"
 # ---------------------------------------------------------------------------
 echo ""
 echo "  DynamoDB Configuration (handled via environment variables in task definition):"
-echo "    - Table: shoreexplorer-${ENVIRONMENT}"
+echo "    - Table: myapp-${ENVIRONMENT}"
 echo "    - Region: ${AWS_REGION}"
 echo ""
 echo "  You need to provide your Groq API key for AI plan generation."
@@ -50,7 +50,7 @@ if resource_exists "secret" "$SECRET_NAME"; then
 else
     aws secretsmanager create-secret \
         --name "$SECRET_NAME" \
-        --description "ShoreExplorer $ENVIRONMENT environment secrets" \
+        --description "My App $ENVIRONMENT environment secrets" \
         --secret-string "$SECRET_VALUE" \
         --tags Key=Project,Value="$TAG_PROJECT" Key=Environment,Value="$TAG_ENVIRONMENT" \
         --region "$AWS_REGION" \

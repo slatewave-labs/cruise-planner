@@ -13,7 +13,7 @@ ENVIRONMENT="${1:-test}"
 
 echo ""
 echo "============================================================"
-echo "  ShoreExplorer — Build & Deploy to '$ENVIRONMENT'"
+echo "  My App — Build & Deploy to '$ENVIRONMENT'"
 echo "============================================================"
 echo ""
 

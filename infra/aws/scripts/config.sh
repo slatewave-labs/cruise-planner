@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ShoreExplorer AWS Infrastructure - Shared Configuration
+# AWS Infrastructure - Shared Configuration
 # =============================================================================
 # This file is sourced by all other scripts. Do NOT run it directly.
 # Usage: source ./infra/aws/scripts/config.sh <environment>
@@ -21,7 +21,7 @@ fi
 # AWS Settings — Change these if needed
 # ---------------------------------------------------------------------------
 AWS_REGION="${AWS_REGION:-us-east-1}"
-PROJECT_NAME="shoreexplorer"
+PROJECT_NAME="myapp"
 APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ get_account_id() {
 # Helper: Get full domain name based on environment
 # ---------------------------------------------------------------------------
 # Usage: get_full_domain <base-domain>
-# Example: get_full_domain "shoreexplorer.com" → "test.shoreexplorer.com" (test) or "shoreexplorer.com" (prod)
+# Example: get_full_domain "myapp.com" → "test.myapp.com" (test) or "myapp.com" (prod)
 get_full_domain() {
     local base_domain="$1"
     # Use SUBDOMAIN variable - if set, prepend it with a dot

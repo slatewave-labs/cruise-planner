@@ -23,9 +23,9 @@ permissions:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
   ENVIRONMENT: test
-  PROJECT_NAME: shoreexplorer
-  BACKEND_ECR_REPO: shoreexplorer-backend
-  FRONTEND_ECR_REPO: shoreexplorer-frontend
+  PROJECT_NAME: myapp
+  BACKEND_ECR_REPO: myapp-backend
+  FRONTEND_ECR_REPO: myapp-frontend
 
 jobs:
   deploy-test:

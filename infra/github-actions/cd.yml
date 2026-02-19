@@ -2,7 +2,7 @@
 # This scaffold provides the foundation for continuous deployment.
 # To activate: Move this file to .github/workflows/cd.yml in your GitHub repo.
 
-name: ShoreExplorer CD
+name: My App CD
 
 on:
   push:

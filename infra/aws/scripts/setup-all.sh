@@ -13,7 +13,7 @@ ENVIRONMENT="${1:-test}"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  ShoreExplorer — Full AWS Infrastructure Setup              ║"
+echo "║  My App — Full AWS Infrastructure Setup              ║"
 echo "║  Environment: $ENVIRONMENT                                         ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""

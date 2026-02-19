@@ -1,4 +1,4 @@
-# ShoreExplorer E2E Tests — Production Environment
+# E2E Tests — Production Environment
 # Manual workflow dispatch to run Playwright tests against production
 name: E2E Tests (Prod)
 

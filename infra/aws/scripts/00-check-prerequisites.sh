@@ -10,7 +10,7 @@ set -euo pipefail
 
 echo ""
 echo "============================================================"
-echo "  ShoreExplorer — Checking Prerequisites"
+echo "  My App — Checking Prerequisites"
 echo "============================================================"
 echo ""
 

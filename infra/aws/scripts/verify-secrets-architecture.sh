@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ENVIRONMENT="${1:-all}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
-PROJECT_NAME="shoreexplorer"
+PROJECT_NAME="myapp"
 
 # Color codes for output
 GREEN='\033[0;32m'
@@ -180,7 +180,7 @@ check_github_secrets() {
 # Main
 # =============================================================================
 main() {
-    print_header "ShoreExplorer Secrets Architecture Verification"
+    print_header "My App Secrets Architecture Verification"
     
     echo "Environment: $ENVIRONMENT"
     echo "AWS Region:  $AWS_REGION"
