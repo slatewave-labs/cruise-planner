@@ -5,7 +5,6 @@
  * framer-motion's AnimatePresence or motion.div for page transitions.
  * 
  * Issue: FE refreshing content on load
- * https://github.com/slatewave-labs/cruise-planner/issues/XX
  * 
  * The bug was caused by wrapping all page content in AnimatePresence
  * which created jarring fade-in/fade-out effects on every navigation.

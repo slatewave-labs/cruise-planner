@@ -1,7 +1,7 @@
 {
-  "name": "shoreexplorer-e2e",
+  "name": "myapp-e2e",
   "version": "1.0.0",
-  "description": "Playwright end-to-end tests for ShoreExplorer",
+  "description": "Playwright end-to-end tests for My App",
   "scripts": {
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",

@@ -1,68 +1,78 @@
-import sys
+"""
+Unit tests for Pydantic models.
+Tests request validation and model structure.
+"""
+
 import os
+import sys
+
 import pytest
 from pydantic import ValidationError
 
 # Add backend directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../backend"))
 
-from server import TripInput, PlanPreferences, GeneratePlanInput, PortInput
+from server import (
+    CreateItemRequest,
+    UpdateItemRequest,
+    GenerateRequest,
+)
 
-def test_trip_input_valid():
-    data = {"ship_name": "Wonder of the Seas", "cruise_line": "Royal Caribbean"}
-    trip = TripInput(**data)
-    assert trip.ship_name == "Wonder of the Seas"
-    assert trip.cruise_line == "Royal Caribbean"
 
-def test_trip_input_missing_optional():
-    data = {"ship_name": "Icon of the Seas"}
-    trip = TripInput(**data)
-    assert trip.ship_name == "Icon of the Seas"
-    assert trip.cruise_line == ""
+def test_create_item_valid():
+    """Test valid item creation with all fields."""
+    data = {"name": "Test Item", "description": "A test description"}
+    item = CreateItemRequest(**data)
+    assert item.name == "Test Item"
+    assert item.description == "A test description"
 
-def test_trip_input_invalid_missing_required():
+
+def test_create_item_without_description():
+    """Test item creation with optional description omitted."""
+    data = {"name": "Minimal Item"}
+    item = CreateItemRequest(**data)
+    assert item.name == "Minimal Item"
+    assert item.description is None
+
+
+def test_create_item_missing_name():
+    """Test that name is required on CreateItemRequest."""
     with pytest.raises(ValidationError):
-        TripInput()
+        CreateItemRequest()
 
-def test_port_input_valid():
-    data = {
-        "name": "Barcelona",
-        "country": "Spain",
-        "latitude": 41.38,
-        "longitude": 2.19,
-        "arrival": "2023-10-01T08:00:00",
-        "departure": "2023-10-01T18:00:00"
-    }
-    port = PortInput(**data)
-    assert port.name == "Barcelona"
-    assert port.latitude == 41.38
 
-def test_plan_preferences_defaults():
-    data = {
-        "party_type": "couple",
-        "activity_level": "moderate",
-        "transport_mode": "mixed",
-        "budget": "medium"
-    }
-    prefs = PlanPreferences(**data)
-    assert prefs.currency == "GBP"  # Default value
+def test_update_item_all_optional():
+    """Test UpdateItemRequest allows all fields to be optional."""
+    # Empty update should be valid
+    update = UpdateItemRequest()
+    assert update.name is None
+    assert update.description is None
 
-def test_generate_plan_input_valid():
-    data = {
-        "trip_id": "trip123",
-        "port_id": "port456",
-        "preferences": {
-            "party_type": "solo",
-            "activity_level": "intensive",
-            "transport_mode": "walking",
-            "budget": "free"
-        }
-    }
-    obj = GeneratePlanInput(**data)
-    assert obj.trip_id == "trip123"
-    assert obj.preferences.party_type == "solo"
 
-def test_plan_preferences_invalid_budget():
-    # Pydantic doesn't restrict these strings currently, but if it did this would fail
-    # For now, we trust the prompt handles it or we could add Enums
-    pass
+def test_update_item_partial_name():
+    """Test UpdateItemRequest with only name."""
+    data = {"name": "Updated Name"}
+    update = UpdateItemRequest(**data)
+    assert update.name == "Updated Name"
+    assert update.description is None
+
+
+def test_update_item_partial_description():
+    """Test UpdateItemRequest with only description."""
+    data = {"description": "Updated description"}
+    update = UpdateItemRequest(**data)
+    assert update.name is None
+    assert update.description == "Updated description"
+
+
+def test_generate_request_valid():
+    """Test GenerateRequest with prompt."""
+    data = {"prompt": "Write a test prompt"}
+    req = GenerateRequest(**data)
+    assert req.prompt == "Write a test prompt"
+
+
+def test_generate_request_missing_prompt():
+    """Test GenerateRequest requires prompt."""
+    with pytest.raises(ValidationError):
+        GenerateRequest()

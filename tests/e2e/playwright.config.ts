@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for ShoreExplorer E2E tests.
+ * Playwright configuration for E2E tests.
  *
  * BASE_URL can be overridden via environment variable to target
  * different environments (local, test, prod).

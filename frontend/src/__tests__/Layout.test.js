@@ -83,9 +83,8 @@ describe('Layout Component', () => {
       );
       
       expect(screen.getByTestId('nav-home')).toBeInTheDocument();
-      expect(screen.getByTestId('nav-my-trips')).toBeInTheDocument();
-      expect(screen.getByTestId('nav-new-trip')).toBeInTheDocument();
-      expect(screen.getByTestId('nav-terms')).toBeInTheDocument();
+      expect(screen.getByTestId('nav-items')).toBeInTheDocument();
+      expect(screen.getByTestId('nav-about')).toBeInTheDocument();
     });
 
     test('renders all navigation items in mobile nav', () => {
@@ -96,9 +95,8 @@ describe('Layout Component', () => {
       );
       
       expect(screen.getByTestId('mobile-nav-home')).toBeInTheDocument();
-      expect(screen.getByTestId('mobile-nav-my-trips')).toBeInTheDocument();
-      expect(screen.getByTestId('mobile-nav-new-trip')).toBeInTheDocument();
-      expect(screen.getByTestId('mobile-nav-terms')).toBeInTheDocument();
+      expect(screen.getByTestId('mobile-nav-items')).toBeInTheDocument();
+      expect(screen.getByTestId('mobile-nav-about')).toBeInTheDocument();
     });
 
     test('highlights active route in navigation', () => {
@@ -106,11 +104,11 @@ describe('Layout Component', () => {
         <Layout>
           <div>Content</div>
         </Layout>,
-        '/trips'
+        '/items'
       );
       
-      const myTripsLink = screen.getByTestId('nav-my-trips');
-      expect(myTripsLink).toHaveClass('bg-white/15', 'text-white');
+      const itemsLink = screen.getByTestId('nav-items');
+      expect(itemsLink).toHaveClass('bg-white/15', 'text-white');
     });
   });
 
@@ -218,14 +216,14 @@ describe('Layout Component', () => {
       
       // Simulate route change by re-rendering with different content
       rerender(
-        <MemoryRouter initialEntries={['/trips']}>
+        <MemoryRouter initialEntries={['/items']}>
           <Layout>
-            <div data-testid="trips-page">Trips Page</div>
+            <div data-testid="items-page">Items Page</div>
           </Layout>
         </MemoryRouter>
       );
       
-      expect(screen.getByTestId('trips-page')).toBeInTheDocument();
+      expect(screen.getByTestId('items-page')).toBeInTheDocument();
     });
   });
 

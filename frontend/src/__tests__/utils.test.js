@@ -1,67 +1,23 @@
 /**
  * Unit tests for utility functions in utils.js
- * Tests currency handling, device ID generation, and localStorage caching
+ * Tests device ID generation and error message extraction
  */
-import {
-  getCurrencySymbol,
-  getDeviceId,
-  cachePlan,
-  getCachedPlan,
-  getCachedPlansForPort,
-  getCachedPlansForTrip,
-  clearPlanCache,
-  cacheTrip,
-  getCachedTrip,
-  getAllCachedTrips,
-  removeCachedTrip,
-  getCachedPlanCountForTrip,
-} from '../utils';
+import { getDeviceId, getErrorMessage } from '../utils';
 
 // Local store for these tests
 let testStore = {};
-
-const mockPlan = {
-  plan_id: 'plan-123',
-  trip_id: 'trip-456',
-  port_id: 'port-789',
-  plan_title: 'Test Plan',
-  activities: [],
-};
-
-const mockTrip = {
-  trip_id: 'trip-123',
-  ship_name: 'Test Ship',
-  cruise_line: 'Test Cruise',
-  ports: [],
-};
-
-describe('Currency Utils', () => {
-  test('returns the correct symbol for known currencies', () => {
-    expect(getCurrencySymbol('GBP')).toBe('\u00A3');
-    expect(getCurrencySymbol('USD')).toBe('$');
-    expect(getCurrencySymbol('EUR')).toBe('\u20AC');
-  });
-
-  test('returns the currency code if symbol is not found', () => {
-    expect(getCurrencySymbol('XYZ')).toBe('XYZ');
-  });
-
-  test('returns the currency code if no code is provided', () => {
-    expect(getCurrencySymbol(null)).toBe(null);
-  });
-});
 
 describe('Device ID Utils', () => {
   beforeEach(() => {
     testStore = {};
     jest.clearAllMocks();
-    
+
     // Inject local implementation
-    localStorage.getItem.mockImplementation(key => testStore[key] || null);
+    localStorage.getItem.mockImplementation((key) => testStore[key] || null);
     localStorage.setItem.mockImplementation((key, value) => {
       testStore[key] = value.toString();
     });
-    localStorage.removeItem.mockImplementation(key => {
+    localStorage.removeItem.mockImplementation((key) => {
       delete testStore[key];
     });
     localStorage.clear.mockImplementation(() => {
@@ -71,212 +27,90 @@ describe('Device ID Utils', () => {
 
   test('getDeviceId generates new ID if none exists', () => {
     const id = getDeviceId();
-    
-    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-    expect(localStorage.setItem).toHaveBeenCalledWith('shoreexplorer_device_id', id);
+
+    expect(id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+    expect(localStorage.setItem).toHaveBeenCalledWith('app_device_id', id);
   });
 
   test('getDeviceId returns existing ID if present', () => {
     const existingId = 'existing-device-id';
-    testStore['shoreexplorer_device_id'] = existingId;
-    
+    testStore['app_device_id'] = existingId;
+
     const id = getDeviceId();
-    
+
     expect(id).toBe(existingId);
   });
 
   test('getDeviceId returns same ID on multiple calls', () => {
     const id1 = getDeviceId();
     const id2 = getDeviceId();
-    
+
     expect(id1).toBe(id2);
   });
 });
 
-describe('Plan Cache Utils', () => {
-  beforeEach(() => {
-    testStore = {};
-    jest.clearAllMocks();
-    
-    // Inject local implementation
-    localStorage.getItem.mockImplementation(key => testStore[key] || null);
-    localStorage.setItem.mockImplementation((key, value) => {
-      testStore[key] = value.toString();
-    });
-    localStorage.removeItem.mockImplementation(key => {
-      delete testStore[key];
-    });
-    localStorage.clear.mockImplementation(() => {
-      testStore = {};
-    });
-  });
-
-  test('cachePlan stores plan in localStorage', () => {
-    cachePlan(mockPlan);
-    
-    expect(localStorage.setItem).toHaveBeenCalledWith(
-      'shoreexplorer_plans',
-      expect.any(String)
-    );
-  });
-
-  test('getCachedPlan retrieves stored plan', () => {
-    cachePlan(mockPlan);
-    
-    const retrieved = getCachedPlan('plan-123');
-    
-    expect(retrieved).toEqual(mockPlan);
-  });
-
-  test('getCachedPlan returns null for non-existent plan', () => {
-    const retrieved = getCachedPlan('nonexistent');
-    
-    expect(retrieved).toBeNull();
-  });
-
-  test('getCachedPlansForPort returns plans for specific port', () => {
-    cachePlan(mockPlan);
-    cachePlan({
-      ...mockPlan,
-      plan_id: 'plan-456',
-      port_id: 'port-different',
-    });
-    
-    const plans = getCachedPlansForPort('trip-456', 'port-789');
-    
-    expect(plans).toHaveLength(1);
-    expect(plans[0].plan_id).toBe('plan-123');
-  });
-
-  test('getCachedPlansForTrip returns all plans for trip', () => {
-    cachePlan(mockPlan);
-    cachePlan({
-      ...mockPlan,
-      plan_id: 'plan-456',
-      port_id: 'port-different',
-    });
-    
-    const plans = getCachedPlansForTrip('trip-456');
-    
-    expect(plans).toHaveLength(2);
-  });
-
-  test('clearPlanCache removes all plans', () => {
-    cachePlan(mockPlan);
-    clearPlanCache();
-    
-    const retrieved = getCachedPlan('plan-123');
-    
-    expect(retrieved).toBeNull();
-  });
-
-  test('getCachedPlanCountForTrip returns correct count', () => {
-    cachePlan(mockPlan);
-    cachePlan({
-      ...mockPlan,
-      plan_id: 'plan-456',
-    });
-    
-    const count = getCachedPlanCountForTrip('trip-456');
-    
-    expect(count).toBe(2);
-  });
-});
-
-describe('Trip Cache Utils', () => {
-  beforeEach(() => {
-    testStore = {};
-    jest.clearAllMocks();
-    
-    // Inject local implementation
-    localStorage.getItem.mockImplementation(key => testStore[key] || null);
-    localStorage.setItem.mockImplementation((key, value) => {
-      testStore[key] = value.toString();
-    });
-    localStorage.removeItem.mockImplementation(key => {
-      delete testStore[key];
-    });
-    localStorage.clear.mockImplementation(() => {
-      testStore = {};
-    });
-  });
-
-  test('cacheTrip stores trip in localStorage', () => {
-    cacheTrip(mockTrip);
-    
-    expect(localStorage.setItem).toHaveBeenCalledWith(
-      'shoreexplorer_trips',
-      expect.any(String)
-    );
-  });
-
-  test('getCachedTrip retrieves stored trip', () => {
-    cacheTrip(mockTrip);
-    
-    const retrieved = getCachedTrip('trip-123');
-    
-    expect(retrieved).toEqual(mockTrip);
-  });
-
-  test('getCachedTrip returns null for non-existent trip', () => {
-    const retrieved = getCachedTrip('nonexistent');
-    
-    expect(retrieved).toBeNull();
-  });
-
-  test('getAllCachedTrips returns all trips', () => {
-    cacheTrip(mockTrip);
-    cacheTrip({
-      ...mockTrip,
-      trip_id: 'trip-456',
-      ship_name: 'Another Ship',
-    });
-    
-    const trips = getAllCachedTrips();
-    
-    expect(trips).toHaveLength(2);
-  });
-
-  test('removeCachedTrip removes trip and associated plans', () => {
-    cacheTrip(mockTrip);
-    cachePlan({
-      plan_id: 'plan-123',
-      trip_id: 'trip-123',
-      port_id: 'port-789',
-    });
-    
-    removeCachedTrip('trip-123');
-    
-    const trip = getCachedTrip('trip-123');
-    const plan = getCachedPlan('plan-123');
-    
-    expect(trip).toBeNull();
-    expect(plan).toBeNull();
-  });
-
-  test('localStorage errors are handled gracefully', () => {
-    const testPlan = {
-      plan_id: 'plan-test',
-      trip_id: 'trip-123',
-      port_id: 'port-test',
+describe('Error Message Utils', () => {
+  test('extracts message from structured error object', () => {
+    const error = {
+      response: {
+        data: {
+          detail: {
+            message: 'Structured error message',
+            error: 'error_code',
+          },
+        },
+      },
     };
-    
-    // Mock localStorage.setItem to throw
-    localStorage.setItem.mockImplementationOnce(() => {
-      throw new Error('QuotaExceededError');
-    });
-    
-    // Should not throw
-    expect(() => cachePlan(testPlan)).not.toThrow();
+
+    const message = getErrorMessage(error);
+    expect(message).toBe('Structured error message');
   });
 
-  test('malformed JSON in localStorage is handled', () => {
-    testStore['shoreexplorer_plans'] = 'invalid json';
-    
-    const plan = getCachedPlan('plan-123');
-    
-    expect(plan).toBeNull();
+  test('extracts message from plain string detail', () => {
+    const error = {
+      response: {
+        data: {
+          detail: 'Plain string error',
+        },
+      },
+    };
+
+    const message = getErrorMessage(error);
+    expect(message).toBe('Plain string error');
+  });
+
+  test('returns error.message as fallback', () => {
+    const error = {
+      message: 'Network error occurred',
+    };
+
+    const message = getErrorMessage(error);
+    expect(message).toBe('Network error occurred');
+  });
+
+  test('returns generic message if no error info available', () => {
+    const error = {};
+
+    const message = getErrorMessage(error);
+    expect(message).toBe('An unexpected error occurred. Please try again.');
+  });
+
+  test('ignores empty string in detail.message', () => {
+    const error = {
+      response: {
+        data: {
+          detail: {
+            message: '   ',
+            error: 'error_code',
+          },
+        },
+      },
+      message: 'Fallback message',
+    };
+
+    const message = getErrorMessage(error);
+    expect(message).toBe('Fallback message');
   });
 });
-
-
