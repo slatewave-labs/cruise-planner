@@ -445,7 +445,7 @@ def add_port(trip_id: str, data: PortInput, x_device_id: str = Header()):
                 },
             )
 
-        logger.info(f"Added port {port['port_id']} ({data.name}) to trip {trip_id}")
+        logger.info("Successfully added a port to a trip")
         return port
     except HTTPException:
         raise
@@ -625,7 +625,7 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
 @app.get("/api/weather")
 async def get_weather(latitude: float, longitude: float, date: Optional[str] = None):
     """Fetch weather forecast from Open-Meteo API."""
-    logger.info(f"Fetching weather for lat={latitude}, lon={longitude}, date={date}")
+    logger.info("Fetching weather forecast")
     params: dict[str, Any] = {
         "latitude": latitude,
         "longitude": longitude,

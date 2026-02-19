@@ -4,6 +4,8 @@ Integration tests for affiliate link functionality in plan generation.
 
 import os
 import sys
+from urllib.parse import urlparse
+
 import pytest
 from unittest.mock import Mock, patch
 
@@ -75,7 +77,7 @@ class TestAffiliateLinksInPlanGeneration:
         
         assert "aid=test-affiliate-123" in result_url
         assert "mcid=cruise-planner-app" in result_url
-        assert "viator.com" in result_url
+        assert urlparse(result_url).hostname in ("viator.com", "www.viator.com")
 
     def test_affiliate_params_not_added_without_config(self):
         """Test that URLs remain unchanged when affiliate ID is not configured."""
@@ -180,13 +182,13 @@ class TestAffiliateLinksInPlanGeneration:
         
         # Verify first activity (Viator) has affiliate params
         viator_url = activities[0]["booking_url"]
-        assert "viator.com" in viator_url
+        assert urlparse(viator_url).hostname in ("viator.com", "www.viator.com")
         assert "aid=test-viator-affiliate" in viator_url
         assert "mcid=cruise-planner-app" in viator_url
         
         # Verify second activity (GetYourGuide) has affiliate params
         gyg_url = activities[1]["booking_url"]
-        assert "getyourguide.com" in gyg_url
+        assert urlparse(gyg_url).hostname in ("getyourguide.com", "www.getyourguide.com")
         assert "partner_id=test-gyg-affiliate" in gyg_url
         assert "utm_source=cruise-planner" in gyg_url
 
