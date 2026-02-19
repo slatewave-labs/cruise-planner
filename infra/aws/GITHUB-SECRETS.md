@@ -16,13 +16,13 @@ GitHub Actions workflows use repository secrets to securely store sensitive info
    - **Shared across all workflows** (same AWS account for test and prod)
 
 2. **AWS Secrets Manager** (per-environment secrets)
-   - Application secrets (`GROQ_API_KEY`, `MONGO_URL`, `DB_NAME`)
+   - Application secrets (`GROQ_API_KEY`)
    - **Separate secrets for each environment:**
      - `shoreexplorer-test-secrets` (test environment)
      - `shoreexplorer-prod-secrets` (production environment)
    - ECS tasks pull secrets directly from AWS Secrets Manager at runtime
 
-**Why this matters:** You do NOT need separate GitHub secrets for `GROQ_API_KEY` or `MONGO_URL`. These are stored in AWS Secrets Manager and are already isolated per environment. See the [FAQ](#do-i-need-separate-github-secrets-for-groq_api_key-and-mongo_url) below for details.
+**Why this matters:** You do NOT need separate GitHub secrets for `GROQ_API_KEY`. It is stored in AWS Secrets Manager and is already isolated per environment. See the [FAQ](#do-i-need-separate-github-secrets-for-groq_api_key) below for details.
 
 ---
 
@@ -225,11 +225,11 @@ curl -I http://test.shore-explorer.com/api/health
 
 ## ❓ FAQ
 
-### Do I need separate GitHub secrets for GROQ_API_KEY and MONGO_URL?
+### Do I need separate GitHub secrets for GROQ_API_KEY?
 
 **No! This is a common point of confusion.**
 
-`GROQ_API_KEY` and `MONGO_URL` are **NOT stored in GitHub secrets**. They are stored in **AWS Secrets Manager**, which already provides per-environment isolation:
+`GROQ_API_KEY` is **NOT stored in GitHub secrets**. It is stored in **AWS Secrets Manager**, which already provides per-environment isolation:
 
 - **Test environment:** `shoreexplorer-test-secrets` in AWS Secrets Manager
 - **Production environment:** `shoreexplorer-prod-secrets` in AWS Secrets Manager
@@ -239,22 +239,16 @@ curl -I http://test.shore-explorer.com/api/health
 1. You create environment-specific secrets in AWS using `./infra/aws/scripts/03-create-secrets.sh <test|prod>`
 2. GitHub Actions workflows authenticate to AWS using `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
 3. The workflows register ECS task definitions that reference the appropriate AWS Secrets Manager secret
-4. ECS tasks pull `GROQ_API_KEY` and `MONGO_URL` directly from AWS Secrets Manager at runtime
+4. ECS tasks pull `GROQ_API_KEY` directly from AWS Secrets Manager at runtime
 
-**To update these secrets:**
+**To update the API key:**
 
 ```bash
-# Update test environment secrets
+# Update test environment
 ./infra/aws/scripts/update-groq-api-key.sh test <new-api-key>
 
-# Update production environment secrets
+# Update production environment
 ./infra/aws/scripts/update-groq-api-key.sh prod <new-api-key>
-
-# Or update MongoDB URL manually
-aws secretsmanager update-secret \
-  --secret-id shoreexplorer-test-secrets \
-  --secret-string '{"MONGO_URL":"mongodb+srv://...","GROQ_API_KEY":"gsk_...","DB_NAME":"shoreexplorer"}' \
-  --region us-east-1
 ```
 
 **Key takeaway:** The GitHub secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) can be shared between test and prod deployments because they just provide access to AWS. The actual application secrets are environment-specific and stored in AWS Secrets Manager.

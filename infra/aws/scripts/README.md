@@ -85,7 +85,6 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
 1. **Prerequisites:**
    - AWS CLI installed and configured
    - Docker installed
-   - MongoDB Atlas cluster created
    - Groq API key obtained (free at https://console.groq.com/keys)
 
 2. **Run setup:**
@@ -131,7 +130,6 @@ If you need to change or add your Groq API key:
 
 This automated script will:
 - Update only the GROQ_API_KEY in AWS Secrets Manager
-- Keep your existing MONGO_URL and DB_NAME unchanged
 - Optionally restart your ECS backend service
 - Verify the update was successful
 
@@ -150,24 +148,20 @@ After deployment or environment variable changes, verify your task definitions a
 ```
 
 This will check:
-- ECS task definitions reference `GROQ_API_KEY` (not `GOOGLE_API_KEY`)
+- ECS task definitions reference `GROQ_API_KEY`
 - AWS Secrets Manager contains `GROQ_API_KEY`
 - All required secrets are present
 
 **Example output:**
 ```
 Checking backend task definition...
-  Backend secrets: ["MONGO_URL","GROQ_API_KEY","DB_NAME"]
+  Backend secrets: ["GROQ_API_KEY"]
   ✅ Backend uses GROQ_API_KEY
-  ✅ Backend does not reference GOOGLE_API_KEY
 
 Checking AWS Secrets Manager...
   Available keys in secret:
-    - MONGO_URL
     - GROQ_API_KEY
-    - DB_NAME
   ✅ Secret contains GROQ_API_KEY
-  ✅ Secret does not contain GOOGLE_API_KEY
 ```
 
 ### Verify Secrets Architecture
@@ -185,7 +179,7 @@ To verify that your environment-specific secrets are correctly configured:
 
 This comprehensive verification checks:
 - AWS Secrets Manager has separate secrets for each environment
-- Each secret contains required keys (MONGO_URL, GROQ_API_KEY, DB_NAME)
+- Each secret contains required keys (GROQ_API_KEY)
 - ECS task definitions reference the correct environment-specific secrets
 - Secret ARNs in task definitions match the environment
 
@@ -197,10 +191,8 @@ This comprehensive verification checks:
 
 ✅ Secret exists: shoreexplorer-test-secrets
 ℹ️  ARN: arn:aws:secretsmanager:us-east-1:123456789:secret:shoreexplorer-test-secrets
-ℹ️  Keys: MONGO_URL, GROQ_API_KEY, DB_NAME
-✅ Required key 'MONGO_URL' is present
+ℹ️  Keys: GROQ_API_KEY
 ✅ Required key 'GROQ_API_KEY' is present
-✅ Required key 'DB_NAME' is present
 
 ╔════════════════════════════════════════════════════════════╗
 ║  Checking ECS Task Definition: shoreexplorer-test-backend-task
@@ -208,8 +200,8 @@ This comprehensive verification checks:
 
 ✅ Task definition exists: shoreexplorer-test-backend-task
 ✅ Secrets are configured in task definition
-✅ Secret reference found: MONGO_URL
-  → arn:aws:secretsmanager:us-east-1:123:secret:shoreexplorer-test-secrets:MONGO_URL::
+✅ Secret reference found: GROQ_API_KEY
+  → arn:aws:secretsmanager:us-east-1:123:secret:shoreexplorer-test-secrets:GROQ_API_KEY::
 ✅ Secret ARN correctly references 'test' environment
 ```
 
@@ -220,11 +212,10 @@ This comprehensive verification checks:
 
 ### Update Other Environment Variables
 
-If you need to change MongoDB connection or other secrets:
+If you need to update secrets:
 
 ```bash
-# Update all secrets manually
-export MONGO_URL="your-new-mongo-url"
+# Update Groq API key
 export GROQ_API_KEY="your-groq-key"
 
 ./03-create-secrets.sh test  # This will update the existing secret

@@ -78,14 +78,11 @@ CURRENT_SECRET=$(aws secretsmanager get-secret-value \
   --output text \
   --region $AWS_REGION)
 
-# Extract existing values
-MONGO_URL=$(echo "$CURRENT_SECRET" | jq -r '.MONGO_URL')
-DB_NAME=$(echo "$CURRENT_SECRET" | jq -r '.DB_NAME // "shoreexplorer"')
-
+# Extract existing values (if any other keys exist)
 # Update with new Groq key
 aws secretsmanager update-secret \
   --secret-id shoreexplorer-test-secrets \
-  --secret-string "{\"MONGO_URL\":\"$MONGO_URL\",\"GROQ_API_KEY\":\"$GROQ_API_KEY\",\"DB_NAME\":\"$DB_NAME\"}" \
+  --secret-string "{\"GROQ_API_KEY\":\"$GROQ_API_KEY\"}" \
   --region $AWS_REGION
 
 echo "✅ Secret updated!"
@@ -117,12 +114,12 @@ CURRENT_SECRET=$(aws secretsmanager get-secret-value \
   --output text \
   --region $AWS_REGION)
 
-MONGO_URL=$(echo "$CURRENT_SECRET" | jq -r '.MONGO_URL')
-DB_NAME=$(echo "$CURRENT_SECRET" | jq -r '.DB_NAME // "shoreexplorer"')
+MONGO_URL=$(echo "$CURRENT_SECRET" | jq -r '.MONGO_URL // empty')
+DB_NAME=$(echo "$CURRENT_SECRET" | jq -r '.DB_NAME // empty')
 
 aws secretsmanager update-secret \
   --secret-id shoreexplorer-prod-secrets \
-  --secret-string "{\"MONGO_URL\":\"$MONGO_URL\",\"GROQ_API_KEY\":\"$GROQ_API_KEY\",\"DB_NAME\":\"$DB_NAME\"}" \
+  --secret-string "{\"GROQ_API_KEY\":\"$GROQ_API_KEY\"}" \
   --region $AWS_REGION
 
 aws ecs update-service \
@@ -230,31 +227,21 @@ curl https://yourdomain.com/api/health
      --output text
    ```
    
-   It should look like this:
+   It should contain a `GROQ_API_KEY`:
    ```json
    {
-     "MONGO_URL": "mongodb+srv://...",
-     "GROQ_API_KEY": "gsk_...",
-     "DB_NAME": "shoreexplorer"
+     "GROQ_API_KEY": "gsk_..."
    }
-   ```
-   
-   **NOT** like this (individual secrets):
-   ```
-   MONGO_URL: ...
-   GROQ_API_KEY: ...
    ```
 
 2. **If format is wrong, fix it**:
    ```bash
-   # Set your values
-   export MONGO_URL="mongodb+srv://your-connection-string"
    export GROQ_API_KEY="gsk_your_key"
    
    # Update secret with correct JSON format
    aws secretsmanager update-secret \
      --secret-id shoreexplorer-test-secrets \
-     --secret-string "{\"MONGO_URL\":\"$MONGO_URL\",\"GROQ_API_KEY\":\"$GROQ_API_KEY\",\"DB_NAME\":\"shoreexplorer\"}" \
+     --secret-string "{\"GROQ_API_KEY\":\"$GROQ_API_KEY\"}" \
      --region us-east-1
    ```
 

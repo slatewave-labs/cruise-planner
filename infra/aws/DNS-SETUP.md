@@ -291,12 +291,10 @@ Update the secrets in AWS Secrets Manager:
 # Get current secrets
 SECRETS_ARN=$(cat .secrets-outputs-test.env | grep SECRET_ARN | cut -d'=' -f2)
 
-# Update all secrets including REACT_APP_BACKEND_URL
+# Update secrets including REACT_APP_BACKEND_URL
 aws secretsmanager put-secret-value \
   --secret-id "$SECRETS_ARN" \
   --secret-string '{
-    "MONGO_URL": "mongodb+srv://...",
-    "DB_NAME": "shoreexplorer",
     "GROQ_API_KEY": "your-key",
     "REACT_APP_BACKEND_URL": "http://test.shore-explorer.com"
   }'

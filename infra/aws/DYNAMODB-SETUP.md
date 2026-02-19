@@ -1,10 +1,12 @@
 # DynamoDB Setup Guide for ShoreExplorer
 
-This guide will help you set up AWS DynamoDB for ShoreExplorer, replacing the previous MongoDB database. It's written for non-technical users and includes step-by-step instructions with screenshots.
+> Last updated: 2026-02-19
+
+This guide helps you set up AWS DynamoDB for ShoreExplorer. It's written for non-technical users and includes step-by-step instructions.
 
 ## What is DynamoDB?
 
-Amazon DynamoDB is a fully managed NoSQL database service provided by AWS. Unlike MongoDB (which required a separate server), DynamoDB is:
+Amazon DynamoDB is a fully managed NoSQL database service provided by AWS. It is:
 - **Serverless**: No servers to manage or maintain
 - **Auto-scaling**: Automatically handles traffic spikes
 - **Cost-effective**: Pay only for what you use (on-demand billing)
@@ -185,15 +187,11 @@ If you're deploying to AWS ECS (test or production environments), you need to up
 2. Click on `shoreexplorer-test-secrets` (or `prod`)
 3. Click "Retrieve secret value"
 4. Click "Edit"
-5. **Remove** old MongoDB variables:
-   - ❌ `MONGO_URL`
-   - ❌ `DB_NAME`
-6. **Add** new DynamoDB variables:
-   - ✅ `DYNAMODB_TABLE_NAME`: `shoreexplorer-test` (or `prod`)
-   - ✅ `AWS_DEFAULT_REGION`: `us-east-1`
-7. **Keep** existing variables:
-   - `GROQ_API_KEY`: (your existing key)
-8. Click "Save"
+5. Ensure the secret contains:
+   - ✅ `GROQ_API_KEY`: (your Groq API key)
+6. Click "Save"
+
+> **Note:** `DYNAMODB_TABLE_NAME` and `AWS_DEFAULT_REGION` are set as environment variables in the ECS task definition, not as secrets.
 
 ---
 
@@ -328,9 +326,9 @@ curl -X POST http://localhost:8001/api/trips \
 
 ### Application starts but no data appears
 
-**Cause**: This is expected after migration - DynamoDB starts empty.
+**Cause**: DynamoDB starts empty when first created.
 
-**Solution**: Create new trips through the frontend. Old MongoDB data is not automatically migrated (as per requirements).
+**Solution**: Create new trips through the frontend.
 
 ---
 
@@ -406,35 +404,6 @@ DynamoDB pricing is based on:
 - 25 write capacity units
 - 25 read capacity units
 - More than enough for early development!
-
----
-
-## Rollback to MongoDB
-
-If you need to rollback to MongoDB:
-
-1. **Restore old environment variables:**
-   ```env
-   MONGO_URL=mongodb://mongodb:27017
-   DB_NAME=shoreexplorer
-   ```
-
-2. **Restore old requirements.txt:**
-   ```bash
-   git checkout main -- backend/requirements.txt
-   pip install -r backend/requirements.txt
-   ```
-
-3. **Restore old server.py:**
-   ```bash
-   git checkout HEAD~1 -- backend/server.py
-   ```
-
-4. **Restart application:**
-   ```bash
-   docker-compose down
-   docker-compose up --build
-   ```
 
 ---
 

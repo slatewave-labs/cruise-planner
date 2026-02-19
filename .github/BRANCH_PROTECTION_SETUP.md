@@ -74,7 +74,7 @@ The CI workflow defines the following status checks:
 | Job Name | Purpose | Can Fail Build? |
 |----------|---------|----------------|
 | Backend Linting | Python code style (black, isort, flake8, mypy) | ✅ Yes |
-| Backend Tests | Python unit tests with MongoDB | ✅ Yes |
+| Backend Tests | Python unit tests with DynamoDB Local | ✅ Yes |
 | Backend Docker Build | Validate Dockerfile builds | ✅ Yes |
 | Frontend Linting | JavaScript/React code style (ESLint) | ✅ Yes |
 | Frontend Tests | JavaScript unit tests (Jest) | ✅ Yes |

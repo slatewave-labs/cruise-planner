@@ -6,12 +6,12 @@ Build a cruise port of call planner as a responsive PWA (MVP Android, port to iO
 ## Architecture
 - **Frontend**: React PWA (responsive, mobile-first) on port 3000
 - **Backend**: FastAPI (Python) on port 8001
-- **Database**: MongoDB (local or MongoDB Atlas M0)
-- **AI**: Google Gemini 2.0 Flash via Google Gemini API
+- **Database**: AWS DynamoDB (on-demand, single-table design)
+- **AI**: Groq (Llama 3.3 70B) via groq SDK
 - **Weather**: Open-Meteo API (free, no key needed)
 - **Maps**: Leaflet + OpenStreetMap (free), Google Maps export for navigation
-- **Deployment**: AWS with Docker, MongoDB Atlas M0 (free tier)
-- **Infrastructure**: TODO scaffolds for GitHub Actions CI/CD, feature flags, monitoring, blue/green deployment
+- **Deployment**: AWS ECS (Fargate) with ALB, DynamoDB, Secrets Manager
+- **CI/CD**: GitHub Actions (lint, test, build, security scan, deploy)
 
 ## User Personas
 1. **Cruise Couple (55-65)**: Tech-moderate, wants easy-to-use planning for port days
@@ -37,7 +37,7 @@ Build a cruise port of call planner as a responsive PWA (MVP Android, port to iO
 - Trip CRUD (create, read, update, delete)
 - Port management (add, update, delete within trips)
 - Weather proxy (Open-Meteo API integration)
-- AI day plan generation (Google Gemini 2.0 Flash)
+- AI day plan generation (Groq / Llama 3.3 70B)
 - Plan CRUD (save, retrieve, list, delete)
 
 ### Frontend Pages
@@ -55,12 +55,11 @@ Build a cruise port of call planner as a responsive PWA (MVP Android, port to iO
 - WeatherCard (weather code mapping, temperature, rain, wind)
 - ActivityCard (timeline, costs, booking links, tips)
 
-### Infrastructure Scaffolds (TODO)
-- GitHub Actions CI/CD pipeline
-- Feature flags configuration (Unleash/Flagsmith/LaunchDarkly)
-- Monitoring & observability setup (Sentry, Grafana, UptimeRobot)
-- Blue/green deployment architecture
-- Test scaffolds (unit, integration/PACT, e2e/Playwright)
+### Infrastructure
+- GitHub Actions CI/CD pipeline (lint, test, build, security, deploy)
+- Feature flags configuration
+- Test suites (unit, integration, E2E with Playwright)
+- AWS ECS deployment with ALB
 
 ## Testing Results
 - Backend: 100% pass rate
