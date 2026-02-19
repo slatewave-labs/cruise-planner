@@ -56,7 +56,7 @@ export default function Home() {
       {/* Features */}
       <section className="px-6 py-16 md:py-24 max-w-6xl mx-auto">
         <h2 className="font-heading text-3xl md:text-4xl font-bold text-center text-primary mb-4">
-          What's Included
+          What&apos;s Included
         </h2>
         <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
           Everything you need to build modern full-stack applications

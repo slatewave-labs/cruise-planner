@@ -90,7 +90,7 @@ describe('Home Page', () => {
 
   test('renders "What\'s Included" section heading', () => {
     renderWithRouter(<Home />);
-    expect(screen.getByText("What's Included")).toBeInTheDocument();
+    expect(screen.getByText(/What.*s Included/)).toBeInTheDocument();
   });
 
   test('renders "Ready to Build?" section heading', () => {

@@ -55,21 +55,5 @@ global.IntersectionObserver = class IntersectionObserver {
   unobserve() {}
 };
 
-// Mock leaflet for MapView component tests
-jest.mock('leaflet', () => ({
-  map: jest.fn(() => ({
-    setView: jest.fn(),
-    remove: jest.fn(),
-  })),
-  tileLayer: jest.fn(() => ({
-    addTo: jest.fn(),
-  })),
-  marker: jest.fn(() => ({
-    addTo: jest.fn(),
-    bindPopup: jest.fn(),
-  })),
-  icon: jest.fn(),
-}));
-
 // Suppress console errors during tests (optional)
 // global.console.error = jest.fn();
