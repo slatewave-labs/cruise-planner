@@ -4,8 +4,8 @@
  * Validates trip header, port cards, edit/delete actions,
  * and navigation to the port planner.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes, VALID_TRIP_ID } from './fixtures';
 
 test.describe('Trip Detail Page', () => {
   test.beforeEach(async ({ page }) => {
@@ -68,7 +68,7 @@ test.describe('Trip Detail — Trip Not Found', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
     );
 
-    await page.goto(`/trips/nonexistent-trip-id`);
+    await page.goto('/trips/nonexistent-trip-id');
     await expect(page.getByText(/trip not found/i)).toBeVisible();
   });
 });

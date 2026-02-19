@@ -4,8 +4,8 @@
  * Validates that all nav items are present, routes work,
  * and the correct nav variant is shown per viewport.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes } from './fixtures';
 
 test.describe('Navigation — Desktop', () => {
   test.use({ viewport: { width: 1280, height: 720 } });

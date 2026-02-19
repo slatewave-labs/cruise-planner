@@ -4,20 +4,109 @@
  * Provides:
  * - API route mocking so tests run without a live backend
  * - Test data factories for trips, ports, and plans
+ * - TypeScript interfaces for test data shapes
  */
-const { test: base, expect } = require('@playwright/test');
+import type { Page } from '@playwright/test';
+
+// ---------------------------------------------------------------------------
+// Interfaces
+// ---------------------------------------------------------------------------
+
+export interface Port {
+  port_id: string;
+  name: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  arrival: string;
+  departure: string;
+}
+
+export interface Trip {
+  trip_id: string;
+  ship_name: string;
+  cruise_line: string;
+  ports: Port[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Activity {
+  order: number;
+  name: string;
+  description: string;
+  location: string;
+  latitude: number;
+  longitude: number;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  cost_estimate: string;
+  booking_url: string | null;
+  transport_to_next: string;
+  travel_time_to_next: string;
+  tips: string;
+}
+
+export interface Plan {
+  plan_id: string;
+  trip_id: string;
+  port_id: string;
+  port_name: string;
+  port_country: string;
+  generated_at: string;
+  preferences: {
+    party_type: string;
+    activity_level: string;
+    transport_mode: string;
+    budget: string;
+    currency: string;
+  };
+  weather: {
+    temperature: number;
+    description: string;
+    wind_speed: number;
+    precipitation: number;
+    weather_code: number;
+  };
+  plan: {
+    plan_title: string;
+    summary: string;
+    return_by: string;
+    total_estimated_cost: string;
+    activities: Activity[];
+    packing_suggestions: string[];
+    safety_tips: string[];
+  };
+}
+
+export interface PortSuggestion {
+  name: string;
+  country: string;
+  lat: number;
+  lng: number;
+  region: string;
+}
+
+export interface MockOptions {
+  trips?: Trip[];
+}
 
 // ---------------------------------------------------------------------------
 // Test data constants
 // ---------------------------------------------------------------------------
 
-const VALID_TRIP_ID = 'trip-e2e-001';
-const VALID_PORT_ID = 'port-e2e-001';
-const VALID_PLAN_ID = 'plan-e2e-001';
-const DEVICE_ID = 'e2e-test-device';
+export const VALID_TRIP_ID = 'trip-e2e-001';
+export const VALID_PORT_ID = 'port-e2e-001';
+export const VALID_PLAN_ID = 'plan-e2e-001';
+export const DEVICE_ID = 'e2e-test-device';
+
+// ---------------------------------------------------------------------------
+// Factories
+// ---------------------------------------------------------------------------
 
 /** Factory: a minimal trip object returned by the API */
-function buildTrip(overrides = {}) {
+export function buildTrip(overrides: Partial<Trip> = {}): Trip {
   return {
     trip_id: VALID_TRIP_ID,
     ship_name: 'Symphony of the Seas',
@@ -30,7 +119,7 @@ function buildTrip(overrides = {}) {
 }
 
 /** Factory: a port object embedded in a trip */
-function buildPort(overrides = {}) {
+export function buildPort(overrides: Partial<Port> = {}): Port {
   return {
     port_id: VALID_PORT_ID,
     name: 'Barcelona',
@@ -44,7 +133,7 @@ function buildPort(overrides = {}) {
 }
 
 /** Factory: a generated day plan */
-function buildPlan(overrides = {}) {
+export function buildPlan(overrides: Partial<Plan> = {}): Plan {
   return {
     plan_id: VALID_PLAN_ID,
     trip_id: VALID_TRIP_ID,
@@ -145,7 +234,7 @@ function buildPlan(overrides = {}) {
 }
 
 /** Port search suggestions returned by /api/ports/search */
-function buildPortSuggestions() {
+export function buildPortSuggestions(): PortSuggestion[] {
   return [
     { name: 'Barcelona', country: 'Spain', lat: 41.3784, lng: 2.1925, region: 'Mediterranean' },
     { name: 'Marseille', country: 'France', lat: 43.2965, lng: 5.3698, region: 'Mediterranean' },
@@ -154,7 +243,7 @@ function buildPortSuggestions() {
 }
 
 /** Regions list returned by /api/ports/regions */
-function buildRegions() {
+export function buildRegions(): string[] {
   return ['Mediterranean', 'Caribbean', 'Northern Europe', 'Alaska', 'Asia Pacific'];
 }
 
@@ -167,7 +256,7 @@ function buildRegions() {
  * The mock returns sensible defaults; individual tests can override
  * specific routes before or after calling this.
  */
-async function mockAllApiRoutes(page, options = {}) {
+export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): Promise<void> {
   const tripWithPort = buildTrip({ ports: [buildPort()] });
   const plan = buildPlan();
   const trips = options.trips ?? [tripWithPort];
@@ -254,16 +343,3 @@ async function mockAllApiRoutes(page, options = {}) {
     })
   );
 }
-
-module.exports = {
-  VALID_TRIP_ID,
-  VALID_PORT_ID,
-  VALID_PLAN_ID,
-  DEVICE_ID,
-  buildTrip,
-  buildPort,
-  buildPlan,
-  buildPortSuggestions,
-  buildRegions,
-  mockAllApiRoutes,
-};

@@ -1,5 +1,4 @@
-// @ts-check
-const { defineConfig, devices } = require('@playwright/test');
+import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Playwright configuration for ShoreExplorer E2E tests.
@@ -7,7 +6,7 @@ const { defineConfig, devices } = require('@playwright/test');
  * BASE_URL can be overridden via environment variable to target
  * different environments (local, test, prod).
  */
-module.exports = defineConfig({
+export default defineConfig({
   testDir: './specs',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

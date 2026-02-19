@@ -4,8 +4,8 @@
  * Validates the hero section, feature cards, CTA buttons,
  * and navigation links on the home page.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes } from './fixtures';
 
 test.describe('Landing Page', () => {
   test.beforeEach(async ({ page }) => {

@@ -4,8 +4,8 @@
  * Tests end-to-end flows that span multiple pages,
  * simulating realistic user interactions.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, VALID_PLAN_ID } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, VALID_PLAN_ID } from './fixtures';
 
 test.describe('Full Journey — Create Trip and Generate Plan', () => {
   test('user can create a trip, add a port, save, and generate a day plan', async ({ page }) => {

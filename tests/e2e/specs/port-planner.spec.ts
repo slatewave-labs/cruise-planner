@@ -4,8 +4,8 @@
  * Validates preference selection, the generate button,
  * error handling, and navigation to the generated plan.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, VALID_PLAN_ID, buildPlan } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, VALID_PLAN_ID } from './fixtures';
 
 test.describe('Port Planner Page', () => {
   test.beforeEach(async ({ page }) => {

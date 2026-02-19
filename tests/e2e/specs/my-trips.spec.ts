@@ -4,8 +4,8 @@
  * Validates the trip list rendering, empty state,
  * navigation to trip detail, and the "New Trip" button.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes, buildTrip, buildPort } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes, buildTrip, buildPort } from './fixtures';
 
 test.describe('My Trips Page', () => {
   test('displays trips when they exist', async ({ page }) => {

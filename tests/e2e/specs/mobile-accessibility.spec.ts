@@ -4,8 +4,8 @@
  * Validates that pages render correctly at mobile viewport sizes
  * and that touch targets meet the 48px minimum accessibility requirement.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID } from './fixtures';
 
 const MOBILE_VIEWPORT = { width: 375, height: 667 };
 
@@ -69,12 +69,12 @@ test.describe('Accessibility — Touch Targets', () => {
     // Check "Start Planning" button
     const startBtn = page.getByTestId('get-started-btn');
     const startBox = await startBtn.boundingBox();
-    expect(startBox.height).toBeGreaterThanOrEqual(48);
+    expect(startBox!.height).toBeGreaterThanOrEqual(48);
 
     // Check "My Trips" button on landing
     const tripsBtn = page.getByTestId('view-trips-btn');
     const tripsBox = await tripsBtn.boundingBox();
-    expect(tripsBox.height).toBeGreaterThanOrEqual(48);
+    expect(tripsBox!.height).toBeGreaterThanOrEqual(48);
   });
 
   test('mobile nav items meet 48px minimum touch target', async ({ page }) => {
@@ -85,8 +85,8 @@ test.describe('Accessibility — Touch Targets', () => {
     for (const item of navItems) {
       const el = page.getByTestId(`mobile-nav-${item}`);
       const box = await el.boundingBox();
-      expect(box.height).toBeGreaterThanOrEqual(48);
-      expect(box.width).toBeGreaterThanOrEqual(48);
+      expect(box!.height).toBeGreaterThanOrEqual(48);
+      expect(box!.width).toBeGreaterThanOrEqual(48);
     }
   });
 
@@ -96,7 +96,7 @@ test.describe('Accessibility — Touch Targets', () => {
 
     const saveBtn = page.getByTestId('save-trip-btn');
     const box = await saveBtn.boundingBox();
-    expect(box.height).toBeGreaterThanOrEqual(48);
+    expect(box!.height).toBeGreaterThanOrEqual(48);
   });
 
   test('generate plan button meets 48px minimum height', async ({ page }) => {
@@ -105,7 +105,7 @@ test.describe('Accessibility — Touch Targets', () => {
 
     const genBtn = page.getByTestId('generate-plan-btn');
     const box = await genBtn.boundingBox();
-    expect(box.height).toBeGreaterThanOrEqual(48);
+    expect(box!.height).toBeGreaterThanOrEqual(48);
   });
 });
 

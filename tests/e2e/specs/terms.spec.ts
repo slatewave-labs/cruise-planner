@@ -4,7 +4,7 @@
  * Validates that all T&C sections render and external
  * links have the correct target attributes.
  */
-const { test, expect } = require('@playwright/test');
+import { test, expect } from '@playwright/test';
 
 test.describe('Terms & Conditions Page', () => {
   test.beforeEach(async ({ page }) => {

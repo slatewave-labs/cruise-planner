@@ -4,8 +4,8 @@
  * Validates the generated plan display including title, summary,
  * activities timeline, map, weather, stats, and action buttons.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes, VALID_PLAN_ID, VALID_TRIP_ID } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes, VALID_PLAN_ID, VALID_TRIP_ID } from './fixtures';
 
 test.describe('Day Plan View', () => {
   test.beforeEach(async ({ page }) => {

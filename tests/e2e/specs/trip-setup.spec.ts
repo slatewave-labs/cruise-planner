@@ -4,8 +4,8 @@
  * Covers creating a new trip, adding ports, using port search,
  * removing ports, form validation, and the save flow.
  */
-const { test, expect } = require('@playwright/test');
-const { mockAllApiRoutes, VALID_TRIP_ID } = require('./fixtures');
+import { test, expect } from '@playwright/test';
+import { mockAllApiRoutes, VALID_TRIP_ID } from './fixtures';
 
 test.describe('Trip Setup — Create New Trip', () => {
   test.beforeEach(async ({ page }) => {
