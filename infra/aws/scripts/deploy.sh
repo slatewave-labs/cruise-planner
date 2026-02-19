@@ -183,15 +183,44 @@ EOF
     print_success "Backend deployment started"
 
     # ---------------------------------------------------------------------------
+    # Ensure ECS security group allows port 8080 from ALB
+    # (handles environments originally provisioned with port 80)
+    # ---------------------------------------------------------------------------
+    NETWORKING_FILE="$SCRIPT_DIR/.networking-outputs-${ENVIRONMENT}.env"
+    if [[ -f "$NETWORKING_FILE" ]]; then
+        source "$NETWORKING_FILE"
+        aws ec2 authorize-security-group-ingress \
+            --group-id "$ECS_SG_ID" \
+            --protocol tcp --port 8080 --source-group "$ALB_SG_ID" \
+            --region "$AWS_REGION" 2>/dev/null || true
+        print_success "ECS security group allows port 8080 from ALB"
+    fi
+
+    # ---------------------------------------------------------------------------
     # Force new deployment of frontend
+    # (includes --load-balancers to migrate containerPort 80 → 8080)
     # ---------------------------------------------------------------------------
     print_info "Deploying frontend..."
-    aws ecs update-service \
+
+    FRONTEND_TG_ARN=$(aws ecs describe-services \
         --cluster "$ECS_CLUSTER_NAME" \
-        --service "$FRONTEND_SERVICE_NAME" \
-        --task-definition "$FRONTEND_TASK_FAMILY" \
-        --force-new-deployment \
-        --region "$AWS_REGION" --output text >/dev/null
+        --services "$FRONTEND_SERVICE_NAME" \
+        --query 'services[0].loadBalancers[0].targetGroupArn' \
+        --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+    FRONTEND_UPDATE_ARGS=(
+        --cluster "$ECS_CLUSTER_NAME"
+        --service "$FRONTEND_SERVICE_NAME"
+        --task-definition "$FRONTEND_TASK_FAMILY"
+        --force-new-deployment
+        --region "$AWS_REGION" --output text
+    )
+
+    if [[ -n "$FRONTEND_TG_ARN" && "$FRONTEND_TG_ARN" != "None" ]]; then
+        FRONTEND_UPDATE_ARGS+=(--load-balancers "targetGroupArn=${FRONTEND_TG_ARN},containerName=frontend,containerPort=8080")
+    fi
+
+    aws ecs update-service "${FRONTEND_UPDATE_ARGS[@]}" >/dev/null
 
     print_success "Frontend deployment started"
 fi
