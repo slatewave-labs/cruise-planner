@@ -62,7 +62,7 @@ def _get_cw_client():
 # ---------------------------------------------------------------------------
 _buffer: Deque[Dict[str, Any]] = deque(maxlen=_MAX_BUFFER_SIZE)
 _buffer_lock = threading.Lock()
-_flush_thread_started = False
+_flush_state = {"thread_started": False}
 
 
 def _flush_metrics() -> None:
@@ -98,13 +98,12 @@ def _flush_loop() -> None:
 
 
 def _ensure_flush_thread() -> None:
-    global _flush_thread_started
-    if not _flush_thread_started:
+    if not _flush_state["thread_started"]:
         with _cw_lock:
-            if not _flush_thread_started:
+            if not _flush_state["thread_started"]:
                 t = threading.Thread(target=_flush_loop, daemon=True)
                 t.start()
-                _flush_thread_started = True
+                _flush_state["thread_started"] = True
 
 
 # ---------------------------------------------------------------------------
