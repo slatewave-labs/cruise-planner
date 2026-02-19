@@ -15,6 +15,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Default permissions for all jobs (least privilege)
+permissions:
+  contents: read
+
 jobs:
   # Backend linting - Check code style and type safety
   backend-lint:

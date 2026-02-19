@@ -3,6 +3,8 @@ Unit tests for affiliate link configuration and URL processing.
 """
 
 import os
+from urllib.parse import urlparse
+
 import pytest
 
 from backend.affiliate_config import (
@@ -46,7 +48,7 @@ class TestAddAffiliateParams:
 
         assert "aid=test-viator-123" in result
         assert "mcid=cruise-planner-app" in result
-        assert "viator.com" in result
+        assert urlparse(result).hostname in ("viator.com", "www.viator.com")
 
     def test_getyourguide_url_with_affiliate_id(self, monkeypatch):
         """Test adding affiliate params to GetYourGuide URL."""
