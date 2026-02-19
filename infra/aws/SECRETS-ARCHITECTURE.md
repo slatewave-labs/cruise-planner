@@ -39,9 +39,7 @@ ShoreExplorer uses a **two-tier secret management strategy** that provides both 
 │  secrets                   │    │  secrets                   │
 │                            │    │                            │
 │  Values:                   │    │  Values:                   │
-│  • MONGO_URL (test DB)     │    │  • MONGO_URL (prod DB)     │
 │  • GROQ_API_KEY (test key) │    │  • GROQ_API_KEY (prod key) │
-│  • DB_NAME                 │    │  • DB_NAME                 │
 └────────────┬───────────────┘    └────────────┬───────────────┘
              │                                  │
              │ Referenced by ECS                │
@@ -85,8 +83,8 @@ ShoreExplorer uses a **two-tier secret management strategy** that provides both 
 
 | Environment | Secret Name | Contains |
 |-------------|-------------|----------|
-| Test | `shoreexplorer-test-secrets` | Test MongoDB URL, test Groq API key, DB name |
-| Production | `shoreexplorer-prod-secrets` | Prod MongoDB URL, prod Groq API key, DB name |
+| Test | `shoreexplorer-test-secrets` | Test Groq API key |
+| Production | `shoreexplorer-prod-secrets` | Prod Groq API key |
 
 ---
 
@@ -125,9 +123,11 @@ The workflow creates an ECS task definition that references AWS Secrets Manager:
       --container-definitions "[{
         \"name\": \"backend\",
         \"secrets\": [
-          {\"name\": \"MONGO_URL\", \"valueFrom\": \"${SECRET_ARN}:MONGO_URL::\"},
-          {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"},
-          {\"name\": \"DB_NAME\", \"valueFrom\": \"${SECRET_ARN}:DB_NAME::\"}
+          {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}
+        ],
+        \"environment\": [
+          {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"shoreexplorer-${ENVIRONMENT}\"},
+          {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"us-east-1\"}
         ]
       }]"
 ```
@@ -151,12 +151,10 @@ Use the provided scripts to create secrets in AWS:
 
 ```bash
 # Set up test environment secrets
-export MONGO_URL="mongodb+srv://test-user:pass@test-cluster.mongodb.net/shoreexplorer"
 export GROQ_API_KEY="gsk_test_key_here"
 ./infra/aws/scripts/03-create-secrets.sh test
 
 # Set up production environment secrets  
-export MONGO_URL="mongodb+srv://prod-user:pass@prod-cluster.mongodb.net/shoreexplorer"
 export GROQ_API_KEY="gsk_prod_key_here"
 ./infra/aws/scripts/03-create-secrets.sh prod
 ```
@@ -184,9 +182,9 @@ git tag v1.2.3
 git push origin v1.2.3  # Triggers production deployment
 ```
 
-### Updating MONGO_URL or DB_NAME
+### Updating Secrets
 
-Update the entire secret JSON:
+Update the secret JSON in AWS Secrets Manager:
 
 ```bash
 # Get current secret values
@@ -198,9 +196,7 @@ aws secretsmanager get-secret-value \
 aws secretsmanager update-secret \
   --secret-id shoreexplorer-test-secrets \
   --secret-string '{
-    "MONGO_URL": "mongodb+srv://new-connection-string",
-    "GROQ_API_KEY": "gsk_existing_key",
-    "DB_NAME": "shoreexplorer"
+    "GROQ_API_KEY": "gsk_new_key"
   }' \
   --region us-east-1
 ```
@@ -248,9 +244,7 @@ aws ecs describe-task-definition \
 
 # Should show:
 # [
-#   {"name": "MONGO_URL", "valueFrom": "arn:aws:secretsmanager:...:MONGO_URL::"},
-#   {"name": "GROQ_API_KEY", "valueFrom": "arn:aws:secretsmanager:...:GROQ_API_KEY::"},
-#   {"name": "DB_NAME", "valueFrom": "arn:aws:secretsmanager:...:DB_NAME::"}
+#   {"name": "GROQ_API_KEY", "valueFrom": "arn:aws:secretsmanager:...:GROQ_API_KEY::"}
 # ]
 ```
 
@@ -261,7 +255,7 @@ aws ecs describe-task-definition \
 aws logs tail /ecs/shoreexplorer-test-backend --follow
 
 # Should NOT show secret values (they're masked)
-# Should show successful connection to MongoDB if configured correctly
+# Should show successful DynamoDB connection if configured correctly
 ```
 
 ---
@@ -321,27 +315,25 @@ aws ecs describe-task-definition \
 aws logs tail /ecs/shoreexplorer-test-backend --follow
 ```
 
-### Application Can't Connect to MongoDB
+### Application Can't Connect to DynamoDB
 
-**Symptom:** Backend logs show "Connection refused" or "Authentication failed"
+**Symptom:** Backend logs show "Could not connect to the endpoint URL" or table not found
 
 **Solution:**
-1. Verify the secret contains the correct `MONGO_URL`:
-   ```bash
-   aws secretsmanager get-secret-value \
-     --secret-id shoreexplorer-test-secrets \
-     --query SecretString --output text | jq .
-   ```
+1. Verify the ECS task has the correct environment variables:
+   - `DYNAMODB_TABLE_NAME` should match the table name for the environment
+   - `AWS_DEFAULT_REGION` should match the region where the table was created
 
-2. Update if incorrect:
+2. Verify the DynamoDB table exists:
    ```bash
-   aws secretsmanager update-secret \
-     --secret-id shoreexplorer-test-secrets \
-     --secret-string '{"MONGO_URL":"correct-url","GROQ_API_KEY":"...","DB_NAME":"shoreexplorer"}' \
+   aws dynamodb describe-table \
+     --table-name shoreexplorer-test \
      --region us-east-1
    ```
 
-3. Force ECS to restart with new secrets:
+3. Verify the ECS task role has DynamoDB permissions
+
+4. Force ECS to restart:
    ```bash
    aws ecs update-service \
      --cluster shoreexplorer-test-cluster \
