@@ -27,7 +27,7 @@ The CI workflow includes 9 parallel jobs that must pass before code can be merge
    - `mypy` - Type checker (advisory)
 
 2. **Backend Tests** (~3 min)
-   - `pytest` with MongoDB service container
+   - `pytest` with DynamoDB Local service container
    - Full test suite with coverage reporting
    - Generates XML coverage reports
 

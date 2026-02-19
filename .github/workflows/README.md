@@ -19,7 +19,7 @@ This directory contains the GitHub Actions workflows for ShoreExplorer.
    - mypy (type checking - advisory)
 
 2. **Backend Tests** - Runs Python unit tests
-   - Uses MongoDB service container
+   - Uses DynamoDB Local service container
    - Generates code coverage reports
    - Runs pytest with coverage
 
@@ -132,7 +132,7 @@ The workflows use several optimizations for speed:
 ## Troubleshooting
 
 ### Backend tests fail
-- Ensure MongoDB service is healthy
+- Ensure DynamoDB Local service is healthy
 - Check environment variables are set correctly
 - Verify Python dependencies are installed
 
