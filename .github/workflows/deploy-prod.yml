@@ -394,11 +394,49 @@ jobs:
 
       - name: Wait for deployment to stabilize
         run: |
+          # aws ecs wait services-stable uses `length(deployments) == 1` which fails
+          # when ECS keeps old INACTIVE deployment entries after a successful rolling
+          # update (circuit-breaker or standard). We poll manually, ignoring INACTIVE
+          # entries, to match what the ECS console considers "stable".
           echo "Waiting for production services to stabilize (up to 10 minutes)..."
-          aws ecs wait services-stable \
-            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-            --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
-            --region "$AWS_REGION"
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+          SERVICES=(
+            "${PROJECT_NAME}-${ENVIRONMENT}-backend"
+            "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
+          )
+          MAX_WAIT=600
+          POLL_INTERVAL=15
+          elapsed=0
+
+          while [[ $elapsed -lt $MAX_WAIT ]]; do
+            all_stable=true
+            for svc in "${SERVICES[@]}"; do
+              svc_info=$(aws ecs describe-services \
+                --cluster "$CLUSTER" --services "$svc" --region "$AWS_REGION" \
+                --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
+                --output json)
+              active=$(echo "$svc_info" | jq -r '.active')
+              running=$(echo "$svc_info" | jq -r '.running')
+              desired=$(echo "$svc_info" | jq -r '.desired')
+              echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
+              if [[ "$active" != "1" || "$running" != "$desired" ]]; then
+                all_stable=false
+              fi
+            done
+
+            if $all_stable; then
+              echo "✅ All services stable!"
+              break
+            fi
+
+            sleep $POLL_INTERVAL
+            elapsed=$((elapsed + POLL_INTERVAL))
+          done
+
+          if [[ $elapsed -ge $MAX_WAIT ]]; then
+            echo "❌ Timed out after ${MAX_WAIT}s waiting for services to stabilize"
+            exit 1
+          fi
           echo "Production deployment complete!"
 
       # ── Smoke test ─────────────────────────────────────────────
