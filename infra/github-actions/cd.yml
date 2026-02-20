@@ -1,6 +1,11 @@
 # TODO: GitHub Actions CD Pipeline
 # This scaffold provides the foundation for continuous deployment.
 # To activate: Move this file to .github/workflows/cd.yml in your GitHub repo.
+#
+# NOTE: The actual CD workflows are now in:
+# - .github/workflows/deploy-test.yml (Test environment deployment)
+# - .github/workflows/deploy-prod.yml (Production environment deployment)
+# - .github/workflows/teardown-test.yml (Test environment teardown)
 
 name: ShoreExplorer CD
 
@@ -48,6 +53,11 @@ jobs:
     needs: deploy-beta
     if: startsWith(github.ref, 'refs/tags/v')
     environment: production
+    steps:
+      - name: Deploy to Production
+        run: |
+          echo "TODO: Deploy to production environment"
+          echo "After manual approval (configured in GitHub environment)"
     steps:
       - name: Deploy to Production
         run: |
