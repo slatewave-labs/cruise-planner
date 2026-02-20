@@ -127,9 +127,9 @@ jobs:
               if [[ "$MAP_PUBLIC" == "true" ]]; then
                 aws ec2 modify-subnet-attribute --subnet-id "$SID" --map-public-ip-on-launch --region "$AWS_REGION"
               fi
-              echo "  ✅ Created subnet: $NAME ($SID)"
+              echo "  ✅ Created subnet: $NAME ($SID)" >&2
             else
-              echo "  ⏭️  Subnet exists: $NAME ($SID)"
+              echo "  ⏭️  Subnet exists: $NAME ($SID)" >&2
             fi
             echo "$SID"
           }
@@ -175,9 +175,9 @@ jobs:
               SGID=$(aws ec2 create-security-group --group-name "$SG_NAME" --description "$DESC" --vpc-id "$VPC_ID" \
                 --tag-specifications "ResourceType=security-group,Tags=[{Key=Name,Value=$SG_NAME},{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
                 --query "GroupId" --output text --region "$AWS_REGION")
-              echo "  ✅ Created SG: $SG_NAME ($SGID)"
+              echo "  ✅ Created SG: $SG_NAME ($SGID)" >&2
             else
-              echo "  ⏭️  SG exists: $SG_NAME ($SGID)"
+              echo "  ⏭️  SG exists: $SG_NAME ($SGID)" >&2
             fi
             echo "$SGID"
           }
