@@ -389,9 +389,9 @@ jobs:
                 --healthy-threshold-count 2 --unhealthy-threshold-count 3 --matcher HttpCode=200 \
                 --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
                 --query "TargetGroups[0].TargetGroupArn" --output text --region "$AWS_REGION")
-              echo "  ✅ Created TG: $TG_NAME"
+              echo "  ✅ Created TG: $TG_NAME" >&2
             else
-              echo "  ⏭️  TG exists: $TG_NAME"
+              echo "  ⏭️  TG exists: $TG_NAME" >&2
             fi
             echo "$TG_ARN"
           }
