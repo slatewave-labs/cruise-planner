@@ -299,3 +299,53 @@ GitHub environments are used for additional protection:
 - Runs full CI validation before deployment
 - Automatic rollback on failure
 
+---
+
+## Infrastructure Management Workflows
+
+### Test Environment Teardown (`teardown-test.yml`)
+
+**Triggers:** Manual only (workflow_dispatch)
+
+**Environment:** `test`
+
+**Purpose:** Completely destroys all test environment AWS infrastructure
+
+**Safety Features:**
+1. Requires explicit confirmation input: Must type "DESTROY TEST" exactly
+2. Manual trigger only - cannot be accidentally triggered
+3. Runs in `test` environment for additional protection
+4. Idempotent - safe to run multiple times
+5. Preserves shared resources (ECR repos, ACM certs, Route53 hosted zone)
+
+**What Gets Deleted:**
+- ECS services and cluster
+- Application Load Balancer and target groups
+- All task definition revisions
+- CloudWatch dashboard, alarms, and log groups
+- SNS topic for alerts
+- DynamoDB table
+- Secrets Manager secret
+- IAM roles and policies
+- Route53 DNS record (test subdomain only)
+- VPC networking (security groups, subnets, route tables, IGW, VPC)
+- ECR images tagged with `test-*` (repos themselves are preserved)
+
+**What Gets Preserved:**
+- ECR repositories (shared across environments)
+- ACM SSL certificates (for reattachment)
+- Route53 hosted zone (only individual record deleted)
+
+**Usage:**
+1. Go to Actions → Teardown Test Environment
+2. Click "Run workflow"
+3. Type "DESTROY TEST" in the confirmation field
+4. Click "Run workflow"
+5. Monitor progress through GitHub Actions UI
+
+**Typical Run Time:** 5-10 minutes
+
+**Cost:** $0 (uses GitHub-hosted runners)
+
+**Warning:** This is a destructive operation. All test environment data and infrastructure will be permanently deleted. Use with caution.
+

@@ -1,0 +1,450 @@
+name: Teardown Production Environment
+
+# DANGER: This workflow completely destroys the production environment infrastructure.
+# HTTPS certificate is preserved for future reattachment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_teardown:
+        description: 'Type "DESTROY PROD" to confirm teardown'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+  ENVIRONMENT: prod
+  PROJECT_NAME: shoreexplorer
+
+jobs:
+  teardown-prod:
+    name: Teardown Production Environment
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.inputs.confirm_teardown == 'DESTROY PROD'
+
+    steps:
+      - name: Validate confirmation
+        run: |
+          echo "✅ Teardown confirmed for PROD environment"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ── 1. Delete ECS Services ──────────────────────────────────
+      - name: Delete ECS services
+        run: |
+          echo "🗑️  Deleting ECS services..."
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+
+          for SERVICE in "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend"; do
+            # Scale to 0
+            aws ecs update-service \
+              --cluster "$CLUSTER" --service "$SERVICE" --desired-count 0 \
+              --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
+
+            # Force delete
+            aws ecs delete-service \
+              --cluster "$CLUSTER" --service "$SERVICE" --force \
+              --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
+
+            echo "  ✅ Deleted service: $SERVICE"
+          done
+
+          echo "  Waiting for tasks to drain..."
+          sleep 10
+
+      # ── 2. Delete ALB, Listeners, Target Groups ─────────────────
+      - name: Delete ALB and target groups
+        run: |
+          echo "🗑️  Deleting load balancer..."
+          ALB_ARN=$(aws elbv2 describe-load-balancers \
+            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
+            --query "LoadBalancers[0].LoadBalancerArn" --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+          if [[ "$ALB_ARN" != "None" && -n "$ALB_ARN" ]]; then
+            # Delete listeners (and their rules)
+            LISTENERS=$(aws elbv2 describe-listeners \
+              --load-balancer-arn "$ALB_ARN" \
+              --query "Listeners[].ListenerArn" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            for LISTENER in $LISTENERS; do
+              RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER" \
+                --query "Rules[?!IsDefault].RuleArn" --output text \
+                --region "$AWS_REGION" 2>/dev/null || echo "")
+              for RULE in $RULES; do
+                aws elbv2 delete-rule --rule-arn "$RULE" --region "$AWS_REGION" 2>/dev/null || true
+              done
+              aws elbv2 delete-listener --listener-arn "$LISTENER" --region "$AWS_REGION" 2>/dev/null || true
+            done
+
+            aws elbv2 delete-load-balancer --load-balancer-arn "$ALB_ARN" --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted ALB: ${PROJECT_NAME}-${ENVIRONMENT}-alb"
+
+            echo "  Waiting for ALB to finish deleting..."
+            aws elbv2 wait load-balancers-deleted --load-balancer-arns "$ALB_ARN" \
+              --region "$AWS_REGION" 2>/dev/null || sleep 30
+          else
+            echo "  ⏭️  ALB not found — skipping"
+          fi
+
+          # Delete target groups
+          for TG_NAME in "${PROJECT_NAME}-${ENVIRONMENT}-backend-tg" "${PROJECT_NAME}-${ENVIRONMENT}-frontend-tg"; do
+            TG_ARN=$(aws elbv2 describe-target-groups --names "$TG_NAME" \
+              --query "TargetGroups[0].TargetGroupArn" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+            if [[ "$TG_ARN" != "None" && -n "$TG_ARN" ]]; then
+              aws elbv2 delete-target-group --target-group-arn "$TG_ARN" --region "$AWS_REGION" 2>/dev/null || true
+              echo "  ✅ Deleted target group: $TG_NAME"
+            fi
+          done
+
+      # ── 3. Delete ECS Cluster ───────────────────────────────────
+      - name: Delete ECS cluster
+        run: |
+          echo "🗑️  Deleting ECS cluster..."
+          aws ecs delete-cluster \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
+          echo "  ✅ Deleted cluster: ${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+
+      # ── 4. Deregister Task Definitions ──────────────────────────
+      - name: Deregister task definitions
+        run: |
+          echo "🗑️  Deregistering task definitions..."
+          for FAMILY in "${PROJECT_NAME}-${ENVIRONMENT}-backend-task" "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task"; do
+            TASK_DEFS=$(aws ecs list-task-definitions \
+              --family-prefix "$FAMILY" \
+              --query "taskDefinitionArns[]" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            for TD in $TASK_DEFS; do
+              aws ecs deregister-task-definition --task-definition "$TD" \
+                --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
+              # Also delete the deregistered task definition
+              aws ecs delete-task-definitions --task-definitions "$TD" \
+                --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
+            done
+            if [[ -n "$TASK_DEFS" ]]; then
+              echo "  ✅ Deregistered task definitions: $FAMILY"
+            fi
+          done
+
+      # ── 5. Delete CloudWatch Monitoring ─────────────────────────
+      - name: Delete monitoring resources
+        run: |
+          echo "🗑️  Deleting monitoring resources..."
+
+          # Delete CloudWatch dashboard
+          aws cloudwatch delete-dashboards \
+            --dashboard-names "${PROJECT_NAME}-${ENVIRONMENT}-dashboard" \
+            --region "$AWS_REGION" 2>/dev/null || true
+          echo "  ✅ Deleted dashboard: ${PROJECT_NAME}-${ENVIRONMENT}-dashboard"
+
+          # Delete all CloudWatch alarms for this environment
+          ALARMS=$(aws cloudwatch describe-alarms \
+            --alarm-name-prefix "${PROJECT_NAME}-${ENVIRONMENT}-" \
+            --query "MetricAlarms[].AlarmName" --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -n "$ALARMS" ]]; then
+            aws cloudwatch delete-alarms --alarm-names $ALARMS \
+              --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted CloudWatch alarms"
+          fi
+
+          # Delete SNS topic
+          TOPIC_ARN=$(aws sns list-topics --region "$AWS_REGION" \
+            --query "Topics[?ends_with(TopicArn, ':${PROJECT_NAME}-${ENVIRONMENT}-alarms')].TopicArn" \
+            --output text 2>/dev/null || echo "")
+
+          if [[ -n "$TOPIC_ARN" && "$TOPIC_ARN" != "None" ]]; then
+            aws sns delete-topic --topic-arn "$TOPIC_ARN" --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted SNS topic: ${PROJECT_NAME}-${ENVIRONMENT}-alarms"
+          fi
+
+          # Delete log metric filters
+          for LOG_GROUP in "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-backend" "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-frontend"; do
+            FILTERS=$(aws logs describe-metric-filters \
+              --log-group-name "$LOG_GROUP" \
+              --query "metricFilters[].filterName" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "")
+            for FILTER in $FILTERS; do
+              aws logs delete-metric-filter \
+                --log-group-name "$LOG_GROUP" --filter-name "$FILTER" \
+                --region "$AWS_REGION" 2>/dev/null || true
+            done
+          done
+          echo "  ✅ Deleted log metric filters"
+
+      # ── 6. Delete CloudWatch Log Groups ─────────────────────────
+      - name: Delete log groups
+        run: |
+          echo "🗑️  Deleting log groups..."
+          for LOG_GROUP in "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-backend" "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-frontend"; do
+            aws logs delete-log-group --log-group-name "$LOG_GROUP" \
+              --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted log group: $LOG_GROUP"
+          done
+
+      # ── 7. Delete DynamoDB Table ────────────────────────────────
+      - name: Delete DynamoDB table
+        run: |
+          echo "🗑️  Deleting DynamoDB table..."
+          aws dynamodb delete-table \
+            --table-name "${PROJECT_NAME}-${ENVIRONMENT}" \
+            --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
+          echo "  ✅ Deleted DynamoDB table: ${PROJECT_NAME}-${ENVIRONMENT}"
+
+      # ── 8. Delete Secrets Manager ───────────────────────────────
+      - name: Delete secrets
+        run: |
+          echo "🗑️  Deleting secrets..."
+          aws secretsmanager delete-secret \
+            --secret-id "${PROJECT_NAME}-${ENVIRONMENT}-secrets" \
+            --force-delete-without-recovery \
+            --region "$AWS_REGION" 2>/dev/null || true
+          echo "  ✅ Deleted secret: ${PROJECT_NAME}-${ENVIRONMENT}-secrets"
+
+      # ── 9. Delete IAM Roles ─────────────────────────────────────
+      - name: Delete IAM roles
+        run: |
+          echo "🗑️  Deleting IAM roles..."
+          for ROLE in "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role"; do
+            # Detach managed policies
+            POLICIES=$(aws iam list-attached-role-policies --role-name "$ROLE" \
+              --query "AttachedPolicies[].PolicyArn" --output text 2>/dev/null || echo "")
+            for POLICY in $POLICIES; do
+              aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$POLICY" 2>/dev/null || true
+            done
+
+            # Delete inline policies
+            INLINE=$(aws iam list-role-policies --role-name "$ROLE" \
+              --query "PolicyNames[]" --output text 2>/dev/null || echo "")
+            for POLICY in $INLINE; do
+              aws iam delete-role-policy --role-name "$ROLE" --policy-name "$POLICY" 2>/dev/null || true
+            done
+
+            aws iam delete-role --role-name "$ROLE" 2>/dev/null || true
+            echo "  ✅ Deleted role: $ROLE"
+          done
+
+      # ── 10. Delete DNS Record ───────────────────────────────────
+      - name: Delete DNS record
+        env:
+          PROD_DOMAIN: ${{ secrets.PROD_DOMAIN || '' }}
+        run: |
+          echo "🗑️  Deleting DNS record..."
+
+          if [[ -z "$PROD_DOMAIN" ]]; then
+            echo "  ⏭️  PROD_DOMAIN secret not set — skipping DNS cleanup"
+            exit 0
+          fi
+
+          # Prod uses apex domain (no subdomain)
+          FULL_DOMAIN="${PROD_DOMAIN}"
+
+          # Find hosted zone
+          ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+            --query "HostedZones[?Name=='${PROD_DOMAIN}.'].Id" \
+            --output text 2>/dev/null | cut -d'/' -f3 || echo "")
+
+          if [[ -z "$ZONE_ID" || "$ZONE_ID" == "None" ]]; then
+            echo "  ⏭️  No hosted zone found for ${PROD_DOMAIN} — skipping"
+            exit 0
+          fi
+
+          # Find existing record
+          EXISTING=$(aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --query "ResourceRecordSets[?Name=='${FULL_DOMAIN}.'].Type" \
+            --output text 2>/dev/null || echo "")
+
+          if [[ -z "$EXISTING" || "$EXISTING" == "None" ]]; then
+            echo "  ⏭️  No DNS record found for ${FULL_DOMAIN} — skipping"
+            exit 0
+          fi
+
+          # Get the ALB DNS that it currently points to
+          ALB_DNS=$(aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --query "ResourceRecordSets[?Name=='${FULL_DOMAIN}.'].AliasTarget.DNSName" \
+            --output text 2>/dev/null || echo "")
+          ALB_ZONE=$(aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --query "ResourceRecordSets[?Name=='${FULL_DOMAIN}.'].AliasTarget.HostedZoneId" \
+            --output text 2>/dev/null || echo "")
+
+          if [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" && -n "$ALB_ZONE" && "$ALB_ZONE" != "None" ]]; then
+            CHANGE_BATCH=$(cat <<EOF
+          {
+            "Changes": [{
+              "Action": "DELETE",
+              "ResourceRecordSet": {
+                "Name": "${FULL_DOMAIN}",
+                "Type": "A",
+                "AliasTarget": {
+                  "HostedZoneId": "${ALB_ZONE}",
+                  "DNSName": "${ALB_DNS}",
+                  "EvaluateTargetHealth": false
+                }
+              }
+            }]
+          }
+          EOF
+          )
+            aws route53 change-resource-record-sets \
+              --hosted-zone-id "$ZONE_ID" \
+              --change-batch "$CHANGE_BATCH" 2>/dev/null || true
+            echo "  ✅ Deleted DNS record: ${FULL_DOMAIN}"
+          else
+            echo "  ⏭️  Could not determine current DNS target — skipping"
+          fi
+
+      # ── 11. Delete Networking ───────────────────────────────────
+      - name: Delete networking resources
+        run: |
+          echo "🗑️  Deleting networking resources..."
+
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-vpc" \
+            --query "Vpcs[0].VpcId" --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+          if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
+            echo "  ⏭️  VPC not found — skipping networking teardown"
+            exit 0
+          fi
+
+          echo "  Found VPC: $VPC_ID"
+
+          # Delete security groups (except default)
+          for SG_NAME in "${PROJECT_NAME}-${ENVIRONMENT}-alb-sg" "${PROJECT_NAME}-${ENVIRONMENT}-ecs-sg"; do
+            SG_ID=$(aws ec2 describe-security-groups \
+              --filters "Name=group-name,Values=$SG_NAME" "Name=vpc-id,Values=$VPC_ID" \
+              --query "SecurityGroups[0].GroupId" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+            if [[ "$SG_ID" != "None" && -n "$SG_ID" ]]; then
+              aws ec2 delete-security-group --group-id "$SG_ID" \
+                --region "$AWS_REGION" 2>/dev/null || true
+              echo "  ✅ Deleted security group: $SG_NAME"
+            fi
+          done
+
+          # Disassociate and delete route tables
+          RT_ID=$(aws ec2 describe-route-tables \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-public-rt" "Name=vpc-id,Values=$VPC_ID" \
+            --query "RouteTables[0].RouteTableId" --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+          if [[ "$RT_ID" != "None" && -n "$RT_ID" ]]; then
+            ASSOCS=$(aws ec2 describe-route-tables --route-table-ids "$RT_ID" \
+              --query "RouteTables[0].Associations[?!Main].RouteTableAssociationId" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "")
+            for ASSOC in $ASSOCS; do
+              aws ec2 disassociate-route-table --association-id "$ASSOC" \
+                --region "$AWS_REGION" 2>/dev/null || true
+            done
+            aws ec2 delete-route-table --route-table-id "$RT_ID" \
+              --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted route table: $RT_ID"
+          fi
+
+          # Delete subnets
+          for SUBNET_TAG in "public-1" "public-2" "private-1" "private-2"; do
+            SUBNET_ID=$(aws ec2 describe-subnets \
+              --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-${SUBNET_TAG}" "Name=vpc-id,Values=$VPC_ID" \
+              --query "Subnets[0].SubnetId" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+            if [[ "$SUBNET_ID" != "None" && -n "$SUBNET_ID" ]]; then
+              aws ec2 delete-subnet --subnet-id "$SUBNET_ID" \
+                --region "$AWS_REGION" 2>/dev/null || true
+              echo "  ✅ Deleted subnet: ${PROJECT_NAME}-${ENVIRONMENT}-${SUBNET_TAG}"
+            fi
+          done
+
+          # Detach and delete internet gateway
+          IGW_ID=$(aws ec2 describe-internet-gateways \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-igw" \
+            --query "InternetGateways[0].InternetGatewayId" --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "None")
+
+          if [[ "$IGW_ID" != "None" && -n "$IGW_ID" ]]; then
+            aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" \
+              --region "$AWS_REGION" 2>/dev/null || true
+            aws ec2 delete-internet-gateway --internet-gateway-id "$IGW_ID" \
+              --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted internet gateway: $IGW_ID"
+          fi
+
+          # Delete VPC
+          aws ec2 delete-vpc --vpc-id "$VPC_ID" --region "$AWS_REGION" 2>/dev/null || true
+          echo "  ✅ Deleted VPC: $VPC_ID"
+
+      # ── 12. Clean up ECR prod images ────────────────────────────
+      - name: Clean up ECR prod images
+        run: |
+          echo "🗑️  Cleaning up prod-tagged ECR images..."
+          for REPO in "${PROJECT_NAME}-backend" "${PROJECT_NAME}-frontend"; do
+            # Find images tagged with prod- prefix
+            PROD_IMAGES=$(aws ecr list-images --repository-name "$REPO" \
+              --query "imageIds[?starts_with(imageTag, 'prod-')].{imageDigest:imageDigest,imageTag:imageTag}" \
+              --output json --region "$AWS_REGION" 2>/dev/null || echo "[]")
+
+            # Also find prod-latest
+            LATEST_IMAGE=$(aws ecr list-images --repository-name "$REPO" \
+              --query "imageIds[?imageTag=='prod-latest'].{imageDigest:imageDigest,imageTag:imageTag}" \
+              --output json --region "$AWS_REGION" 2>/dev/null || echo "[]")
+
+            # Merge and batch delete
+            ALL_IMAGES=$(echo "[$PROD_IMAGES, $LATEST_IMAGE]" | jq -s 'add | flatten | unique_by(.imageDigest) | map(select(.imageDigest != null))' 2>/dev/null || echo "[]")
+
+            COUNT=$(echo "$ALL_IMAGES" | jq 'length')
+            if [[ "$COUNT" -gt 0 && "$COUNT" != "null" ]]; then
+              echo "$ALL_IMAGES" | jq -c '.[]' | while read -r img; do
+                DIGEST=$(echo "$img" | jq -r '.imageDigest')
+                aws ecr batch-delete-image --repository-name "$REPO" \
+                  --image-ids "imageDigest=$DIGEST" \
+                  --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
+              done
+              echo "  ✅ Cleaned $COUNT prod images from $REPO"
+            else
+              echo "  ⏭️  No prod images found in $REPO"
+            fi
+          done
+
+      # ── Summary ─────────────────────────────────────────────────
+      - name: Teardown summary
+        if: always()
+        run: |
+          echo "## Production Environment Teardown Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Resource | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ECS Services | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ALB & Target Groups | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ECS Cluster | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Task Definitions | 🗑️ Deregistered |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CloudWatch Monitoring | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Log Groups | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| DynamoDB Table | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Secrets | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| IAM Roles | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| DNS Record | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| VPC & Networking | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ECR Prod Images | 🗑️ Cleaned |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Preserved:** HTTPS certificate, ECR repositories, Route53 hosted zone" >> "$GITHUB_STEP_SUMMARY"

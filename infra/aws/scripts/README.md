@@ -486,16 +486,29 @@ aws ecs update-service --cluster shoreexplorer-test-cluster --service shoreexplo
 aws ecs update-service --cluster shoreexplorer-test-cluster --service shoreexplorer-test-frontend --desired-count 0 --region us-east-1
 
 # Complete teardown (deletes everything)
-# NOTE: No automated teardown script yet - delete via AWS Console:
-# 1. Delete ECS services
-# 2. Delete ECS cluster
-# 3. Delete ALB
-# 4. Delete target groups
-# 5. Delete VPC (and associated resources)
-# 6. Delete ECR repositories
-# 7. Delete Secrets Manager secrets
-# 8. Delete CloudWatch log groups
+./teardown.sh test
+
+# Or use GitHub Actions workflow for test environment
+# Go to Actions → Teardown Test Environment → Run workflow
+# Type "DESTROY TEST" to confirm
 ```
+
+The teardown script will delete:
+- ECS services and cluster
+- Application Load Balancer and target groups
+- Task definitions
+- CloudWatch monitoring (dashboard, alarms, logs)
+- DynamoDB table
+- Secrets Manager secret
+- IAM roles
+- Route53 DNS record (subdomain only)
+- VPC and all networking components
+- Test-tagged ECR images
+
+It will preserve:
+- ECR repositories (shared across environments)
+- ACM SSL certificates
+- Route53 hosted zone
 
 ---
 
