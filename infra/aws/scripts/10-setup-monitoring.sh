@@ -398,12 +398,14 @@ cat > /tmp/dashboard-body.json << DASHBOARD_EOF
 }
 DASHBOARD_EOF
 
-aws cloudwatch put-dashboard \
+if aws cloudwatch put-dashboard \
     --dashboard-name "$DASHBOARD_NAME" \
     --dashboard-body "file:///tmp/dashboard-body.json" \
-    --region "$AWS_REGION"
-
-print_success "CloudWatch dashboard created: ${DASHBOARD_NAME}"
+    --region "$AWS_REGION" 2>/dev/null; then
+    print_success "CloudWatch dashboard created: ${DASHBOARD_NAME}"
+else
+    print_error "Could not create CloudWatch dashboard — ensure the deployer IAM user has cloudwatch:PutDashboard permission (attach CloudWatchFullAccess policy)"
+fi
 
 rm -f /tmp/dashboard-body.json
 
