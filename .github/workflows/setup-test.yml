@@ -740,7 +740,6 @@ jobs:
           if [[ -n "$EXISTING" && "$EXISTING" != "None" ]]; then
             aws ecs update-service --cluster "$CLUSTER" --service "${APP_NAME}-frontend" \
               --task-definition "${APP_NAME}-frontend-task" --desired-count 1 --force-new-deployment \
-              --load-balancers "targetGroupArn=$FRONTEND_TG,containerName=frontend,containerPort=8080" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null
             echo "✅ Updated frontend service"
           else

@@ -750,7 +750,6 @@ jobs:
             aws ecs update-service --cluster "$CLUSTER" --service "${APP_NAME}-frontend" \
               --task-definition "${APP_NAME}-frontend-task" --desired-count "$DESIRED_COUNT" --force-new-deployment \
               --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
-              --load-balancers "targetGroupArn=$FRONTEND_TG,containerName=frontend,containerPort=8080" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null
             echo "✅ Updated frontend service"
           else
