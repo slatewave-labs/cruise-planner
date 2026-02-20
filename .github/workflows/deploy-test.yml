@@ -28,15 +28,49 @@ env:
   FRONTEND_ECR_REPO: shoreexplorer-frontend
 
 jobs:
-  deploy-test:
-    name: Deploy to Test Environment
+  check-env:
+    name: Check Test Environment is Deployed
     runs-on: ubuntu-latest
     environment: test
+    outputs:
+      deployed: ${{ steps.check.outputs.deployed }}
 
     # Only run if CI succeeded (or manual dispatch)
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check if test environment is deployed
+        id: check
+        run: |
+          CLUSTER_STATUS=$(aws ecs describe-clusters \
+            --clusters "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --query "clusters[0].status || 'NOT_FOUND'" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "NOT_FOUND")
+
+          if [[ "$CLUSTER_STATUS" == "ACTIVE" ]]; then
+            echo "✅ Test environment is deployed (cluster is ACTIVE)"
+            echo "deployed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⏭️  Test environment is not deployed (cluster status: ${CLUSTER_STATUS}). Skipping deployment."
+            echo "deployed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-test:
+    name: Deploy to Test Environment
+    runs-on: ubuntu-latest
+    environment: test
+    needs: check-env
+
+    if: needs.check-env.outputs.deployed == 'true'
 
     steps:
       - name: Checkout code
