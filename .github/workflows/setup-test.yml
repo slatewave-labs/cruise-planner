@@ -634,7 +634,7 @@ jobs:
             --execution-role-arn "$EXEC_ROLE_ARN" --task-role-arn "$TASK_ROLE_ARN" \
             --container-definitions "[{
               \"name\": \"backend\",
-              \"image\": \"${ECR_BASE}/${BACKEND_ECR_REPO}:latest\",
+              \"image\": \"${ECR_BASE}/${BACKEND_ECR_REPO}:${ENVIRONMENT}-latest\",
               \"essential\": true,
               \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
               \"secrets\": [{\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}],
@@ -679,7 +679,7 @@ jobs:
             --execution-role-arn "$EXEC_ROLE_ARN" --task-role-arn "$TASK_ROLE_ARN" \
             --container-definitions "[{
               \"name\": \"frontend\",
-              \"image\": \"${ECR_BASE}/${FRONTEND_ECR_REPO}:latest\",
+              \"image\": \"${ECR_BASE}/${FRONTEND_ECR_REPO}:${ENVIRONMENT}-latest\",
               \"essential\": true,
               \"portMappings\": [{\"containerPort\": 8080, \"protocol\": \"tcp\"}],
               \"logConfiguration\": {
