@@ -398,13 +398,17 @@ cat > /tmp/dashboard-body.json << DASHBOARD_EOF
 }
 DASHBOARD_EOF
 
-if aws cloudwatch put-dashboard \
+DASHBOARD_ERROR=""
+if DASHBOARD_ERROR=$(aws cloudwatch put-dashboard \
     --dashboard-name "$DASHBOARD_NAME" \
     --dashboard-body "file:///tmp/dashboard-body.json" \
-    --region "$AWS_REGION" 2>/dev/null; then
+    --region "$AWS_REGION" 2>&1); then
     print_success "CloudWatch dashboard created: ${DASHBOARD_NAME}"
 else
     print_error "Could not create CloudWatch dashboard — ensure the deployer IAM user has cloudwatch:PutDashboard permission (attach CloudWatchFullAccess policy)"
+    if [[ -n "$DASHBOARD_ERROR" ]]; then
+        echo "  ↳ AWS error: ${DASHBOARD_ERROR}" >&2
+    fi
 fi
 
 rm -f /tmp/dashboard-body.json
@@ -437,11 +441,17 @@ create_alarm() {
         --comparison-operator "$comparison"
         --period "$period"
         --evaluation-periods "$eval_periods"
-        --statistic "$statistic"
         --treat-missing-data "notBreaching"
         --tags "Key=Project,Value=${TAG_PROJECT}" "Key=Environment,Value=${TAG_ENVIRONMENT}"
         --region "$AWS_REGION"
     )
+
+    # Use --extended-statistic for percentile statistics (p50, p95, p99, etc.)
+    if [[ "$statistic" =~ ^p[0-9]+\.?[0-9]*$ ]]; then
+        alarm_args+=(--extended-statistic "$statistic")
+    else
+        alarm_args+=(--statistic "$statistic")
+    fi
 
     # Add SNS action if topic exists
     if [[ -n "$TOPIC_ARN" ]]; then
