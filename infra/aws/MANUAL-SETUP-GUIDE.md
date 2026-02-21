@@ -113,7 +113,7 @@ You'll need this number later:
    - `ElasticLoadBalancingFullAccess`
    - `AmazonVPCFullAccess`
    - `SecretsManagerReadWrite`
-   - `CloudWatchLogsFullAccess`
+   - `CloudWatchFullAccess`
    - `IAMFullAccess`
    - `AmazonDynamoDBFullAccess`
 8. Click **"Next"**
