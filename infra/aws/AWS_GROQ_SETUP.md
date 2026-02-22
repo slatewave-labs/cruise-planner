@@ -266,6 +266,8 @@ curl https://yourdomain.com/api/health
 
 ## IAM Permissions for CLI User (`shoreexplorer-deployer`)
 
+If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deployments, it needs these permissions.  The deployer is also responsible for provisioning the EventBridge-to-GitHub callback infrastructure, so the policy below includes the extra EventBridge and IAM actions required for creating connections, API destinations, rules, and roles:
+
 If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deployments, it needs these permissions:
 
 ### Required IAM Policy
@@ -295,6 +297,22 @@ If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deploym
         "ecs:DescribeServices",
         "ecs:ListTasks",
         "ecs:DescribeTasks"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EventBridgeCallbackPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "events:CreateConnection",
+        "events:DescribeConnection",
+        "events:CreateApiDestination",
+        "events:DescribeApiDestination",
+        "events:PutRule",
+        "events:PutTargets",
+        "iam:GetRole",
+        "iam:CreateRole",
+        "iam:PutRolePolicy"
       ],
       "Resource": "*"
     },
@@ -358,6 +376,22 @@ cat > /tmp/shoreexplorer-deployer-policy.json <<'EOF'
         "ecs:DescribeServices",
         "ecs:ListTasks",
         "ecs:DescribeTasks"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EventBridgeCallbackPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "events:CreateConnection",
+        "events:DescribeConnection",
+        "events:CreateApiDestination",
+        "events:DescribeApiDestination",
+        "events:PutRule",
+        "events:PutTargets",
+        "iam:GetRole",
+        "iam:CreateRole",
+        "iam:PutRolePolicy"
       ],
       "Resource": "*"
     },
