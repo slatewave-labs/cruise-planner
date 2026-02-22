@@ -289,7 +289,8 @@ jobs:
             p/owasp-top-ten
             p/python
             p/javascript
-          generateSarif: "true"
+        env:
+          SEMGREP_GENERATE_SARIF: "1"
 
       - name: Upload Semgrep SARIF results
         uses: github/codeql-action/upload-sarif@v4
