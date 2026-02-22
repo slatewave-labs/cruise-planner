@@ -20,7 +20,6 @@ env:
   ENVIRONMENT: test
   PROJECT_NAME: shoreexplorer
   BACKEND_ECR_REPO: shoreexplorer-backend
-  FRONTEND_ECR_REPO: shoreexplorer-frontend
 
 jobs:
   setup-and-deploy-test:
@@ -59,7 +58,7 @@ jobs:
       - name: Create ECR repositories
         run: |
           echo "📦 Ensuring ECR repositories exist..."
-          for REPO in "$BACKEND_ECR_REPO" "$FRONTEND_ECR_REPO"; do
+          for REPO in "$BACKEND_ECR_REPO"; do
             if aws ecr describe-repositories --repository-names "$REPO" --region "$AWS_REGION" &>/dev/null; then
               echo "  ⏭️  ECR repo exists: $REPO"
             else
@@ -333,8 +332,8 @@ jobs:
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
           CLUSTER="${APP_NAME}-cluster"
 
-          # Log groups
-          for LG in "/ecs/${APP_NAME}-backend" "/ecs/${APP_NAME}-frontend"; do
+          # Log groups (backend only — frontend is on S3/CloudFront)
+          for LG in "/ecs/${APP_NAME}-backend"; do
             if aws logs describe-log-groups --log-group-name-prefix "$LG" --region "$AWS_REGION" \
               --query "logGroups[?logGroupName=='$LG']" --output text | grep -q "$LG"; then
               echo "  ⏭️  Log group exists: $LG"
@@ -415,13 +414,12 @@ jobs:
           }
 
           BACKEND_TG_ARN=$(create_tg "${APP_NAME}-backend-tg" 8001 "/api/health")
-          FRONTEND_TG_ARN=$(create_tg "${APP_NAME}-frontend-tg" 8080 "/")
 
-          # Green target groups for CodeDeploy Blue/Green deployments
+          # Green target group for CodeDeploy Blue/Green backend deployments
           BACKEND_GREEN_TG_ARN=$(create_tg "${APP_NAME}-be-green-tg" 8001 "/api/health")
-          FRONTEND_GREEN_TG_ARN=$(create_tg "${APP_NAME}-fe-green-tg" 8080 "/")
 
-          # HTTP Listener (port 80) — will be converted to redirect later if HTTPS is set up
+          # HTTP Listener (port 80) — ALB now only serves backend API traffic
+          # (frontend is on S3/CloudFront). Default action forwards to backend.
           LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
             --query "Listeners[?Port==\`80\`].ListenerArn" --output text \
             --region "$AWS_REGION" 2>/dev/null || echo "")
@@ -429,15 +427,19 @@ jobs:
           if [[ -z "$LISTENER_ARN" || "$LISTENER_ARN" == "None" ]]; then
             LISTENER_ARN=$(aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" \
               --protocol HTTP --port 80 \
-              --default-actions Type=forward,TargetGroupArn="$FRONTEND_TG_ARN" \
+              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
               --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
               --query "Listeners[0].ListenerArn" --output text --region "$AWS_REGION")
-            echo "  ✅ Created HTTP listener"
+            echo "  ✅ Created HTTP listener (default → backend)"
           else
-            echo "  ⏭️  HTTP listener exists"
+            # Ensure default action points to backend (may have been frontend previously)
+            aws elbv2 modify-listener --listener-arn "$LISTENER_ARN" \
+              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
+              --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+            echo "  ⏭️  HTTP listener exists (updated default → backend)"
           fi
 
-          # Listener rule: /api/* → backend
+          # Listener rule: /api/* → backend (keep for compatibility)
           EXISTING_RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" \
             --query "Rules[?Conditions[?Field=='path-pattern' && Values[0]=='/api/*']].RuleArn" \
             --output text --region "$AWS_REGION" 2>/dev/null || echo "")
@@ -456,9 +458,7 @@ jobs:
           echo "alb_arn=${ALB_ARN}" >> "$GITHUB_OUTPUT"
           echo "alb_dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
           echo "backend_tg_arn=${BACKEND_TG_ARN}" >> "$GITHUB_OUTPUT"
-          echo "frontend_tg_arn=${FRONTEND_TG_ARN}" >> "$GITHUB_OUTPUT"
           echo "backend_green_tg_arn=${BACKEND_GREEN_TG_ARN}" >> "$GITHUB_OUTPUT"
-          echo "frontend_green_tg_arn=${FRONTEND_GREEN_TG_ARN}" >> "$GITHUB_OUTPUT"
           echo "listener_arn=${LISTENER_ARN}" >> "$GITHUB_OUTPUT"
 
       # ── 8. HTTPS Setup ──────────────────────────────────────────
@@ -469,7 +469,6 @@ jobs:
         run: |
           echo "🔒 Setting up HTTPS..."
           ALB_ARN="${{ steps.alb.outputs.alb_arn }}"
-          FRONTEND_TG_ARN="${{ steps.alb.outputs.frontend_tg_arn }}"
           BACKEND_TG_ARN="${{ steps.alb.outputs.backend_tg_arn }}"
           LISTENER_ARN="${{ steps.alb.outputs.listener_arn }}"
 
@@ -477,6 +476,7 @@ jobs:
             echo "  ⏭️  TEST_DOMAIN not set — skipping HTTPS"
             echo "backend_url=http://${{ steps.alb.outputs.alb_dns }}" >> "$GITHUB_OUTPUT"
             echo "prod_listener_arn=${LISTENER_ARN}" >> "$GITHUB_OUTPUT"
+            echo "cert_arn=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -491,12 +491,14 @@ jobs:
             echo "  ⚠️  No issued wildcard certificate found for *.${TEST_DOMAIN}"
             echo "  Using ALB DNS directly"
             echo "backend_url=http://${{ steps.alb.outputs.alb_dns }}" >> "$GITHUB_OUTPUT"
+            echo "cert_arn=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "  ✅ Found certificate: $CERT_ARN"
+          echo "cert_arn=${CERT_ARN}" >> "$GITHUB_OUTPUT"
 
-          # HTTPS listener (port 443)
+          # HTTPS listener (port 443) — ALB serves backend API traffic only
           HTTPS_LISTENER=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
             --query "Listeners[?Port==\`443\`].ListenerArn" --output text \
             --region "$AWS_REGION" 2>/dev/null || echo "")
@@ -505,10 +507,10 @@ jobs:
             HTTPS_LISTENER=$(aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" \
               --protocol HTTPS --port 443 --certificates CertificateArn="$CERT_ARN" \
               --ssl-policy ELBSecurityPolicy-TLS13-1-2-2021-06 \
-              --default-actions Type=forward,TargetGroupArn="$FRONTEND_TG_ARN" \
+              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
               --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
               --query "Listeners[0].ListenerArn" --output text --region "$AWS_REGION")
-            echo "  ✅ Created HTTPS listener"
+            echo "  ✅ Created HTTPS listener (default → backend)"
 
             # Add /api/* rule to HTTPS listener
             aws elbv2 create-rule --listener-arn "$HTTPS_LISTENER" --priority 10 \
@@ -519,29 +521,217 @@ jobs:
             echo "  ✅ Created HTTPS /api/* rule"
           else
             echo "  ⏭️  HTTPS listener exists"
-            # Ensure correct certificate
+            # Ensure correct certificate and default action → backend
             aws elbv2 modify-listener --listener-arn "$HTTPS_LISTENER" \
-              --certificates CertificateArn="$CERT_ARN" --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+              --certificates CertificateArn="$CERT_ARN" \
+              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
+              --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
           fi
 
-          # HTTP → HTTPS redirect
-          CURRENT_ACTION=$(aws elbv2 describe-listeners --listener-arns "$LISTENER_ARN" \
-            --region "$AWS_REGION" --query 'Listeners[0].DefaultActions[0].Type' --output text 2>/dev/null || echo "")
-
-          if [[ "$CURRENT_ACTION" != "redirect" ]]; then
-            aws elbv2 modify-listener --listener-arn "$LISTENER_ARN" \
-              --default-actions 'Type=redirect,RedirectConfig={Protocol=HTTPS,Port=443,StatusCode=HTTP_301}' \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "  ✅ HTTP → HTTPS redirect configured"
-          else
-            echo "  ⏭️  HTTP redirect already configured"
-          fi
+          # No HTTP→HTTPS redirect needed on ALB — CloudFront handles HTTPS termination
+          # ALB HTTP listener stays as-is (CloudFront connects to ALB over HTTP)
 
           echo "backend_url=https://${FULL_DOMAIN}" >> "$GITHUB_OUTPUT"
           echo "prod_listener_arn=${HTTPS_LISTENER}" >> "$GITHUB_OUTPUT"
 
       # ── 9. DNS Setup ────────────────────────────────────────────
-      - name: Setup DNS
+      # DNS will be updated to point to CloudFront after the distribution is created
+      - name: Setup DNS (placeholder)
+        run: |
+          echo "🌐 DNS will be configured after CloudFront distribution is created"
+
+      # ── 9b. S3 Bucket for Frontend ──────────────────────────────
+      - name: Create S3 bucket for frontend
+        id: s3
+        run: |
+          echo "📦 Creating S3 bucket for frontend..."
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          S3_BUCKET="${APP_NAME}-frontend"
+
+          if aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
+            echo "  ⏭️  S3 bucket exists: $S3_BUCKET"
+          else
+            if [[ "$AWS_REGION" == "us-east-1" ]]; then
+              aws s3api create-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION"
+            else
+              aws s3api create-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" \
+                --create-bucket-configuration LocationConstraint="$AWS_REGION"
+            fi
+            echo "  ✅ Created S3 bucket: $S3_BUCKET"
+          fi
+
+          # Block public access (CloudFront OAC will be used)
+          aws s3api put-public-access-block --bucket "$S3_BUCKET" \
+            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" \
+            --region "$AWS_REGION"
+
+          # Tag the bucket
+          aws s3api put-bucket-tagging --bucket "$S3_BUCKET" \
+            --tagging "TagSet=[{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
+            --region "$AWS_REGION"
+
+          echo "s3_bucket=${S3_BUCKET}" >> "$GITHUB_OUTPUT"
+
+      # ── 9c. CloudFront Distribution ─────────────────────────────
+      - name: Create CloudFront distribution
+        id: cloudfront
+        env:
+          TEST_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+        run: |
+          echo "🌐 Setting up CloudFront distribution..."
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          S3_BUCKET="${{ steps.s3.outputs.s3_bucket }}"
+          ALB_DNS="${{ steps.alb.outputs.alb_dns }}"
+          CERT_ARN="${{ steps.https.outputs.cert_arn }}"
+          ACCOUNT_ID="${{ steps.vars.outputs.account_id }}"
+
+          # Check if distribution already exists
+          CF_DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].Id | [0]" \
+            --output text 2>/dev/null || echo "")
+
+          if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
+            echo "  ⏭️  CloudFront distribution exists: $CF_DIST_ID"
+            CF_DOMAIN=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
+              --query 'Distribution.DomainName' --output text)
+            echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
+            echo "cf_domain=${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
+          else
+            # Create Origin Access Control
+            OAC_ID=$(aws cloudfront list-origin-access-controls \
+              --query "OriginAccessControlList.Items[?Name=='${APP_NAME}-frontend-oac'].Id | [0]" \
+              --output text 2>/dev/null || echo "")
+
+            if [[ -z "$OAC_ID" || "$OAC_ID" == "None" ]]; then
+              OAC_ID=$(aws cloudfront create-origin-access-control \
+                --origin-access-control-config "{
+                  \"Name\": \"${APP_NAME}-frontend-oac\",
+                  \"Description\": \"OAC for ${APP_NAME} frontend S3 bucket\",
+                  \"SigningProtocol\": \"sigv4\",
+                  \"SigningBehavior\": \"always\",
+                  \"OriginAccessControlOriginType\": \"s3\"
+                }" \
+                --query 'OriginAccessControl.Id' --output text)
+              echo "  ✅ Created OAC: $OAC_ID"
+            else
+              echo "  ⏭️  OAC exists: $OAC_ID"
+            fi
+
+            # Build CloudFront aliases and viewer certificate
+            if [[ -n "$TEST_DOMAIN" && -n "$CERT_ARN" && "$CERT_ARN" != "None" ]]; then
+              FULL_DOMAIN="test.${TEST_DOMAIN}"
+              ALIASES_CONFIG="\"Aliases\":{\"Quantity\":1,\"Items\":[\"${FULL_DOMAIN}\"]}"
+              VIEWER_CERT="\"ViewerCertificate\":{\"ACMCertificateArn\":\"${CERT_ARN}\",\"SSLSupportMethod\":\"sni-only\",\"MinimumProtocolVersion\":\"TLSv1.2_2021\"}"
+            else
+              ALIASES_CONFIG="\"Aliases\":{\"Quantity\":0}"
+              VIEWER_CERT="\"ViewerCertificate\":{\"CloudFrontDefaultCertificate\":true}"
+            fi
+
+            # Create CloudFront distribution with S3 + ALB origins
+            DIST_CONFIG=$(cat <<CFEOF
+          {
+            "CallerReference": "${APP_NAME}-$(date +%s)",
+            "Comment": "${APP_NAME}-frontend",
+            ${ALIASES_CONFIG},
+            "DefaultRootObject": "index.html",
+            "Origins": {
+              "Quantity": 2,
+              "Items": [
+                {
+                  "Id": "S3-${S3_BUCKET}",
+                  "DomainName": "${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com",
+                  "OriginAccessControlId": "${OAC_ID}",
+                  "S3OriginConfig": {
+                    "OriginAccessIdentity": ""
+                  }
+                },
+                {
+                  "Id": "ALB-backend",
+                  "DomainName": "${ALB_DNS}",
+                  "CustomOriginConfig": {
+                    "HTTPPort": 80,
+                    "HTTPSPort": 443,
+                    "OriginProtocolPolicy": "http-only",
+                    "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]},
+                    "OriginReadTimeout": 60,
+                    "OriginKeepaliveTimeout": 5
+                  }
+                }
+              ]
+            },
+            "DefaultCacheBehavior": {
+              "TargetOriginId": "S3-${S3_BUCKET}",
+              "ViewerProtocolPolicy": "redirect-to-https",
+              "AllowedMethods": {"Quantity": 2, "Items": ["HEAD", "GET"], "CachedMethods": {"Quantity": 2, "Items": ["HEAD", "GET"]}},
+              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+              "Compress": true
+            },
+            "CacheBehaviors": {
+              "Quantity": 1,
+              "Items": [
+                {
+                  "PathPattern": "/api/*",
+                  "TargetOriginId": "ALB-backend",
+                  "ViewerProtocolPolicy": "redirect-to-https",
+                  "AllowedMethods": {"Quantity": 7, "Items": ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"], "CachedMethods": {"Quantity": 2, "Items": ["HEAD", "GET"]}},
+                  "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+                  "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3",
+                  "Compress": true
+                }
+              ]
+            },
+            "CustomErrorResponses": {
+              "Quantity": 2,
+              "Items": [
+                {"ErrorCode": 403, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 10},
+                {"ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 10}
+              ]
+            },
+            ${VIEWER_CERT},
+            "Enabled": true,
+            "PriceClass": "PriceClass_100",
+            "HttpVersion": "http2and3"
+          }
+          CFEOF
+          )
+
+            CF_DIST_ID=$(aws cloudfront create-distribution \
+              --distribution-config "$DIST_CONFIG" \
+              --query 'Distribution.Id' --output text)
+            CF_DOMAIN=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
+              --query 'Distribution.DomainName' --output text)
+            echo "  ✅ Created CloudFront distribution: $CF_DIST_ID ($CF_DOMAIN)"
+
+            echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
+            echo "cf_domain=${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
+
+            # Update S3 bucket policy to allow CloudFront OAC access
+            BUCKET_POLICY=$(cat <<BPEOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Sid": "AllowCloudFrontServicePrincipal",
+              "Effect": "Allow",
+              "Principal": {"Service": "cloudfront.amazonaws.com"},
+              "Action": "s3:GetObject",
+              "Resource": "arn:aws:s3:::${S3_BUCKET}/*",
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": "arn:aws:cloudfront::${ACCOUNT_ID}:distribution/${CF_DIST_ID}"
+                }
+              }
+            }]
+          }
+          BPEOF
+          )
+
+            aws s3api put-bucket-policy --bucket "$S3_BUCKET" \
+              --policy "$BUCKET_POLICY" --region "$AWS_REGION"
+            echo "  ✅ Updated S3 bucket policy for CloudFront OAC"
+          fi
+
+      # ── 9d. DNS → CloudFront ────────────────────────────────────
+      - name: Setup DNS (point to CloudFront)
         env:
           TEST_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
         run: |
@@ -553,8 +743,12 @@ jobs:
           fi
 
           FULL_DOMAIN="test.${TEST_DOMAIN}"
-          ALB_DNS="${{ steps.alb.outputs.alb_dns }}"
-          ALB_NAME="${PROJECT_NAME}-${ENVIRONMENT}-alb"
+          CF_DOMAIN="${{ steps.cloudfront.outputs.cf_domain }}"
+
+          if [[ -z "$CF_DOMAIN" || "$CF_DOMAIN" == "None" ]]; then
+            echo "  ⚠️  No CloudFront domain available — skipping DNS"
+            exit 0
+          fi
 
           # Find hosted zone
           ZONE_ID=$(aws route53 list-hosted-zones-by-name \
@@ -566,16 +760,10 @@ jobs:
             exit 0
           fi
 
-          # Get ALB hosted zone ID
-          ALB_ZONE_ID=$(aws elbv2 describe-load-balancers --names "$ALB_NAME" \
-            --region "$AWS_REGION" --query "LoadBalancers[0].CanonicalHostedZoneId" --output text 2>/dev/null || echo "")
+          # CloudFront hosted zone ID is always Z2FDTNDATAQYW2
+          CF_ZONE_ID="Z2FDTNDATAQYW2"
 
-          if [[ -z "$ALB_ZONE_ID" || "$ALB_ZONE_ID" == "None" ]]; then
-            echo "  ⚠️  Could not get ALB zone ID — skipping DNS"
-            exit 0
-          fi
-
-          # Upsert DNS record
+          # Upsert DNS record to point to CloudFront
           CHANGE_BATCH=$(cat <<EOF
           {
             "Changes": [{
@@ -584,8 +772,8 @@ jobs:
                 "Name": "${FULL_DOMAIN}",
                 "Type": "A",
                 "AliasTarget": {
-                  "HostedZoneId": "${ALB_ZONE_ID}",
-                  "DNSName": "${ALB_DNS}",
+                  "HostedZoneId": "${CF_ZONE_ID}",
+                  "DNSName": "${CF_DOMAIN}",
                   "EvaluateTargetHealth": false
                 }
               }
@@ -596,7 +784,7 @@ jobs:
 
           aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" \
             --change-batch "$CHANGE_BATCH" --no-cli-pager >/dev/null
-          echo "  ✅ DNS record set: ${FULL_DOMAIN} → ${ALB_DNS}"
+          echo "  ✅ DNS record set: ${FULL_DOMAIN} → ${CF_DOMAIN} (CloudFront)"
 
       # ══════════════════════════════════════════════════════════════
       #  BUILD & DEPLOY APPLICATION
@@ -619,26 +807,67 @@ jobs:
           docker push "${ECR_BASE}/${BACKEND_ECR_REPO}:${ENVIRONMENT}-latest"
           docker push "${ECR_BASE}/${BACKEND_ECR_REPO}:latest"
 
-      - name: Build and push frontend image
-        run: |
-          ECR_BASE="${{ steps.vars.outputs.ecr_base }}"
-          IMAGE_TAG="${{ steps.vars.outputs.image_tag }}"
-          BACKEND_URL="${{ steps.https.outputs.backend_url }}"
+      # ── 10b. Build & Deploy Frontend to S3 ──────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
 
-          # Fallback if HTTPS step didn't set backend_url
-          if [[ -z "$BACKEND_URL" ]]; then
-            BACKEND_URL="http://${{ steps.alb.outputs.alb_dns }}"
+      - name: Build frontend static bundle
+        run: |
+          BACKEND_URL="${{ steps.https.outputs.backend_url }}"
+          CF_DOMAIN="${{ steps.cloudfront.outputs.cf_domain }}"
+
+          # Determine the backend URL for the frontend to use
+          if [[ -z "$BACKEND_URL" || "$BACKEND_URL" == "None" ]]; then
+            if [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
+              BACKEND_URL="https://${CF_DOMAIN}"
+            else
+              BACKEND_URL="http://${{ steps.alb.outputs.alb_dns }}"
+            fi
           fi
 
-          docker build \
-            --build-arg REACT_APP_BACKEND_URL="${BACKEND_URL}" \
-            -t "${ECR_BASE}/${FRONTEND_ECR_REPO}:${IMAGE_TAG}" \
-            -t "${ECR_BASE}/${FRONTEND_ECR_REPO}:${ENVIRONMENT}-latest" \
-            -t "${ECR_BASE}/${FRONTEND_ECR_REPO}:latest" \
-            -f frontend/Dockerfile frontend/
-          docker push "${ECR_BASE}/${FRONTEND_ECR_REPO}:${IMAGE_TAG}"
-          docker push "${ECR_BASE}/${FRONTEND_ECR_REPO}:${ENVIRONMENT}-latest"
-          docker push "${ECR_BASE}/${FRONTEND_ECR_REPO}:latest"
+          cd frontend
+          yarn install --frozen-lockfile
+          REACT_APP_BACKEND_URL="$BACKEND_URL" CI=true yarn build
+
+      - name: Deploy frontend to S3
+        run: |
+          S3_BUCKET="${{ steps.s3.outputs.s3_bucket }}"
+          echo "📦 Syncing frontend build to s3://${S3_BUCKET}/"
+
+          # Sync with cache headers: immutable for hashed assets, no-cache for index.html
+          aws s3 sync frontend/build/ "s3://${S3_BUCKET}/" \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html" --exclude "asset-manifest.json" --exclude "service-worker.js" \
+            --region "$AWS_REGION"
+
+          aws s3 cp frontend/build/index.html "s3://${S3_BUCKET}/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/html" \
+            --region "$AWS_REGION"
+
+          if [[ -f frontend/build/asset-manifest.json ]]; then
+            aws s3 cp frontend/build/asset-manifest.json "s3://${S3_BUCKET}/asset-manifest.json" \
+              --cache-control "no-cache, no-store, must-revalidate" \
+              --content-type "application/json" \
+              --region "$AWS_REGION"
+          fi
+          echo "✅ Frontend deployed to S3"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          CF_DIST_ID="${{ steps.cloudfront.outputs.cf_dist_id }}"
+          if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$CF_DIST_ID" \
+              --paths "/index.html" "/asset-manifest.json" "/service-worker.js" \
+              --query 'Invalidation.Id' --output text
+            echo "🔄 CloudFront invalidation created"
+          fi
 
       # ── 11. Register Task Definitions ───────────────────────────
       - name: Register backend task definition
@@ -687,44 +916,6 @@ jobs:
             --region "$AWS_REGION" --no-cli-pager >/dev/null
           echo "✅ Registered backend task definition"
 
-      - name: Register frontend task definition
-        run: |
-          ACCOUNT_ID="${{ steps.vars.outputs.account_id }}"
-          ECR_BASE="${{ steps.vars.outputs.ecr_base }}"
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-
-          EXEC_ROLE_ARN=$(aws iam get-role --role-name "${APP_NAME}-ecs-task-execution-role" \
-            --query 'Role.Arn' --output text)
-          TASK_ROLE_ARN=$(aws iam get-role --role-name "${APP_NAME}-ecs-task-role" \
-            --query 'Role.Arn' --output text)
-
-          aws ecs register-task-definition \
-            --family "${APP_NAME}-frontend-task" \
-            --network-mode awsvpc --requires-compatibilities FARGATE \
-            --cpu 256 --memory 512 \
-            --execution-role-arn "$EXEC_ROLE_ARN" --task-role-arn "$TASK_ROLE_ARN" \
-            --container-definitions "[{
-              \"name\": \"frontend\",
-              \"image\": \"${ECR_BASE}/${FRONTEND_ECR_REPO}:${ENVIRONMENT}-latest\",
-              \"essential\": true,
-              \"portMappings\": [{\"containerPort\": 8080, \"protocol\": \"tcp\"}],
-              \"logConfiguration\": {
-                \"logDriver\": \"awslogs\",
-                \"options\": {
-                  \"awslogs-group\": \"/ecs/${APP_NAME}-frontend\",
-                  \"awslogs-region\": \"${AWS_REGION}\",
-                  \"awslogs-stream-prefix\": \"ecs\"
-                }
-              },
-              \"healthCheck\": {
-                \"command\": [\"CMD-SHELL\", \"wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1\"],
-                \"interval\": 30, \"timeout\": 5, \"retries\": 3, \"startPeriod\": 30
-              }
-            }]" \
-            --tags "key=Project,value=$PROJECT_NAME" "key=Environment,value=$ENVIRONMENT" \
-            --region "$AWS_REGION" --no-cli-pager >/dev/null
-          echo "✅ Registered frontend task definition"
-
       # ── 12. Create/Update ECS Services (Blue/Green via CodeDeploy) ──
       - name: Create or update ECS services
         run: |
@@ -734,7 +925,6 @@ jobs:
           PUB1="${{ steps.networking.outputs.pub_subnet_1 }}"
           PUB2="${{ steps.networking.outputs.pub_subnet_2 }}"
           BACKEND_TG="${{ steps.alb.outputs.backend_tg_arn }}"
-          FRONTEND_TG="${{ steps.alb.outputs.frontend_tg_arn }}"
 
           # Helper: create or migrate an ECS service to CODE_DEPLOY controller
           create_or_migrate_service() {
@@ -778,7 +968,6 @@ jobs:
           }
 
           create_or_migrate_service "${APP_NAME}-backend"  "${APP_NAME}-backend-task"  "$BACKEND_TG"  "backend"  8001 120
-          create_or_migrate_service "${APP_NAME}-frontend" "${APP_NAME}-frontend-task" "$FRONTEND_TG" "frontend" 8080 60
 
       # ── 12b. CodeDeploy Application & Deployment Groups ──────────
       - name: Create CodeDeploy application and deployment groups
@@ -868,7 +1057,6 @@ jobs:
           }
 
           create_or_update_dg "${APP_NAME}-backend-dg"  "${APP_NAME}-backend"  "${APP_NAME}-backend-tg"  "${APP_NAME}-be-green-tg"
-          create_or_update_dg "${APP_NAME}-frontend-dg" "${APP_NAME}-frontend" "${APP_NAME}-frontend-tg" "${APP_NAME}-fe-green-tg"
 
       # ── 13. Async Deployment Callback (LEAN WAIT) ───────────────
       - name: Provision async deployment callback infrastructure
@@ -1002,8 +1190,13 @@ jobs:
         if: always()
         run: |
           BACKEND_URL="${{ steps.https.outputs.backend_url }}"
+          CF_DOMAIN="${{ steps.cloudfront.outputs.cf_domain }}"
           if [[ -z "$BACKEND_URL" ]]; then
-            BACKEND_URL="http://${{ steps.alb.outputs.alb_dns }}"
+            if [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
+              BACKEND_URL="https://${CF_DOMAIN}"
+            else
+              BACKEND_URL="http://${{ steps.alb.outputs.alb_dns }}"
+            fi
           fi
 
           echo "## Test Environment Setup & Deploy Summary" >> "$GITHUB_STEP_SUMMARY"
@@ -1015,6 +1208,8 @@ jobs:
           echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| App URL | ${BACKEND_URL} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| API Health | ${BACKEND_URL}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Frontend | S3 + CloudFront (${{ steps.cloudfront.outputs.cf_dist_id }}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| S3 Bucket | ${{ steps.s3.outputs.s3_bucket }} |" >> "$GITHUB_STEP_SUMMARY"
           DASHBOARD_URL="https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards:name=${PROJECT_NAME}-${ENVIRONMENT}-dashboard"
           echo "| Dashboard | [CloudWatch](${DASHBOARD_URL}) |" >> "$GITHUB_STEP_SUMMARY"
 
@@ -1042,15 +1237,17 @@ jobs:
         env:
           CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
         run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
-            --query "LoadBalancers[0].DNSName" \
-            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+
+          # Get CloudFront URL for frontend
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].DomainName | [0]" \
+            --output text 2>/dev/null || echo "")
 
           if [[ -n "$CUSTOM_DOMAIN" ]]; then
             URL="https://test.${CUSTOM_DOMAIN}"
-          elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
-            URL="https://${ALB_DNS}"
+          elif [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
+            URL="https://${CF_DOMAIN}"
           else
             URL="http://localhost:8001"
           fi
