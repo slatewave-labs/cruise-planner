@@ -313,7 +313,10 @@ If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deploym
         "iam:GetRole",
         "iam:CreateRole",
         "iam:PutRolePolicy",
-        "iam:PutUserPolicy"
+        "iam:PutUserPolicy",
+        "iam:PassRole",
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource"
       ],
       "Resource": "*"
     },
@@ -393,7 +396,10 @@ cat > /tmp/shoreexplorer-deployer-policy.json <<'EOF'
         "iam:GetRole",
         "iam:CreateRole",
         "iam:PutRolePolicy",
-        "iam:PutUserPolicy"
+        "iam:PutUserPolicy",
+        "iam:PassRole",
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource"
       ],
       "Resource": "*"
     },
