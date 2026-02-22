@@ -875,36 +875,6 @@ jobs:
           bash infra/aws/scripts/10-setup-monitoring.sh "${ENVIRONMENT}"
         continue-on-error: true
 
-      # ── 15. Smoke Test ──────────────────────────────────────────
-      - name: Run smoke test
-        run: |
-          BACKEND_URL="${{ steps.https.outputs.backend_url }}"
-          if [[ -z "$BACKEND_URL" ]]; then
-            BACKEND_URL="http://${{ steps.alb.outputs.alb_dns }}"
-          fi
-
-          echo "Running smoke tests against ${BACKEND_URL}"
-          sleep 30
-
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${BACKEND_URL}/api/health" --max-time 30 || echo "000")
-
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "⚠️  Health check returned HTTP $HTTP_CODE (may still be starting)"
-          fi
-
-          FRONTEND_URL="${BACKEND_URL%/api*}"
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${FRONTEND_URL}/" --max-time 30 || echo "000")
-
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
-          else
-            echo "⚠️  Frontend returned HTTP $HTTP_CODE (may still be starting)"
-          fi
-
       # ── Summary ─────────────────────────────────────────────────
       - name: Deployment summary
         if: always()
@@ -925,3 +895,124 @@ jobs:
           echo "| API Health | ${BACKEND_URL}/api/health |" >> "$GITHUB_STEP_SUMMARY"
           DASHBOARD_URL="https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards:name=${PROJECT_NAME}-${ENVIRONMENT}-dashboard"
           echo "| Dashboard | [CloudWatch](${DASHBOARD_URL}) |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ─────────────────────────────────────────────────
+  # Post-deployment cleanup and smoke tests
+  # Runs ONCE after both services have deployed
+  # ─────────────────────────────────────────────────
+  cleanup-and-smoke:
+    name: Deployment Cleanup & Smoke Test
+    runs-on: ubuntu-latest
+    needs: setup-and-deploy-test
+    if: always()
+    environment: test-post-deploy
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get deployment URL
+        id: alb
+        env:
+          CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
+            --query "LoadBalancers[0].DNSName" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -n "$CUSTOM_DOMAIN" ]]; then
+            URL="https://test.${CUSTOM_DOMAIN}"
+          elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
+            URL="https://${ALB_DNS}"
+          else
+            URL="http://localhost:8001"
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for ECS services to stabilize
+        if: needs.setup-and-deploy-test.result == 'success'
+        run: |
+          echo "Waiting for ECS services to stabilize (up to 10 minutes)..."
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+          SERVICES=(
+            "${PROJECT_NAME}-${ENVIRONMENT}-backend"
+            "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
+          )
+          MAX_WAIT=600
+          POLL_INTERVAL=15
+          elapsed=0
+
+          while [[ $elapsed -lt $MAX_WAIT ]]; do
+            all_stable=true
+            for svc in "${SERVICES[@]}"; do
+              svc_info=$(aws ecs describe-services \
+                --cluster "$CLUSTER" --services "$svc" --region "$AWS_REGION" \
+                --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
+                --output json)
+              active=$(echo "$svc_info" | jq -r '.active')
+              running=$(echo "$svc_info" | jq -r '.running')
+              desired=$(echo "$svc_info" | jq -r '.desired')
+              echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
+              if [[ "$active" != "1" || "$running" != "$desired" ]]; then
+                all_stable=false
+              fi
+            done
+
+            if $all_stable; then
+              echo "✅ All services stable!"
+              break
+            fi
+
+            sleep $POLL_INTERVAL
+            elapsed=$((elapsed + POLL_INTERVAL))
+          done
+
+          if [[ $elapsed -ge $MAX_WAIT ]]; then
+            echo "❌ Timed out after ${MAX_WAIT}s waiting for services to stabilize"
+            exit 1
+          fi
+
+      - name: Run smoke tests
+        if: needs.setup-and-deploy-test.result == 'success' && steps.alb.outputs.url != 'http://localhost:8001'
+        run: |
+          URL="${{ steps.alb.outputs.url }}"
+          echo "Running smoke tests against ${URL}"
+          sleep 15
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${URL}/api/health" --max-time 30 || echo "000")
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${URL}/" --max-time 30 || echo "000")
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Frontend check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Smoke test & cleanup summary
+        if: always()
+        run: |
+          DEPLOY_STATUS="${{ needs.setup-and-deploy-test.result }}"
+          echo "## Deployment Cleanup & Smoke Test" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${ENVIRONMENT}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Setup & Deploy Result | \`${DEPLOY_STATUS}\` |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.alb.outputs.url }}" != "" && "${{ steps.alb.outputs.url }}" != "http://localhost:8001" ]]; then
+            echo "| App URL | ${{ steps.alb.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| API Health | ${{ steps.alb.outputs.url }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+          fi

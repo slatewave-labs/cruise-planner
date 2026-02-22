@@ -7,17 +7,15 @@ on:
 permissions:
   contents: read
   deployments: write
+  actions: write
 
 jobs:
-  smoke-test:
-    name: Async Smoke Test & Cleanup
+  gate-approval:
+    name: Approve Deployment Gate
     runs-on: ubuntu-latest
     if: github.event.action == 'ecs_deploy_success'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
+    steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -25,75 +23,131 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Get ALB DNS
-        id: alb
+      - name: Check if both ECS services are stable
+        id: stability
         env:
           PROJECT_NAME: shoreexplorer
           ENVIRONMENT: ${{ github.event.client_payload.environment }}
-          PROD_DOMAIN: ${{ secrets.PROD_DOMAIN }}
-          TEST_DOMAIN: ${{ secrets.TEST_DOMAIN }}
         run: |
-          if [[ "$ENVIRONMENT" == "prod" ]]; then
-            CUSTOM_DOMAIN="${PROD_DOMAIN:-}"
-          else
-            CUSTOM_DOMAIN="${TEST_DOMAIN:-}"
-          fi
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+          SERVICES=("${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend")
+          all_stable=true
 
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
-            --query "LoadBalancers[0].DNSName" \
-            --output text 2>/dev/null || echo "")
+          for svc in "${SERVICES[@]}"; do
+            svc_info=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$svc" \
+              --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
+              --output json 2>/dev/null || echo '{"active":0,"running":0,"desired":1}')
+            active=$(echo "$svc_info" | jq -r '.active')
+            running=$(echo "$svc_info" | jq -r '.running')
+            desired=$(echo "$svc_info" | jq -r '.desired')
+            echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
+            if [[ "$active" != "1" || "$running" != "$desired" ]]; then
+              all_stable=false
+              echo "  ⏳ ${svc} is not yet stable — waiting for next callback"
+            fi
+          done
 
-          if [[ -n "$CUSTOM_DOMAIN" ]]; then
-            [[ "$ENVIRONMENT" == "test" ]] && URL="https://test.${CUSTOM_DOMAIN}" || URL="https://${CUSTOM_DOMAIN}"
-          elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
-            URL="https://${ALB_DNS}"
-          else
-            URL="http://localhost:8001"
-          fi
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "all_stable=${all_stable}" >> "$GITHUB_OUTPUT"
 
-      - name: Run Smoke Test
-        run: |
-          URL="${{ steps.alb.outputs.url }}"
-          echo "Running smoke tests against ${URL}"
-          
-          # Wait a few seconds for health checks to be fully ready
-          sleep 15
-          
-          # Check API health
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${URL}/api/health" --max-time 15 || echo "000")
-          
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
-          
-          # Check frontend
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${URL}/" --max-time 15 || echo "000")
-          
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Frontend check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
+      - name: Approve deployment gate (both services stable)
+        if: steps.stability.outputs.all_stable == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_CALLBACK_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const environment = context.payload.client_payload.environment;
+            const gateName = `${environment}-post-deploy`;
 
-      - name: Notify Success
-        if: success()
-        run: echo "Deployment for ${{ github.event.client_payload.environment }} fully stable and verified."
+            // Find workflow runs waiting for environment approval
+            const { data: { workflow_runs } } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              status: 'waiting',
+              per_page: 20,
+            });
+
+            console.log(`Looking for runs waiting on environment: ${gateName}`);
+
+            for (const run of workflow_runs) {
+              try {
+                const { data: pending } = await github.rest.actions.getPendingDeployments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                });
+
+                const gate = pending.find(d => d.environment.name === gateName);
+                if (gate) {
+                  await github.rest.actions.reviewPendingDeployments({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id,
+                    environment_ids: [gate.environment.id],
+                    state: 'approved',
+                    comment: `ECS deployment for ${environment} is fully stable (both backend and frontend).`,
+                  });
+                  console.log(`✅ Approved deployment gate '${gateName}' for run #${run.id}`);
+                  return;
+                }
+              } catch (e) {
+                // This run may not have pending deployments — continue searching
+              }
+            }
+
+            console.log(`ℹ️  No waiting runs found for environment '${gateName}' — the cleanup job may have already started via polling.`);
 
   handle-failure:
     name: Handle Deployment Failure
     runs-on: ubuntu-latest
     if: github.event.action == 'ecs_deploy_failed'
+
     steps:
-      - name: Notify Failure
+      - name: Reject deployment gate
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_CALLBACK_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const environment = context.payload.client_payload.environment;
+            const gateName = `${environment}-post-deploy`;
+
+            const { data: { workflow_runs } } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              status: 'waiting',
+              per_page: 20,
+            });
+
+            for (const run of workflow_runs) {
+              try {
+                const { data: pending } = await github.rest.actions.getPendingDeployments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                });
+
+                const gate = pending.find(d => d.environment.name === gateName);
+                if (gate) {
+                  await github.rest.actions.reviewPendingDeployments({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id,
+                    environment_ids: [gate.environment.id],
+                    state: 'rejected',
+                    comment: `ECS deployment for ${environment} failed to stabilize in AWS.`,
+                  });
+                  console.log(`❌ Rejected deployment gate '${gateName}' for run #${run.id}`);
+                  return;
+                }
+              } catch (e) {
+                // Continue searching
+              }
+            }
+
+            console.log(`ℹ️  No waiting runs found for environment '${gateName}'.`);
+
+      - name: Notify failure
         run: |
           echo "❌ Deployment for ${{ github.event.client_payload.environment }} failed to stabilize in AWS."
-          # Here we could trigger a rollback or send an alert
           exit 1
+

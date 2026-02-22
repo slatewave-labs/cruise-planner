@@ -486,22 +486,6 @@ jobs:
 
           aws ecs update-service "${ARGS[@]}"
 
-      - name: Wait for deployment to stabilize
-        run: |
-          # aws ecs wait services-stable uses `length(deployments) == 1` which fails
-          # when ECS keeps old INACTIVE deployment entries after a successful rolling
-          # update (circuit-breaker or standard). We poll manually, ignoring INACTIVE
-          # entries, to match what the ECS console considers "stable".
-          echo "Waiting for production services to stabilize (up to 10 minutes)..."
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-          SERVICES=(
-            "${PROJECT_NAME}-${ENVIRONMENT}-backend"
-            "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
-          )
-          MAX_WAIT=600
-          POLL_INTERVAL=15
-          elapsed=0
-
       # ── Async Deployment Callback (LEAN WAIT) ───────────────
       - name: Provision async deployment callback infrastructure
         env:
@@ -602,93 +586,6 @@ jobs:
             --no-cli-pager >/dev/null
           echo "  ✅ Configured Success and Failure Callback Routes"
 
-      - name: Check for callback token
-        id: callback_check
-        run: |
-          if [[ -n "${{ secrets.GH_CALLBACK_TOKEN }}" ]]; then
-            echo "has_callback=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_callback=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Wait for production services to stabilize
-        if: steps.callback_check.outputs.has_callback == 'false'
-        run: |
-          echo "Waiting for production services to stabilize (up to 10 minutes)..."
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-          SERVICES=(
-            "${PROJECT_NAME}-${ENVIRONMENT}-backend"
-            "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
-          )
-          MAX_WAIT=600
-          POLL_INTERVAL=15
-          elapsed=0
-
-          while [[ $elapsed -lt $MAX_WAIT ]]; do
-            all_stable=true
-            for svc in "${SERVICES[@]}"; do
-              svc_info=$(aws ecs describe-services \
-                --cluster "$CLUSTER" --services "$svc" --region "$AWS_REGION" \
-                --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
-                --output json)
-              active=$(echo "$svc_info" | jq -r '.active')
-              running=$(echo "$svc_info" | jq -r '.running')
-              desired=$(echo "$svc_info" | jq -r '.desired')
-              echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
-              if [[ "$active" != "1" || "$running" != "$desired" ]]; then
-                all_stable=false
-              fi
-            done
-
-            if $all_stable; then
-              echo "✅ All services stable!"
-              break
-            fi
-
-            sleep $POLL_INTERVAL
-            elapsed=$((elapsed + POLL_INTERVAL))
-          done
-
-          if [[ $elapsed -ge $MAX_WAIT ]]; then
-            echo "❌ Timed out after ${MAX_WAIT}s waiting for services to stabilize"
-            exit 1
-          fi
-          echo "Production deployment complete!"
-
-      # ── Smoke test ─────────────────────────────────────────────
-      - name: Run production smoke test
-        if: steps.callback_check.outputs.has_callback == 'false' && steps.alb.outputs.backend_url != 'http://localhost:8001'
-        env:
-          BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
-        run: |
-          echo "Running smoke tests against ${BACKEND_URL}"
-          sleep 30
-
-          # Test health endpoint
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${BACKEND_URL}/api/health" \
-            --max-time 30 --retry 3 --retry-delay 10 || echo "000")
-
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Health check passed"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
-
-          # Test frontend (use same base URL without /api)
-          FRONTEND_URL="${BACKEND_URL%/api*}"
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${FRONTEND_URL}/" \
-            --max-time 30 --retry 3 --retry-delay 10 || echo "000")
-
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Frontend accessible"
-          else
-            echo "❌ Frontend not accessible (HTTP $HTTP_CODE)"
-            exit 1
-          fi
-
       # ── Monitoring & Alerting ───────────────────────────────────
       - name: Setup monitoring (dashboard + alarms)
         env:
@@ -771,3 +668,124 @@ jobs:
             --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
             --region "$AWS_REGION"
           echo "Rollback complete."
+
+  # ─────────────────────────────────────────────────
+  # Post-deployment cleanup and smoke tests
+  # Runs ONCE after both services have deployed
+  # ─────────────────────────────────────────────────
+  cleanup-and-smoke:
+    name: Deployment Cleanup & Smoke Test
+    runs-on: ubuntu-latest
+    needs: deploy-prod
+    if: always() && needs.deploy-prod.result != 'skipped'
+    environment: production-post-deploy
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get deployment URL
+        id: alb
+        env:
+          CUSTOM_DOMAIN: ${{ secrets.PROD_DOMAIN || '' }}
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
+            --query "LoadBalancers[0].DNSName" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -n "$CUSTOM_DOMAIN" ]]; then
+            URL="https://${CUSTOM_DOMAIN}"
+          elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
+            URL="https://${ALB_DNS}"
+          else
+            URL="http://localhost:8001"
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for ECS services to stabilize
+        if: needs.deploy-prod.result == 'success'
+        run: |
+          echo "Waiting for ECS services to stabilize (up to 10 minutes)..."
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
+          SERVICES=(
+            "${PROJECT_NAME}-${ENVIRONMENT}-backend"
+            "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
+          )
+          MAX_WAIT=600
+          POLL_INTERVAL=15
+          elapsed=0
+
+          while [[ $elapsed -lt $MAX_WAIT ]]; do
+            all_stable=true
+            for svc in "${SERVICES[@]}"; do
+              svc_info=$(aws ecs describe-services \
+                --cluster "$CLUSTER" --services "$svc" --region "$AWS_REGION" \
+                --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
+                --output json)
+              active=$(echo "$svc_info" | jq -r '.active')
+              running=$(echo "$svc_info" | jq -r '.running')
+              desired=$(echo "$svc_info" | jq -r '.desired')
+              echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
+              if [[ "$active" != "1" || "$running" != "$desired" ]]; then
+                all_stable=false
+              fi
+            done
+
+            if $all_stable; then
+              echo "✅ All production services stable!"
+              break
+            fi
+
+            sleep $POLL_INTERVAL
+            elapsed=$((elapsed + POLL_INTERVAL))
+          done
+
+          if [[ $elapsed -ge $MAX_WAIT ]]; then
+            echo "❌ Timed out after ${MAX_WAIT}s waiting for production services to stabilize"
+            exit 1
+          fi
+
+      - name: Run smoke tests
+        if: needs.deploy-prod.result == 'success' && steps.alb.outputs.url != 'http://localhost:8001'
+        run: |
+          URL="${{ steps.alb.outputs.url }}"
+          echo "Running smoke tests against ${URL}"
+          sleep 15
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${URL}/api/health" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${URL}/" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Frontend check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Smoke test & cleanup summary
+        if: always()
+        run: |
+          DEPLOY_STATUS="${{ needs.deploy-prod.result }}"
+          echo "## Deployment Cleanup & Smoke Test" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${ENVIRONMENT}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deploy Result | \`${DEPLOY_STATUS}\` |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.alb.outputs.url }}" != "" && "${{ steps.alb.outputs.url }}" != "http://localhost:8001" ]]; then
+            echo "| App URL | ${{ steps.alb.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| API Health | ${{ steps.alb.outputs.url }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+          fi
