@@ -158,15 +158,33 @@ EXISTING_BACKEND_SVC=$(aws ecs describe-services \
     --region "$AWS_REGION" 2>/dev/null || echo "")
 
 if [[ -n "$EXISTING_BACKEND_SVC" && "$EXISTING_BACKEND_SVC" != "None" ]]; then
-    print_info "Updating existing backend service..."
-    aws ecs update-service \
-        --cluster "$ECS_CLUSTER_NAME" \
-        --service "$BACKEND_SERVICE_NAME" \
-        --task-definition "$BACKEND_TASK_FAMILY" \
-        --desired-count "$DESIRED_COUNT" \
-        --force-new-deployment \
-        --region "$AWS_REGION" --output text >/dev/null
-    print_success "Updated backend service: $BACKEND_SERVICE_NAME"
+    # Check deployment controller
+    CONTROLLER=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" --services "$BACKEND_SERVICE_NAME" \
+        --query "services[0].deploymentController.type" --output text --region "$AWS_REGION" 2>/dev/null || echo "ECS")
+
+    if [[ "$CONTROLLER" == "CODE_DEPLOY" ]]; then
+        print_info "Backend service already uses CODE_DEPLOY controller — skipping update"
+    else
+        print_info "Migrating backend service to CODE_DEPLOY controller..."
+        aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$BACKEND_SERVICE_NAME" \
+            --desired-count 0 --region "$AWS_REGION" --output text >/dev/null 2>&1 || true
+        aws ecs delete-service --cluster "$ECS_CLUSTER_NAME" --service "$BACKEND_SERVICE_NAME" \
+            --force --region "$AWS_REGION" --output text >/dev/null 2>&1 || true
+        sleep 15
+        aws ecs create-service \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --service-name "$BACKEND_SERVICE_NAME" \
+            --task-definition "$BACKEND_TASK_FAMILY" \
+            --desired-count "$DESIRED_COUNT" \
+            --launch-type FARGATE \
+            --deployment-controller type=CODE_DEPLOY \
+            --network-configuration "awsvpcConfiguration={subnets=[$PUBLIC_SUBNET_1_ID,$PUBLIC_SUBNET_2_ID],securityGroups=[$ECS_SG_ID],assignPublicIp=ENABLED}" \
+            --load-balancers "targetGroupArn=$BACKEND_TG_ARN,containerName=backend,containerPort=8001" \
+            --health-check-grace-period-seconds 120 \
+            --tags key=Project,value="$TAG_PROJECT" key=Environment,value="$TAG_ENVIRONMENT" \
+            --region "$AWS_REGION" --output text >/dev/null
+        print_success "Recreated backend service with CODE_DEPLOY controller"
+    fi
 else
     aws ecs create-service \
         --cluster "$ECS_CLUSTER_NAME" \
@@ -174,10 +192,10 @@ else
         --task-definition "$BACKEND_TASK_FAMILY" \
         --desired-count "$DESIRED_COUNT" \
         --launch-type FARGATE \
+        --deployment-controller type=CODE_DEPLOY \
         --network-configuration "awsvpcConfiguration={subnets=[$PUBLIC_SUBNET_1_ID,$PUBLIC_SUBNET_2_ID],securityGroups=[$ECS_SG_ID],assignPublicIp=ENABLED}" \
         --load-balancers "targetGroupArn=$BACKEND_TG_ARN,containerName=backend,containerPort=8001" \
         --health-check-grace-period-seconds 120 \
-        --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
         --tags key=Project,value="$TAG_PROJECT" key=Environment,value="$TAG_ENVIRONMENT" \
         --region "$AWS_REGION" --output text >/dev/null
     print_success "Created backend service: $BACKEND_SERVICE_NAME"
@@ -193,15 +211,33 @@ EXISTING_FRONTEND_SVC=$(aws ecs describe-services \
     --region "$AWS_REGION" 2>/dev/null || echo "")
 
 if [[ -n "$EXISTING_FRONTEND_SVC" && "$EXISTING_FRONTEND_SVC" != "None" ]]; then
-    print_info "Updating existing frontend service..."
-    aws ecs update-service \
-        --cluster "$ECS_CLUSTER_NAME" \
-        --service "$FRONTEND_SERVICE_NAME" \
-        --task-definition "$FRONTEND_TASK_FAMILY" \
-        --desired-count "$DESIRED_COUNT" \
-        --force-new-deployment \
-        --region "$AWS_REGION" --output text >/dev/null
-    print_success "Updated frontend service: $FRONTEND_SERVICE_NAME"
+    # Check deployment controller
+    CONTROLLER=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" --services "$FRONTEND_SERVICE_NAME" \
+        --query "services[0].deploymentController.type" --output text --region "$AWS_REGION" 2>/dev/null || echo "ECS")
+
+    if [[ "$CONTROLLER" == "CODE_DEPLOY" ]]; then
+        print_info "Frontend service already uses CODE_DEPLOY controller — skipping update"
+    else
+        print_info "Migrating frontend service to CODE_DEPLOY controller..."
+        aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$FRONTEND_SERVICE_NAME" \
+            --desired-count 0 --region "$AWS_REGION" --output text >/dev/null 2>&1 || true
+        aws ecs delete-service --cluster "$ECS_CLUSTER_NAME" --service "$FRONTEND_SERVICE_NAME" \
+            --force --region "$AWS_REGION" --output text >/dev/null 2>&1 || true
+        sleep 15
+        aws ecs create-service \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --service-name "$FRONTEND_SERVICE_NAME" \
+            --task-definition "$FRONTEND_TASK_FAMILY" \
+            --desired-count "$DESIRED_COUNT" \
+            --launch-type FARGATE \
+            --deployment-controller type=CODE_DEPLOY \
+            --network-configuration "awsvpcConfiguration={subnets=[$PUBLIC_SUBNET_1_ID,$PUBLIC_SUBNET_2_ID],securityGroups=[$ECS_SG_ID],assignPublicIp=ENABLED}" \
+            --load-balancers "targetGroupArn=$FRONTEND_TG_ARN,containerName=frontend,containerPort=8080" \
+            --health-check-grace-period-seconds 60 \
+            --tags key=Project,value="$TAG_PROJECT" key=Environment,value="$TAG_ENVIRONMENT" \
+            --region "$AWS_REGION" --output text >/dev/null
+        print_success "Recreated frontend service with CODE_DEPLOY controller"
+    fi
 else
     aws ecs create-service \
         --cluster "$ECS_CLUSTER_NAME" \
@@ -209,10 +245,10 @@ else
         --task-definition "$FRONTEND_TASK_FAMILY" \
         --desired-count "$DESIRED_COUNT" \
         --launch-type FARGATE \
+        --deployment-controller type=CODE_DEPLOY \
         --network-configuration "awsvpcConfiguration={subnets=[$PUBLIC_SUBNET_1_ID,$PUBLIC_SUBNET_2_ID],securityGroups=[$ECS_SG_ID],assignPublicIp=ENABLED}" \
         --load-balancers "targetGroupArn=$FRONTEND_TG_ARN,containerName=frontend,containerPort=8080" \
         --health-check-grace-period-seconds 60 \
-        --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
         --tags key=Project,value="$TAG_PROJECT" key=Environment,value="$TAG_ENVIRONMENT" \
         --region "$AWS_REGION" --output text >/dev/null
     print_success "Created frontend service: $FRONTEND_SERVICE_NAME"

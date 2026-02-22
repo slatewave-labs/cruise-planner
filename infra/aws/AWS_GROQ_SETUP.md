@@ -295,10 +295,28 @@ If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deploym
       "Action": [
         "ecs:UpdateService",
         "ecs:DescribeServices",
+        "ecs:DescribeTaskDefinition",
         "ecs:ListTasks",
         "ecs:DescribeTasks"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "CodeDeployBlueGreen",
+      "Effect": "Allow",
+      "Action": [
+        "codedeploy:CreateDeployment",
+        "codedeploy:GetDeployment",
+        "codedeploy:GetDeploymentGroup",
+        "codedeploy:GetApplication",
+        "codedeploy:ListDeployments",
+        "codedeploy:StopDeployment",
+        "codedeploy:RegisterApplicationRevision"
+      ],
+      "Resource": [
+        "arn:aws:codedeploy:*:*:application:shoreexplorer-*",
+        "arn:aws:codedeploy:*:*:deploymentgroup:shoreexplorer-*/*"
+      ]
     },
     {
       "Sid": "EventBridgeCallbackPermissions",
@@ -388,10 +406,28 @@ cat > /tmp/shoreexplorer-deployer-policy.json <<'EOF'
       "Action": [
         "ecs:UpdateService",
         "ecs:DescribeServices",
+        "ecs:DescribeTaskDefinition",
         "ecs:ListTasks",
         "ecs:DescribeTasks"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "CodeDeployBlueGreen",
+      "Effect": "Allow",
+      "Action": [
+        "codedeploy:CreateDeployment",
+        "codedeploy:GetDeployment",
+        "codedeploy:GetDeploymentGroup",
+        "codedeploy:GetApplication",
+        "codedeploy:ListDeployments",
+        "codedeploy:StopDeployment",
+        "codedeploy:RegisterApplicationRevision"
+      ],
+      "Resource": [
+        "arn:aws:codedeploy:*:*:application:shoreexplorer-*",
+        "arn:aws:codedeploy:*:*:deploymentgroup:shoreexplorer-*/*"
+      ]
     },
     {
       "Sid": "EventBridgeCallbackPermissions",
