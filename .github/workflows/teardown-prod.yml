@@ -67,6 +67,7 @@ jobs:
           echo "🗑️  Deleting ECS services..."
           CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
 
+          # Delete backend ECS service (frontend is on S3/CloudFront, but try to clean up legacy frontend service too)
           for SERVICE in "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend"; do
             # Scale to 0
             aws ecs update-service \
@@ -262,7 +263,79 @@ jobs:
             echo "  ✅ Deleted role: $ROLE"
           done
 
-      # ── 10. Delete DNS Record ───────────────────────────────────
+      # ── 10. Delete CloudFront Distribution ────────────────────────
+      - name: Delete CloudFront distribution
+        run: |
+          echo "🗑️  Deleting CloudFront distribution..."
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+
+          CF_DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].Id | [0]" \
+            --output text 2>/dev/null || echo "")
+
+          if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
+            # Get the current config to disable the distribution
+            ETAG=$(aws cloudfront get-distribution-config --id "$CF_DIST_ID" \
+              --query 'ETag' --output text)
+            CONFIG=$(aws cloudfront get-distribution-config --id "$CF_DIST_ID" \
+              --query 'DistributionConfig' --output json)
+
+            # Disable the distribution first (required before deletion)
+            DISABLED_CONFIG=$(echo "$CONFIG" | jq '.Enabled = false')
+            aws cloudfront update-distribution --id "$CF_DIST_ID" \
+              --distribution-config "$DISABLED_CONFIG" --if-match "$ETAG" \
+              --no-cli-pager >/dev/null 2>&1 || true
+            echo "  ⏳ Distribution disabled, waiting for propagation..."
+
+            # Wait for distribution to be deployed (disabled state)
+            for i in {1..60}; do
+              STATUS=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
+                --query 'Distribution.Status' --output text 2>/dev/null || echo "Unknown")
+              if [[ "$STATUS" == "Deployed" ]]; then
+                break
+              fi
+              echo "  ⏳ Waiting for distribution to finish deploying... ($i/60)"
+              sleep 30
+            done
+
+            # Delete the distribution
+            ETAG=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
+              --query 'ETag' --output text 2>/dev/null || echo "")
+            aws cloudfront delete-distribution --id "$CF_DIST_ID" --if-match "$ETAG" \
+              2>/dev/null || true
+            echo "  ✅ Deleted CloudFront distribution: $CF_DIST_ID"
+          else
+            echo "  ⏭️  CloudFront distribution not found — skipping"
+          fi
+
+          # Delete OAC
+          OAC_ID=$(aws cloudfront list-origin-access-controls \
+            --query "OriginAccessControlList.Items[?Name=='${APP_NAME}-frontend-oac'].Id | [0]" \
+            --output text 2>/dev/null || echo "")
+          if [[ -n "$OAC_ID" && "$OAC_ID" != "None" ]]; then
+            ETAG=$(aws cloudfront get-origin-access-control --id "$OAC_ID" \
+              --query 'ETag' --output text 2>/dev/null || echo "")
+            aws cloudfront delete-origin-access-control --id "$OAC_ID" --if-match "$ETAG" \
+              2>/dev/null || true
+            echo "  ✅ Deleted OAC: $OAC_ID"
+          fi
+
+      # ── 10b. Delete S3 Frontend Bucket ──────────────────────────
+      - name: Delete S3 frontend bucket
+        run: |
+          echo "🗑️  Deleting S3 frontend bucket..."
+          S3_BUCKET="${PROJECT_NAME}-${ENVIRONMENT}-frontend"
+
+          if aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
+            # Empty the bucket first (required before deletion)
+            aws s3 rm "s3://${S3_BUCKET}" --recursive --region "$AWS_REGION" 2>/dev/null || true
+            aws s3api delete-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted S3 bucket: $S3_BUCKET"
+          else
+            echo "  ⏭️  S3 bucket not found — skipping"
+          fi
+
+      # ── 11. Delete DNS Record ───────────────────────────────────
       - name: Delete DNS record
         env:
           PROD_DOMAIN: ${{ secrets.PROD_DOMAIN || '' }}
@@ -420,6 +493,7 @@ jobs:
       - name: Clean up ECR prod images
         run: |
           echo "🗑️  Cleaning up prod-tagged ECR images..."
+          # Only backend uses ECR now (frontend is on S3/CloudFront)
           for REPO in "${PROJECT_NAME}-backend" "${PROJECT_NAME}-frontend"; do
             # Find images tagged with prod- prefix
             PROD_IMAGES=$(aws ecr list-images --repository-name "$REPO" \
@@ -460,6 +534,8 @@ jobs:
           echo "| ALB & Target Groups | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
           echo "| ECS Cluster | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Task Definitions | 🗑️ Deregistered |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CloudFront Distribution | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| S3 Frontend Bucket | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
           echo "| CloudWatch Monitoring | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Log Groups | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
           echo "| DynamoDB Table | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"

@@ -1,32 +1,39 @@
 # AWS Deployment Guide — ShoreExplorer
 
-> Last updated: 2026-02-19
+> Last updated: 2026-02-22
 
 This guide covers deploying ShoreExplorer to AWS. The application uses **DynamoDB** (AWS-managed, serverless) for storage and **Groq** (Llama 3.3 70B) for AI plan generation.
 
 ## Architecture Overview
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│                     AWS Infrastructure                     │
-│                                                            │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │  Amazon ECS (Fargate)           ALB                  │ │
-│  │                                                      │ │
-│  │  ┌──────────────┐        ┌──────────────┐           │ │
-│  │  │   Frontend    │        │   Backend    │           │ │
-│  │  │  nginx (SPA)  │        │   FastAPI    │           │ │
-│  │  │  Port 8080    │        │  Port 8001   │           │ │
-│  │  └──────────────┘        └──────┬───────┘           │ │
-│  └──────────────────────────────────┼───────────────────┘ │
-│                                     │                      │
-│  ┌──────────────────────────────────┼───────────────────┐ │
-│  │  Amazon DynamoDB (on-demand)     │                   │ │
-│  │  Single table: shoreexplorer     │                   │ │
-│  └──────────────────────────────────┘                   │ │
-│                                                            │
-│  AWS Secrets Manager → GROQ_API_KEY                        │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      AWS Infrastructure                       │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  Amazon CloudFront (CDN)                              │    │
+│  │  ┌────────────────┐   ┌──────────────────────┐       │    │
+│  │  │  S3 Origin      │   │  ALB Origin (/api/*) │       │    │
+│  │  │  (Default: /*)  │   │                      │       │    │
+│  │  └──────┬─────────┘   └──────────┬───────────┘       │    │
+│  └─────────┼────────────────────────┼───────────────────┘    │
+│            │                        │                         │
+│  ┌─────────┴─────────┐   ┌─────────┴──────────────────┐     │
+│  │  S3 Bucket         │   │  ALB → ECS (Fargate)       │     │
+│  │  (React SPA)       │   │  ┌──────────────┐          │     │
+│  │  Static files      │   │  │   Backend    │          │     │
+│  └────────────────────┘   │  │   FastAPI    │          │     │
+│                           │  │  Port 8001   │          │     │
+│                           │  └──────┬───────┘          │     │
+│                           └─────────┼──────────────────┘     │
+│                                     │                         │
+│  ┌──────────────────────────────────┼───────────────────┐    │
+│  │  Amazon DynamoDB (on-demand)     │                   │    │
+│  │  Single table: shoreexplorer     │                   │    │
+│  └──────────────────────────────────┘                   │    │
+│                                                               │
+│  AWS Secrets Manager → GROQ_API_KEY                           │
+└───────────────────────────────────────────────────────────────┘
                          │
           ┌──────────────┼──────────────┐
           ▼              ▼              ▼
@@ -35,6 +42,23 @@ This guide covers deploying ShoreExplorer to AWS. The application uses **DynamoD
    │  (LLM)     │ │ (Weather)  │ │ (Tiles)  │
    └────────────┘ └────────────┘ └──────────┘
 ```
+
+### Frontend: S3 + CloudFront
+
+The React SPA is built as static files and deployed to an **S3 bucket**. A **CloudFront distribution** serves the content globally with:
+- **Default behavior (`/*`)**: Serves static files from S3
+- **Ordered behavior (`/api/*`)**: Proxies API requests to the ALB backend
+- **Custom error responses**: 403/404 → `/index.html` (SPA client-side routing)
+- **Origin Access Control (OAC)**: S3 bucket is not publicly accessible; only CloudFront can read it
+
+### Backend: ECS Fargate + ALB
+
+The FastAPI backend runs on ECS Fargate behind an ALB. CodeDeploy Blue/Green deployments provide zero-downtime updates.
+
+### Zero-Downtime Deployment
+
+- **Frontend**: Content-hashed assets (JS/CSS) uploaded to S3, then CloudFront invalidation for `/index.html` only. Old cached assets remain available until browsers fetch the new `index.html`.
+- **Backend**: CodeDeploy Blue/Green swaps traffic between two target groups.
 
 ## Prerequisites
 

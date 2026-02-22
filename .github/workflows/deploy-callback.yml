@@ -23,33 +23,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Check if all CodeDeploy deployments succeeded
+      - name: Check if backend CodeDeploy deployment succeeded
         id: stability
         env:
           PROJECT_NAME: shoreexplorer
           ENVIRONMENT: ${{ github.event.client_payload.environment }}
         run: |
-          # CodeDeploy fires one event per deployment group (backend + frontend).
-          # Only approve the gate when BOTH deployment groups have succeeded.
+          # Only backend uses CodeDeploy (frontend is deployed to S3/CloudFront).
+          # Approve the gate when the backend deployment group has succeeded.
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
           CODEDEPLOY_APP="${APP_NAME}-codedeploy"
           all_succeeded=true
 
-          for DG in "${APP_NAME}-backend-dg" "${APP_NAME}-frontend-dg"; do
-            DEPLOY_ID=$(aws deploy list-deployments \
-              --application-name "$CODEDEPLOY_APP" \
-              --deployment-group-name "$DG" \
-              --include-only-statuses "Succeeded" \
-              --query "deployments[0]" --output text \
-              --region "${{ secrets.AWS_REGION || 'us-east-1' }}" 2>/dev/null || echo "")
+          DG="${APP_NAME}-backend-dg"
+          DEPLOY_ID=$(aws deploy list-deployments \
+            --application-name "$CODEDEPLOY_APP" \
+            --deployment-group-name "$DG" \
+            --include-only-statuses "Succeeded" \
+            --query "deployments[0]" --output text \
+            --region "${{ secrets.AWS_REGION || 'us-east-1' }}" 2>/dev/null || echo "")
 
-            if [[ -z "$DEPLOY_ID" || "$DEPLOY_ID" == "None" ]]; then
-              echo "${DG}: ⏳ no successful deployment yet — waiting for next callback"
-              all_succeeded=false
-            else
-              echo "${DG}: ✅ latest deployment succeeded (${DEPLOY_ID})"
-            fi
-          done
+          if [[ -z "$DEPLOY_ID" || "$DEPLOY_ID" == "None" ]]; then
+            echo "${DG}: ⏳ no successful deployment yet — waiting for next callback"
+            all_succeeded=false
+          else
+            echo "${DG}: ✅ latest deployment succeeded (${DEPLOY_ID})"
+          fi
 
           echo "all_succeeded=${all_succeeded}" >> "$GITHUB_OUTPUT"
 
@@ -88,7 +87,7 @@ jobs:
                     run_id: run.id,
                     environment_ids: [gate.environment.id],
                     state: 'approved',
-                    comment: `CodeDeploy Blue/Green deployment for ${environment} succeeded (both backend and frontend).`,
+                    comment: `CodeDeploy Blue/Green deployment for ${environment} backend succeeded. Frontend deployed to S3/CloudFront.`,
                   });
                   console.log(`✅ Approved deployment gate '${gateName}' for run #${run.id}`);
                   return;
