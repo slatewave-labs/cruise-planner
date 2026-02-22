@@ -115,6 +115,7 @@ You'll need this number later:
    - `SecretsManagerReadWrite`
    - `CloudWatchFullAccess`
    - `IAMFullAccess`  *(this grants broad permissions, including the EventBridge/IAM actions used by the async callback routine; if you instead build a custom least‑privilege policy make sure it allows **events:CreateConnection, events:CreateApiDestination, events:PutRule, events:PutTargets, iam:CreateRole, iam:PutRolePolicy**)*
+   - `AWSCodeDeployFullAccess`  *(required for Blue/Green deployments via CodeDeploy)*
    - `AmazonDynamoDBFullAccess`
 8. Click **"Next"**
 9. Click **"Create user"**

@@ -288,6 +288,19 @@ jobs:
           aws iam put-role-policy --role-name "$TASK_ROLE" --policy-name "${APP_NAME}-dynamodb-access" \
             --policy-document file:///tmp/task-policy.json 2>/dev/null || true
 
+          # CodeDeploy service role (for Blue/Green ECS deployments)
+          CODEDEPLOY_ROLE="${APP_NAME}-codedeploy-role"
+          CODEDEPLOY_TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"codedeploy.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+          if aws iam get-role --role-name "$CODEDEPLOY_ROLE" &>/dev/null; then
+            echo "  ⏭️  Role exists: $CODEDEPLOY_ROLE"
+          else
+            aws iam create-role --role-name "$CODEDEPLOY_ROLE" --assume-role-policy-document "$CODEDEPLOY_TRUST" \
+              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" --no-cli-pager >/dev/null
+            aws iam attach-role-policy --role-name "$CODEDEPLOY_ROLE" \
+              --policy-arn "arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS"
+            echo "  ✅ Created role: $CODEDEPLOY_ROLE"
+          fi
+
       # ── 5. DynamoDB Table ───────────────────────────────────────
       - name: Create DynamoDB table
         run: |
@@ -404,6 +417,10 @@ jobs:
           BACKEND_TG_ARN=$(create_tg "${APP_NAME}-backend-tg" 8001 "/api/health")
           FRONTEND_TG_ARN=$(create_tg "${APP_NAME}-frontend-tg" 8080 "/")
 
+          # Green target groups for CodeDeploy Blue/Green deployments
+          BACKEND_GREEN_TG_ARN=$(create_tg "${APP_NAME}-be-green-tg" 8001 "/api/health")
+          FRONTEND_GREEN_TG_ARN=$(create_tg "${APP_NAME}-fe-green-tg" 8080 "/")
+
           # HTTP Listener (port 80) — will be converted to redirect later if HTTPS is set up
           LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
             --query "Listeners[?Port==\`80\`].ListenerArn" --output text \
@@ -440,6 +457,8 @@ jobs:
           echo "alb_dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
           echo "backend_tg_arn=${BACKEND_TG_ARN}" >> "$GITHUB_OUTPUT"
           echo "frontend_tg_arn=${FRONTEND_TG_ARN}" >> "$GITHUB_OUTPUT"
+          echo "backend_green_tg_arn=${BACKEND_GREEN_TG_ARN}" >> "$GITHUB_OUTPUT"
+          echo "frontend_green_tg_arn=${FRONTEND_GREEN_TG_ARN}" >> "$GITHUB_OUTPUT"
           echo "listener_arn=${LISTENER_ARN}" >> "$GITHUB_OUTPUT"
 
       # ── 8. HTTPS Setup ──────────────────────────────────────────
@@ -457,6 +476,7 @@ jobs:
           if [[ -z "$TEST_DOMAIN" ]]; then
             echo "  ⏭️  TEST_DOMAIN not set — skipping HTTPS"
             echo "backend_url=http://${{ steps.alb.outputs.alb_dns }}" >> "$GITHUB_OUTPUT"
+            echo "prod_listener_arn=${LISTENER_ARN}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -518,6 +538,7 @@ jobs:
           fi
 
           echo "backend_url=https://${FULL_DOMAIN}" >> "$GITHUB_OUTPUT"
+          echo "prod_listener_arn=${HTTPS_LISTENER}" >> "$GITHUB_OUTPUT"
 
       # ── 9. DNS Setup ────────────────────────────────────────────
       - name: Setup DNS
@@ -704,7 +725,7 @@ jobs:
             --region "$AWS_REGION" --no-cli-pager >/dev/null
           echo "✅ Registered frontend task definition"
 
-      # ── 12. Create/Update ECS Services ──────────────────────────
+      # ── 12. Create/Update ECS Services (Blue/Green via CodeDeploy) ──
       - name: Create or update ECS services
         run: |
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
@@ -715,49 +736,137 @@ jobs:
           BACKEND_TG="${{ steps.alb.outputs.backend_tg_arn }}"
           FRONTEND_TG="${{ steps.alb.outputs.frontend_tg_arn }}"
 
-          # Backend service
-          EXISTING=$(aws ecs describe-services --cluster "$CLUSTER" --services "${APP_NAME}-backend" \
-            --query "services[?status=='ACTIVE'].serviceName" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
+          # Helper: create or migrate an ECS service to CODE_DEPLOY controller
+          create_or_migrate_service() {
+            local SVC_NAME="$1" TASK_FAMILY="$2" TG_ARN="$3"
+            local CONTAINER_NAME="$4" CONTAINER_PORT="$5" GRACE="$6"
 
-          if [[ -n "$EXISTING" && "$EXISTING" != "None" ]]; then
-            aws ecs update-service --cluster "$CLUSTER" --service "${APP_NAME}-backend" \
-              --task-definition "${APP_NAME}-backend-task" --desired-count 1 --force-new-deployment \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "✅ Updated backend service"
-          else
-            aws ecs create-service --cluster "$CLUSTER" --service-name "${APP_NAME}-backend" \
-              --task-definition "${APP_NAME}-backend-task" --desired-count 1 --launch-type FARGATE \
+            EXISTING=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SVC_NAME" \
+              --query "services[?status=='ACTIVE'].serviceName" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            if [[ -n "$EXISTING" && "$EXISTING" != "None" ]]; then
+              # Check if service already uses CODE_DEPLOY controller
+              CONTROLLER=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SVC_NAME" \
+                --query "services[0].deploymentController.type" --output text \
+                --region "$AWS_REGION" 2>/dev/null || echo "ECS")
+
+              if [[ "$CONTROLLER" == "CODE_DEPLOY" ]]; then
+                echo "  ⏭️  ${SVC_NAME} already uses CODE_DEPLOY controller"
+                return 0
+              fi
+
+              # Migrate from ECS rolling to CODE_DEPLOY (requires service recreation)
+              echo "  🔄 Migrating ${SVC_NAME} to CODE_DEPLOY controller..."
+              aws ecs update-service --cluster "$CLUSTER" --service "$SVC_NAME" \
+                --desired-count 0 --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+              aws ecs delete-service --cluster "$CLUSTER" --service "$SVC_NAME" \
+                --force --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+              # Brief wait for service deletion to propagate
+              sleep 15
+            fi
+
+            aws ecs create-service --cluster "$CLUSTER" --service-name "$SVC_NAME" \
+              --task-definition "$TASK_FAMILY" --desired-count 1 --launch-type FARGATE \
+              --deployment-controller type=CODE_DEPLOY \
               --network-configuration "awsvpcConfiguration={subnets=[$PUB1,$PUB2],securityGroups=[$ECS_SG],assignPublicIp=ENABLED}" \
-              --load-balancers "targetGroupArn=$BACKEND_TG,containerName=backend,containerPort=8001" \
-              --health-check-grace-period-seconds 120 \
-              --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
+              --load-balancers "targetGroupArn=${TG_ARN},containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT}" \
+              --health-check-grace-period-seconds "$GRACE" \
               --tags key=Project,value="$PROJECT_NAME" key=Environment,value="$ENVIRONMENT" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "✅ Created backend service"
+            echo "  ✅ Created ${SVC_NAME} with CODE_DEPLOY controller"
+          }
+
+          create_or_migrate_service "${APP_NAME}-backend"  "${APP_NAME}-backend-task"  "$BACKEND_TG"  "backend"  8001 120
+          create_or_migrate_service "${APP_NAME}-frontend" "${APP_NAME}-frontend-task" "$FRONTEND_TG" "frontend" 8080 60
+
+      # ── 12b. CodeDeploy Application & Deployment Groups ──────────
+      - name: Create CodeDeploy application and deployment groups
+        run: |
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
+          CODEDEPLOY_ROLE_ARN=$(aws iam get-role --role-name "${APP_NAME}-codedeploy-role" \
+            --query 'Role.Arn' --output text --region "$AWS_REGION")
+
+          # Determine production traffic listener (HTTPS if available, else HTTP)
+          PROD_LISTENER="${{ steps.https.outputs.prod_listener_arn }}"
+          if [[ -z "$PROD_LISTENER" || "$PROD_LISTENER" == "None" ]]; then
+            PROD_LISTENER="${{ steps.alb.outputs.listener_arn }}"
           fi
 
-          # Frontend service
-          EXISTING=$(aws ecs describe-services --cluster "$CLUSTER" --services "${APP_NAME}-frontend" \
-            --query "services[?status=='ACTIVE'].serviceName" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          if [[ -n "$EXISTING" && "$EXISTING" != "None" ]]; then
-            aws ecs update-service --cluster "$CLUSTER" --service "${APP_NAME}-frontend" \
-              --task-definition "${APP_NAME}-frontend-task" --desired-count 1 --force-new-deployment \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "✅ Updated frontend service"
+          # Create CodeDeploy application (ECS compute platform)
+          if aws deploy get-application --application-name "$CODEDEPLOY_APP" \
+               --region "$AWS_REGION" &>/dev/null; then
+            echo "  ⏭️  CodeDeploy application exists: $CODEDEPLOY_APP"
           else
-            aws ecs create-service --cluster "$CLUSTER" --service-name "${APP_NAME}-frontend" \
-              --task-definition "${APP_NAME}-frontend-task" --desired-count 1 --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$PUB1,$PUB2],securityGroups=[$ECS_SG],assignPublicIp=ENABLED}" \
-              --load-balancers "targetGroupArn=$FRONTEND_TG,containerName=frontend,containerPort=8080" \
-              --health-check-grace-period-seconds 60 \
-              --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
-              --tags key=Project,value="$PROJECT_NAME" key=Environment,value="$ENVIRONMENT" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "✅ Created frontend service"
+            aws deploy create-application --application-name "$CODEDEPLOY_APP" \
+              --compute-platform ECS --region "$AWS_REGION" --no-cli-pager >/dev/null
+            echo "  ✅ Created CodeDeploy application: $CODEDEPLOY_APP"
           fi
+
+          # Helper: create or update a CodeDeploy deployment group
+          create_or_update_dg() {
+            local DG_NAME="$1" SVC_NAME="$2" BLUE_TG="$3" GREEN_TG="$4"
+
+            LOAD_BALANCER_INFO=$(cat <<EOF
+          {
+            "targetGroupPairInfoList": [{
+              "targetGroups": [
+                {"name": "${BLUE_TG}"},
+                {"name": "${GREEN_TG}"}
+              ],
+              "prodTrafficRoute": {
+                "listenerArns": ["${PROD_LISTENER}"]
+              }
+            }]
+          }
+          EOF
+          )
+
+            BG_CONFIG=$(cat <<EOF
+          {
+            "terminateBlueInstancesOnDeploymentSuccess": {
+              "action": "TERMINATE",
+              "terminationWaitTimeInMinutes": 5
+            },
+            "deploymentReadyOption": {
+              "actionOnTimeout": "CONTINUE_DEPLOYMENT",
+              "waitTimeInMinutes": 0
+            }
+          }
+          EOF
+          )
+
+            if aws deploy get-deployment-group --application-name "$CODEDEPLOY_APP" \
+                 --deployment-group-name "$DG_NAME" --region "$AWS_REGION" &>/dev/null; then
+              aws deploy update-deployment-group \
+                --application-name "$CODEDEPLOY_APP" \
+                --current-deployment-group-name "$DG_NAME" \
+                --service-role-arn "$CODEDEPLOY_ROLE_ARN" \
+                --ecs-services "clusterName=${APP_NAME}-cluster,serviceName=${SVC_NAME}" \
+                --load-balancer-info "$LOAD_BALANCER_INFO" \
+                --blue-green-deployment-configuration "$BG_CONFIG" \
+                --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
+                --auto-rollback-configuration "enabled=true,events=DEPLOYMENT_FAILURE" \
+                --region "$AWS_REGION" --no-cli-pager >/dev/null
+              echo "  ⏭️  Updated deployment group: $DG_NAME"
+            else
+              aws deploy create-deployment-group \
+                --application-name "$CODEDEPLOY_APP" \
+                --deployment-group-name "$DG_NAME" \
+                --service-role-arn "$CODEDEPLOY_ROLE_ARN" \
+                --ecs-services "clusterName=${APP_NAME}-cluster,serviceName=${SVC_NAME}" \
+                --load-balancer-info "$LOAD_BALANCER_INFO" \
+                --blue-green-deployment-configuration "$BG_CONFIG" \
+                --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
+                --auto-rollback-configuration "enabled=true,events=DEPLOYMENT_FAILURE" \
+                --region "$AWS_REGION" --no-cli-pager >/dev/null
+              echo "  ✅ Created deployment group: $DG_NAME"
+            fi
+          }
+
+          create_or_update_dg "${APP_NAME}-backend-dg"  "${APP_NAME}-backend"  "${APP_NAME}-backend-tg"  "${APP_NAME}-be-green-tg"
+          create_or_update_dg "${APP_NAME}-frontend-dg" "${APP_NAME}-frontend" "${APP_NAME}-frontend-tg" "${APP_NAME}-fe-green-tg"
 
       # ── 13. Async Deployment Callback (LEAN WAIT) ───────────────
       - name: Provision async deployment callback infrastructure
@@ -846,25 +955,36 @@ jobs:
           fi
           ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
 
-          # 4. Rule (Listen for SUCCESS)
-          aws events put-rule --name "${APP_NAME}-ecs-success-rule" \
-            --event-pattern "{\"source\":[\"aws.ecs\"],\"detail-type\":[\"ECS Service Action\"],\"detail\":{\"clusterArn\":[\"arn:aws:ecs:${AWS_REGION}:${{ steps.vars.outputs.account_id }}:cluster/${APP_NAME}-cluster\"],\"eventName\":[\"SERVICE_STEADY_STATE\"]}}" \
+          # 4. Rule (Listen for CodeDeploy SUCCESS)
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
+          aws events put-rule --name "${APP_NAME}-codedeploy-success-rule" \
+            --event-pattern "{\"source\":[\"aws.codedeploy\"],\"detail-type\":[\"CodeDeploy Deployment State-change Notification\"],\"detail\":{\"application\":[\"${CODEDEPLOY_APP}\"],\"state\":[\"SUCCESS\"]}}" \
             --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
           
-          aws events put-targets --rule "${APP_NAME}-ecs-success-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubSuccessDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"environment\":\"$.detail.clusterArn\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"ecs_deploy_success\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"status\\\": \\\"stable\\\"}}\"}}]" \
+          aws events put-targets --rule "${APP_NAME}-codedeploy-success-rule" --region "$AWS_REGION" \
+            --targets "[{\"Id\":\"GitHubSuccessDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_success\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": \\\"<dg>\\\", \\\"status\\\": \\\"success\\\"}}\"}}]" \
             --no-cli-pager >/dev/null
-          echo "  ✅ Configured Success Callback Route"
+          echo "  ✅ Configured CodeDeploy Success Callback Route"
 
-          # 5. Rule (Listen for FAILURE)
-          aws events put-rule --name "${APP_NAME}-ecs-failure-rule" \
-            --event-pattern "{\"source\":[\"aws.ecs\"],\"detail-type\":[\"ECS Service Action\"],\"detail\":{\"clusterArn\":[\"arn:aws:ecs:${AWS_REGION}:${{ steps.vars.outputs.account_id }}:cluster/${APP_NAME}-cluster\"],\"eventName\":[\"SERVICE_DEPLOYMENT_FAILED\"]}}" \
+          # 5. Rule (Listen for CodeDeploy FAILURE / STOP)
+          aws events put-rule --name "${APP_NAME}-codedeploy-failure-rule" \
+            --event-pattern "{\"source\":[\"aws.codedeploy\"],\"detail-type\":[\"CodeDeploy Deployment State-change Notification\"],\"detail\":{\"application\":[\"${CODEDEPLOY_APP}\"],\"state\":[\"FAILURE\",\"STOP\"]}}" \
             --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
           
-          aws events put-targets --rule "${APP_NAME}-ecs-failure-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubFailureDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"environment\":\"$.detail.clusterArn\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"ecs_deploy_failed\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"status\\\": \\\"failed\\\"}}\"}}]" \
+          aws events put-targets --rule "${APP_NAME}-codedeploy-failure-rule" --region "$AWS_REGION" \
+            --targets "[{\"Id\":\"GitHubFailureDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_failed\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": \\\"<dg>\\\", \\\"status\\\": \\\"failed\\\"}}\"}}]" \
             --no-cli-pager >/dev/null
-          echo "  ✅ Configured Failure Callback Route"
+          echo "  ✅ Configured CodeDeploy Failure Callback Route"
+
+          # 6. Clean up old ECS-based callback rules (if they exist)
+          aws events remove-targets --rule "${APP_NAME}-ecs-success-rule" --ids "GitHubSuccessDispatch" \
+            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+          aws events delete-rule --name "${APP_NAME}-ecs-success-rule" \
+            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+          aws events remove-targets --rule "${APP_NAME}-ecs-failure-rule" --ids "GitHubFailureDispatch" \
+            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+          aws events delete-rule --name "${APP_NAME}-ecs-failure-rule" \
+            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
 
       # ── 14. Monitoring ──────────────────────────────────────────
       - name: Setup monitoring
@@ -934,48 +1054,9 @@ jobs:
           fi
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for ECS services to stabilize
-        if: needs.setup-and-deploy-test.result == 'success'
-        run: |
-          echo "Waiting for ECS services to stabilize (up to 10 minutes)..."
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-          SERVICES=(
-            "${PROJECT_NAME}-${ENVIRONMENT}-backend"
-            "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
-          )
-          MAX_WAIT=600
-          POLL_INTERVAL=15
-          elapsed=0
-
-          while [[ $elapsed -lt $MAX_WAIT ]]; do
-            all_stable=true
-            for svc in "${SERVICES[@]}"; do
-              svc_info=$(aws ecs describe-services \
-                --cluster "$CLUSTER" --services "$svc" --region "$AWS_REGION" \
-                --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
-                --output json)
-              active=$(echo "$svc_info" | jq -r '.active')
-              running=$(echo "$svc_info" | jq -r '.running')
-              desired=$(echo "$svc_info" | jq -r '.desired')
-              echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
-              if [[ "$active" != "1" || "$running" != "$desired" ]]; then
-                all_stable=false
-              fi
-            done
-
-            if $all_stable; then
-              echo "✅ All services stable!"
-              break
-            fi
-
-            sleep $POLL_INTERVAL
-            elapsed=$((elapsed + POLL_INTERVAL))
-          done
-
-          if [[ $elapsed -ge $MAX_WAIT ]]; then
-            echo "❌ Timed out after ${MAX_WAIT}s waiting for services to stabilize"
-            exit 1
-          fi
+      # NOTE: No ECS polling needed — the environment gate (test-post-deploy)
+      # holds this job until the CodeDeploy callback approves it, meaning
+      # services are already stable when this job starts running.
 
       - name: Run smoke tests
         if: needs.setup-and-deploy-test.result == 'success' && steps.alb.outputs.url != 'http://localhost:8001'

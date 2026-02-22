@@ -2,7 +2,7 @@ name: Deployment Cleanup & Smoke Test
 
 on:
   repository_dispatch:
-    types: [ecs_deploy_success, ecs_deploy_failed]
+    types: [codedeploy_deploy_success, codedeploy_deploy_failed]
 
 permissions:
   contents: read
@@ -13,7 +13,7 @@ jobs:
   gate-approval:
     name: Approve Deployment Gate
     runs-on: ubuntu-latest
-    if: github.event.action == 'ecs_deploy_success'
+    if: github.event.action == 'codedeploy_deploy_success'
 
     steps:
       - name: Configure AWS credentials
@@ -23,35 +23,38 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Check if both ECS services are stable
+      - name: Check if all CodeDeploy deployments succeeded
         id: stability
         env:
           PROJECT_NAME: shoreexplorer
           ENVIRONMENT: ${{ github.event.client_payload.environment }}
         run: |
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-          SERVICES=("${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend")
-          all_stable=true
+          # CodeDeploy fires one event per deployment group (backend + frontend).
+          # Only approve the gate when BOTH deployment groups have succeeded.
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
+          all_succeeded=true
 
-          for svc in "${SERVICES[@]}"; do
-            svc_info=$(aws ecs describe-services \
-              --cluster "$CLUSTER" --services "$svc" \
-              --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
-              --output json 2>/dev/null || echo '{"active":0,"running":0,"desired":1}')
-            active=$(echo "$svc_info" | jq -r '.active')
-            running=$(echo "$svc_info" | jq -r '.running')
-            desired=$(echo "$svc_info" | jq -r '.desired')
-            echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
-            if [[ "$active" != "1" || "$running" != "$desired" ]]; then
-              all_stable=false
-              echo "  ⏳ ${svc} is not yet stable — waiting for next callback"
+          for DG in "${APP_NAME}-backend-dg" "${APP_NAME}-frontend-dg"; do
+            DEPLOY_ID=$(aws deploy list-deployments \
+              --application-name "$CODEDEPLOY_APP" \
+              --deployment-group-name "$DG" \
+              --include-only-statuses "Succeeded" \
+              --query "deployments[0]" --output text \
+              --region "${{ secrets.AWS_REGION || 'us-east-1' }}" 2>/dev/null || echo "")
+
+            if [[ -z "$DEPLOY_ID" || "$DEPLOY_ID" == "None" ]]; then
+              echo "${DG}: ⏳ no successful deployment yet — waiting for next callback"
+              all_succeeded=false
+            else
+              echo "${DG}: ✅ latest deployment succeeded (${DEPLOY_ID})"
             fi
           done
 
-          echo "all_stable=${all_stable}" >> "$GITHUB_OUTPUT"
+          echo "all_succeeded=${all_succeeded}" >> "$GITHUB_OUTPUT"
 
-      - name: Approve deployment gate (both services stable)
-        if: steps.stability.outputs.all_stable == 'true'
+      - name: Approve deployment gate (both services deployed)
+        if: steps.stability.outputs.all_succeeded == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GH_CALLBACK_TOKEN || secrets.GITHUB_TOKEN }}
@@ -85,7 +88,7 @@ jobs:
                     run_id: run.id,
                     environment_ids: [gate.environment.id],
                     state: 'approved',
-                    comment: `ECS deployment for ${environment} is fully stable (both backend and frontend).`,
+                    comment: `CodeDeploy Blue/Green deployment for ${environment} succeeded (both backend and frontend).`,
                   });
                   console.log(`✅ Approved deployment gate '${gateName}' for run #${run.id}`);
                   return;
@@ -95,12 +98,12 @@ jobs:
               }
             }
 
-            console.log(`ℹ️  No waiting runs found for environment '${gateName}' — the cleanup job may have already started via polling.`);
+            console.log(`ℹ️  No waiting runs found for environment '${gateName}'.`);
 
   handle-failure:
     name: Handle Deployment Failure
     runs-on: ubuntu-latest
-    if: github.event.action == 'ecs_deploy_failed'
+    if: github.event.action == 'codedeploy_deploy_failed'
 
     steps:
       - name: Reject deployment gate
@@ -134,7 +137,7 @@ jobs:
                     run_id: run.id,
                     environment_ids: [gate.environment.id],
                     state: 'rejected',
-                    comment: `ECS deployment for ${environment} failed to stabilize in AWS.`,
+                    comment: `CodeDeploy deployment for ${environment} failed. Deployment group: ${context.payload.client_payload.deployment_group || 'unknown'}.`,
                   });
                   console.log(`❌ Rejected deployment gate '${gateName}' for run #${run.id}`);
                   return;
@@ -148,6 +151,6 @@ jobs:
 
       - name: Notify failure
         run: |
-          echo "❌ Deployment for ${{ github.event.client_payload.environment }} failed to stabilize in AWS."
+          echo "❌ CodeDeploy deployment for ${{ github.event.client_payload.environment }} failed."
+          echo "   Deployment group: ${{ github.event.client_payload.deployment_group || 'unknown' }}"
           exit 1
-

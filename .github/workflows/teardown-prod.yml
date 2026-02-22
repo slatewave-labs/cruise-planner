@@ -39,7 +39,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ── 1. Delete ECS Services ──────────────────────────────────
+      # ── 1. Delete CodeDeploy Resources ────────────────────────────
+      - name: Delete CodeDeploy resources
+        run: |
+          echo "🗑️  Deleting CodeDeploy resources..."
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
+
+          # Delete deployment groups first
+          for DG in "${APP_NAME}-backend-dg" "${APP_NAME}-frontend-dg"; do
+            aws deploy delete-deployment-group \
+              --application-name "$CODEDEPLOY_APP" \
+              --deployment-group-name "$DG" \
+              --region "$AWS_REGION" 2>/dev/null || true
+            echo "  ✅ Deleted deployment group: $DG"
+          done
+
+          # Delete application
+          aws deploy delete-application \
+            --application-name "$CODEDEPLOY_APP" \
+            --region "$AWS_REGION" 2>/dev/null || true
+          echo "  ✅ Deleted CodeDeploy application: $CODEDEPLOY_APP"
+
+      # ── 2. Delete ECS Services ──────────────────────────────────
       - name: Delete ECS services
         run: |
           echo "🗑️  Deleting ECS services..."
@@ -98,8 +120,8 @@ jobs:
             echo "  ⏭️  ALB not found — skipping"
           fi
 
-          # Delete target groups
-          for TG_NAME in "${PROJECT_NAME}-${ENVIRONMENT}-backend-tg" "${PROJECT_NAME}-${ENVIRONMENT}-frontend-tg"; do
+          # Delete target groups (including green TGs for CodeDeploy Blue/Green)
+          for TG_NAME in "${PROJECT_NAME}-${ENVIRONMENT}-backend-tg" "${PROJECT_NAME}-${ENVIRONMENT}-frontend-tg" "${PROJECT_NAME}-${ENVIRONMENT}-be-green-tg" "${PROJECT_NAME}-${ENVIRONMENT}-fe-green-tg"; do
             TG_ARN=$(aws elbv2 describe-target-groups --names "$TG_NAME" \
               --query "TargetGroups[0].TargetGroupArn" --output text \
               --region "$AWS_REGION" 2>/dev/null || echo "None")
@@ -221,7 +243,7 @@ jobs:
       - name: Delete IAM roles
         run: |
           echo "🗑️  Deleting IAM roles..."
-          for ROLE in "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role"; do
+          for ROLE in "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role" "${PROJECT_NAME}-${ENVIRONMENT}-codedeploy-role"; do
             # Detach managed policies
             POLICIES=$(aws iam list-attached-role-policies --role-name "$ROLE" \
               --query "AttachedPolicies[].PolicyArn" --output text 2>/dev/null || echo "")

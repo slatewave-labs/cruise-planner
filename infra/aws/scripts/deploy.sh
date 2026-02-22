@@ -170,73 +170,82 @@ EOF
     print_success "Registered frontend task definition: $FRONTEND_TASK_FAMILY"
     
     # ---------------------------------------------------------------------------
-    # Force new deployment of backend
+    # Deploy via CodeDeploy Blue/Green
     # ---------------------------------------------------------------------------
-    print_info "Deploying backend..."
-    aws ecs update-service \
-        --cluster "$ECS_CLUSTER_NAME" \
-        --service "$BACKEND_SERVICE_NAME" \
-        --task-definition "$BACKEND_TASK_FAMILY" \
-        --force-new-deployment \
-        --region "$AWS_REGION" --output text >/dev/null
+    CODEDEPLOY_APP="${APP_NAME}-codedeploy"
 
-    print_success "Backend deployment started"
+    deploy_via_codedeploy() {
+        local DG_NAME="$1" TASK_FAMILY="$2" CONTAINER_NAME="$3" CONTAINER_PORT="$4"
+        local TASK_DEF_ARN
 
-    # ---------------------------------------------------------------------------
-    # Ensure ECS security group allows port 8080 from ALB
-    # (handles environments originally provisioned with port 80)
-    # ---------------------------------------------------------------------------
-    NETWORKING_FILE="$SCRIPT_DIR/.networking-outputs-${ENVIRONMENT}.env"
-    if [[ -f "$NETWORKING_FILE" ]]; then
-        source "$NETWORKING_FILE"
-        aws ec2 authorize-security-group-ingress \
-            --group-id "$ECS_SG_ID" \
-            --protocol tcp --port 8080 --source-group "$ALB_SG_ID" \
-            --region "$AWS_REGION" 2>/dev/null || true
-        print_success "ECS security group allows port 8080 from ALB"
-    fi
+        TASK_DEF_ARN=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition.taskDefinitionArn' --output text \
+            --region "$AWS_REGION")
 
-    # ---------------------------------------------------------------------------
-    # Force new deployment of frontend
-    # (includes --load-balancers to migrate containerPort 80 → 8080)
-    # ---------------------------------------------------------------------------
-    print_info "Deploying frontend..."
+        APPSPEC=$(cat <<EOF
+{
+  "version": 0.0,
+  "Resources": [{
+    "TargetService": {
+      "Type": "AWS::ECS::Service",
+      "Properties": {
+        "TaskDefinition": "${TASK_DEF_ARN}",
+        "LoadBalancerInfo": {
+          "ContainerName": "${CONTAINER_NAME}",
+          "ContainerPort": ${CONTAINER_PORT}
+        }
+      }
+    }
+  }]
+}
+EOF
+)
 
-    FRONTEND_TG_ARN=$(aws ecs describe-services \
-        --cluster "$ECS_CLUSTER_NAME" \
-        --services "$FRONTEND_SERVICE_NAME" \
-        --query 'services[0].loadBalancers[0].targetGroupArn' \
-        --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+        aws deploy create-deployment \
+            --application-name "$CODEDEPLOY_APP" \
+            --deployment-group-name "$DG_NAME" \
+            --revision "revisionType=AppSpecContent,appSpecContent={content='$(echo "$APPSPEC" | jq -c .)'}" \
+            --description "Local deploy: $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --region "$AWS_REGION" --output text >/dev/null
+    }
 
-    FRONTEND_UPDATE_ARGS=(
-        --cluster "$ECS_CLUSTER_NAME"
-        --service "$FRONTEND_SERVICE_NAME"
-        --task-definition "$FRONTEND_TASK_FAMILY"
-        --force-new-deployment
-        --region "$AWS_REGION" --output text
-    )
+    print_info "Deploying backend via CodeDeploy..."
+    deploy_via_codedeploy "${APP_NAME}-backend-dg" "$BACKEND_TASK_FAMILY" "backend" 8001
+    print_success "Backend CodeDeploy deployment started"
 
-    if [[ -n "$FRONTEND_TG_ARN" && "$FRONTEND_TG_ARN" != "None" ]]; then
-        FRONTEND_UPDATE_ARGS+=(--load-balancers "targetGroupArn=${FRONTEND_TG_ARN},containerName=frontend,containerPort=8080")
-    fi
-
-    aws ecs update-service "${FRONTEND_UPDATE_ARGS[@]}" >/dev/null
-
-    print_success "Frontend deployment started"
+    print_info "Deploying frontend via CodeDeploy..."
+    deploy_via_codedeploy "${APP_NAME}-frontend-dg" "$FRONTEND_TASK_FAMILY" "frontend" 8080
+    print_success "Frontend CodeDeploy deployment started"
 fi
 
 # ---------------------------------------------------------------------------
-# Wait for services to stabilize (optional)
+# Wait for CodeDeploy deployments to complete (optional)
 # ---------------------------------------------------------------------------
 if [[ "${WAIT_FOR_STABLE:-true}" == "true" ]]; then
-    print_info "Waiting for services to stabilize (this can take 3-5 minutes)..."
+    print_info "Waiting for CodeDeploy deployments to complete (this can take 3-5 minutes)..."
 
-    aws ecs wait services-stable \
-        --cluster "$ECS_CLUSTER_NAME" \
-        --services "$BACKEND_SERVICE_NAME" "$FRONTEND_SERVICE_NAME" \
-        --region "$AWS_REGION" 2>/dev/null \
-        && print_success "All services are stable and healthy!" \
-        || print_error "Timeout waiting for services. Check logs for issues."
+    all_success=true
+    for DG in "${APP_NAME}-backend-dg" "${APP_NAME}-frontend-dg"; do
+        DEPLOY_ID=$(aws deploy list-deployments \
+            --application-name "$CODEDEPLOY_APP" \
+            --deployment-group-name "$DG" \
+            --query "deployments[0]" --output text \
+            --region "$AWS_REGION" 2>/dev/null || echo "")
+
+        if [[ -n "$DEPLOY_ID" && "$DEPLOY_ID" != "None" ]]; then
+            aws deploy wait deployment-successful --deployment-id "$DEPLOY_ID" \
+                --region "$AWS_REGION" 2>/dev/null \
+                && print_success "${DG}: deployment succeeded" \
+                || { print_error "${DG}: deployment failed"; all_success=false; }
+        fi
+    done
+
+    if $all_success; then
+        print_success "All CodeDeploy deployments completed successfully!"
+    else
+        print_error "One or more deployments failed. Check CodeDeploy console."
+    fi
 fi
 
 echo ""
