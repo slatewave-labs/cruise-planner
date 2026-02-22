@@ -34,13 +34,15 @@ This document describes the monitoring, dashboarding, and alerting infrastructur
 
 | Metric | Source | Dashboard Panel |
 |--------|--------|-----------------|
-| CPU utilization | ECS/Fargate | Backend & Frontend CPU |
-| Memory utilization | ECS/Fargate | Backend & Frontend Memory |
+| CPU utilization | ECS/Fargate | Backend CPU |
+| Memory utilization | ECS/Fargate | Backend Memory |
 | Request count | ALB | Request Count |
 | HTTP 5xx errors | ALB | 5xx Errors (Server) |
 | HTTP 4xx errors | ALB | 4xx Errors (Client) |
 | Target response time (p50/p95/p99) | ALB | Target Response Time |
 | Healthy/unhealthy host count | ALB target groups | Host Health |
+| CloudFront requests | CloudFront | Frontend Request Count |
+| CloudFront error rate | CloudFront | Frontend Error Rate |
 
 ### Application Metrics (custom — emitted by backend)
 
@@ -63,12 +65,9 @@ ECS task definitions by the deploy workflows).
 |-------|-----------|----------|
 | `*-backend-high-cpu` | CPU > 80% for 3 min | Warning |
 | `*-backend-high-memory` | Memory > 85% for 3 min | Warning |
-| `*-frontend-high-cpu` | CPU > 80% for 3 min | Warning |
-| `*-frontend-high-memory` | Memory > 85% for 3 min | Warning |
 | `*-alb-5xx-errors` | 5xx > 10 in 5 min | Critical |
 | `*-alb-high-latency` | Response time > 2s for 3 min | Warning |
 | `*-backend-unhealthy-hosts` | Unhealthy > 0 for 2 min | Critical |
-| `*-frontend-unhealthy-hosts` | Unhealthy > 0 for 2 min | Critical |
 | `*-api-5xx-spike` | App 5xx > 5 in 5 min | Critical |
 | `*-api-high-latency` | App p95 latency > 2s for 3 min | Warning |
 | `*-ai-generation-failures` | AI failures > 3 in 15 min | Warning |
