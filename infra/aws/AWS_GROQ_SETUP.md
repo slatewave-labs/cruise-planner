@@ -312,7 +312,8 @@ If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deploym
         "events:PutTargets",
         "iam:GetRole",
         "iam:CreateRole",
-        "iam:PutRolePolicy"
+        "iam:PutRolePolicy",
+        "iam:PutUserPolicy"
       ],
       "Resource": "*"
     },
@@ -391,7 +392,8 @@ cat > /tmp/shoreexplorer-deployer-policy.json <<'EOF'
         "events:PutTargets",
         "iam:GetRole",
         "iam:CreateRole",
-        "iam:PutRolePolicy"
+        "iam:PutRolePolicy",
+        "iam:PutUserPolicy"
       ],
       "Resource": "*"
     },
