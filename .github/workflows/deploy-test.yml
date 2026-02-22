@@ -372,8 +372,10 @@ jobs:
           # best-effort self-grant of EventBridge/IAM permissions
           if aws iam get-user &>/dev/null 2>&1; then
             USERNAME=$(aws iam get-user --query 'User.UserName' --output text)
-            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:CreateApiDestination","events:DescribeApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy"],"Resource":"*"}]}'
+            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:CreateApiDestination","events:DescribeApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy","iam:PassRole","secretsmanager:CreateSecret","secretsmanager:TagResource"],"Resource":"*"}]}'
             aws iam put-user-policy --user-name "$USERNAME" --policy-name "ShoreExplorerCallbackHelper" --policy-document "$CALLBACK_POLICY" >/dev/null 2>&1 || true
+            # Wait for IAM inline-policy propagation before proceeding
+            sleep 10
           fi
 
           # helper that allows us to bail out when our IAM credentials lack permission
