@@ -282,30 +282,53 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Semgrep
-        run: |
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep ci \
-            --config p/security-audit --config p/owasp-top-ten --config p/python --config p/javascript \
-            --sarif --output /src/semgrep.sarif || true
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/owasp-top-ten
+            p/python
+            p/javascript
+          generateSarif: "true"
 
-      - name: Upload SARIF results
+      - name: Upload Semgrep SARIF results
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: semgrep.sarif
+          category: semgrep
 
-      - name: Run Trivy Scan
+      - name: Run Trivy Scan - Backend
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: 'fs'
+          scan-ref: 'backend'
           format: 'sarif'
-          output: 'trivy-results.sarif'
+          output: 'trivy-backend-results.sarif'
           severity: 'CRITICAL,HIGH'
 
-      - name: Upload Trivy results
+      - name: Upload Trivy Backend results
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: 'trivy-backend-results.sarif'
+          category: trivy-backend
+
+      - name: Run Trivy Scan - Frontend
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: 'frontend'
+          format: 'sarif'
+          output: 'trivy-frontend-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy Frontend results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-frontend-results.sarif'
+          category: trivy-frontend
 
   # All checks passed
   ci-success:
@@ -320,7 +343,8 @@ jobs:
              [[ "${{ needs.backend-build.result }}" != "success" ]] || \
              [[ "${{ needs.frontend-ci.result }}" != "success" ]] || \
              [[ "${{ needs.frontend-build.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-e2e.result }}" != "success" ]]; then
+             [[ "${{ needs.frontend-e2e.result }}" != "success" ]] || \
+             [[ "${{ needs.security-scan.result }}" != "success" ]]; then
             echo "❌ Critical CI jobs failed"
             exit 1
           fi
