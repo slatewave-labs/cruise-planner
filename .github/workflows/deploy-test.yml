@@ -30,7 +30,6 @@ env:
   ENVIRONMENT: test
   PROJECT_NAME: shoreexplorer
   BACKEND_ECR_REPO: shoreexplorer-backend
-  FRONTEND_ECR_REPO: shoreexplorer-frontend
 
 jobs:
   check-env:
@@ -106,37 +105,53 @@ jobs:
           echo "ecr_base=${ECR_BASE}" >> "$GITHUB_OUTPUT"
           echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
           echo "backend_image=${ECR_BASE}/${BACKEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
-          echo "frontend_image=${ECR_BASE}/${FRONTEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
 
-      # ── Get ALB URL for frontend build ──────────────────────────
-      - name: Get ALB DNS
+      # ── Get infrastructure URLs ──────────────────────────────
+      - name: Get ALB DNS and CloudFront info
         id: alb
         env:
           CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
         run: |
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          S3_BUCKET="${APP_NAME}-frontend"
+
           ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
+            --names "${APP_NAME}-alb" \
             --query "LoadBalancers[0].DNSName" \
             --output text --region "$AWS_REGION" 2>/dev/null || echo "")
 
-          # Use custom domain if configured, otherwise use ALB DNS
+          # Get CloudFront distribution ID
+          CF_DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].Id | [0]" \
+            --output text 2>/dev/null || echo "")
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].DomainName | [0]" \
+            --output text 2>/dev/null || echo "")
+
+          # Determine the public frontend URL and backend URL
           if [[ -n "$CUSTOM_DOMAIN" ]]; then
-            # Test environment uses subdomain
+            FRONTEND_URL="https://test.${CUSTOM_DOMAIN}"
             BACKEND_URL="https://test.${CUSTOM_DOMAIN}"
             echo "Using custom domain: test.${CUSTOM_DOMAIN}"
-          elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
-            BACKEND_URL="https://${ALB_DNS}"
-            echo "Using ALB DNS: ${ALB_DNS}"
+          elif [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
+            FRONTEND_URL="https://${CF_DOMAIN}"
+            BACKEND_URL="https://${CF_DOMAIN}"
+            echo "Using CloudFront domain: ${CF_DOMAIN}"
           else
+            FRONTEND_URL="http://localhost:3000"
             BACKEND_URL="http://localhost:8001"
             echo "Using localhost fallback"
           fi
 
           echo "dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
           echo "backend_url=${BACKEND_URL}" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=${FRONTEND_URL}" >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=${S3_BUCKET}" >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
+          echo "cf_domain=${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
 
 
-      # ── Build and push images (optimized with caching) ──────────
+      # ── Build and push backend image (optimized with caching) ──
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -153,20 +168,64 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push frontend image
-        id: build-frontend
-        uses: docker/build-push-action@v5
+      # ── Build and deploy frontend to S3 ─────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          context: frontend
-          push: true
-          build-args: |
-            REACT_APP_BACKEND_URL=${{ steps.alb.outputs.backend_url }}
-          tags: |
-            ${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}
-            ${{ steps.vars.outputs.frontend_image }}:${{ env.ENVIRONMENT }}-latest
-            ${{ steps.vars.outputs.frontend_image }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Build frontend static bundle
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+          yarn build
+        env:
+          REACT_APP_BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
+          CI: true
+
+      - name: Deploy frontend to S3
+        run: |
+          S3_BUCKET="${{ steps.alb.outputs.s3_bucket }}"
+          echo "📦 Syncing frontend build to s3://${S3_BUCKET}/"
+
+          # Sync with cache headers: immutable for hashed assets, short cache for index.html
+          # Upload hashed assets first (long cache), then index.html (no cache)
+          aws s3 sync frontend/build/ "s3://${S3_BUCKET}/" \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html" --exclude "asset-manifest.json" --exclude "service-worker.js" \
+            --region "$AWS_REGION"
+
+          # Upload index.html and manifest with no-cache (so CloudFront always fetches latest)
+          aws s3 cp frontend/build/index.html "s3://${S3_BUCKET}/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/html" \
+            --region "$AWS_REGION"
+
+          if [[ -f frontend/build/asset-manifest.json ]]; then
+            aws s3 cp frontend/build/asset-manifest.json "s3://${S3_BUCKET}/asset-manifest.json" \
+              --cache-control "no-cache, no-store, must-revalidate" \
+              --content-type "application/json" \
+              --region "$AWS_REGION"
+          fi
+
+          echo "✅ Frontend deployed to S3"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          CF_DIST_ID="${{ steps.alb.outputs.cf_dist_id }}"
+          if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
+            INVALIDATION_ID=$(aws cloudfront create-invalidation \
+              --distribution-id "$CF_DIST_ID" \
+              --paths "/index.html" "/asset-manifest.json" "/service-worker.js" \
+              --query 'Invalidation.Id' --output text)
+            echo "🔄 CloudFront invalidation created: ${INVALIDATION_ID}"
+            echo "  Cached hashed assets (JS/CSS) are unaffected — new filenames ensure fresh content."
+          else
+            echo "⏭️  No CloudFront distribution found — skipping invalidation"
+          fi
 
       # ── Deploy to ECS ──────────────────────────────────────────
       # First, register updated task definitions with correct env vars
@@ -241,54 +300,7 @@ jobs:
             --tags "key=Project,value=${PROJECT_NAME}" "key=Environment,value=${ENVIRONMENT}" \
             --region "$AWS_REGION"
 
-      - name: Register frontend task definition
-        if: steps.secrets.outputs.secret_arn != ''
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          
-          # Get IAM role ARNs
-          EXECUTION_ROLE_ARN=$(aws iam get-role \
-            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" \
-            --query 'Role.Arn' --output text --region "$AWS_REGION")
-          TASK_ROLE_ARN=$(aws iam get-role \
-            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role" \
-            --query 'Role.Arn' --output text --region "$AWS_REGION")
-          
-          # Register frontend task definition
-          aws ecs register-task-definition \
-            --family "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task" \
-            --network-mode awsvpc \
-            --requires-compatibilities FARGATE \
-            --cpu 256 \
-            --memory 512 \
-            --execution-role-arn "$EXECUTION_ROLE_ARN" \
-            --task-role-arn "$TASK_ROLE_ARN" \
-            --container-definitions "[{
-              \"name\": \"frontend\",
-              \"image\": \"${ECR_BASE}/${FRONTEND_ECR_REPO}:${ENVIRONMENT}-latest\",
-              \"essential\": true,
-              \"portMappings\": [{\"containerPort\": 8080, \"protocol\": \"tcp\"}],
-              \"logConfiguration\": {
-                \"logDriver\": \"awslogs\",
-                \"options\": {
-                  \"awslogs-group\": \"/ecs/${PROJECT_NAME}-${ENVIRONMENT}-frontend\",
-                  \"awslogs-region\": \"${AWS_REGION}\",
-                  \"awslogs-stream-prefix\": \"ecs\"
-                }
-              },
-              \"healthCheck\": {
-                \"command\": [\"CMD-SHELL\", \"wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1\"],
-                \"interval\": 30,
-                \"timeout\": 5,
-                \"retries\": 3,
-                \"startPeriod\": 30
-              }
-            }]" \
-            --tags "key=Project,value=${PROJECT_NAME}" "key=Environment,value=${ENVIRONMENT}" \
-            --region "$AWS_REGION"
-
-      # ── Deploy via CodeDeploy Blue/Green ─────────────────────────
+      # ── Deploy backend via CodeDeploy Blue/Green ─────────────────
       - name: Deploy backend via CodeDeploy
         id: deploy-backend
         run: |
@@ -331,53 +343,11 @@ jobs:
           echo "🚀 Backend CodeDeploy deployment started: ${DEPLOY_ID}"
           echo "deployment_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy frontend via CodeDeploy
-        id: deploy-frontend
-        run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
-
-          # Get the latest frontend task definition ARN
-          TASK_DEF_ARN=$(aws ecs describe-task-definition \
-            --task-definition "${APP_NAME}-frontend-task" \
-            --query 'taskDefinition.taskDefinitionArn' --output text \
-            --region "$AWS_REGION")
-
-          # Create AppSpec inline for frontend
-          APPSPEC=$(cat <<EOF
-          {
-            "version": 0.0,
-            "Resources": [{
-              "TargetService": {
-                "Type": "AWS::ECS::Service",
-                "Properties": {
-                  "TaskDefinition": "${TASK_DEF_ARN}",
-                  "LoadBalancerInfo": {
-                    "ContainerName": "frontend",
-                    "ContainerPort": 8080
-                  }
-                }
-              }
-            }]
-          }
-          EOF
-          )
-
-          DEPLOY_ID=$(aws deploy create-deployment \
-            --application-name "$CODEDEPLOY_APP" \
-            --deployment-group-name "${APP_NAME}-frontend-dg" \
-            --revision "revisionType=AppSpecContent,appSpecContent={content='$(echo "$APPSPEC" | jq -c .)'}" \
-            --description "Frontend deploy: ${{ steps.vars.outputs.image_tag }}" \
-            --query 'deploymentId' --output text \
-            --region "$AWS_REGION")
-          echo "🚀 Frontend CodeDeploy deployment started: ${DEPLOY_ID}"
-          echo "deployment_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
-
       # ── Async Deployment Callback ────────────────────────────────
       # EventBridge rules (created by setup workflow) listen for CodeDeploy
       # deployment state changes and dispatch to deploy-callback.yml.
       # The callback approves the test-post-deploy environment gate once
-      # BOTH backend and frontend deployments succeed.
+      # the backend deployment succeeds.
 
       - name: Provision EventBridge callback helper (best-effort)
         run: |
@@ -473,15 +443,17 @@ jobs:
         env:
           CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
         run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
-            --query "LoadBalancers[0].DNSName" \
-            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+
+          # Get CloudFront URL for frontend
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].DomainName | [0]" \
+            --output text 2>/dev/null || echo "")
 
           if [[ -n "$CUSTOM_DOMAIN" ]]; then
             URL="https://test.${CUSTOM_DOMAIN}"
-          elif [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" ]]; then
-            URL="https://${ALB_DNS}"
+          elif [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
+            URL="https://${CF_DOMAIN}"
           else
             URL="http://localhost:8001"
           fi
