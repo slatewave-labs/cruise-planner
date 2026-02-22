@@ -270,7 +270,7 @@ jobs:
           retention-days: 7
 
   # Security Scan - SAST & SCA
-  security-scan:
+  security-sast:
     name: Security Scan (SAST & SCA)
     runs-on: ubuntu-latest
     permissions:
@@ -331,7 +331,6 @@ jobs:
         if: always()
         with:
           sarif_file: semgrep.sarif
-          category: semgrep
 
       - name: Upload Trivy Backend results
         uses: github/codeql-action/upload-sarif@v4
@@ -355,7 +354,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [backend-ci, backend-build, frontend-ci, frontend-build, frontend-e2e, security-scan]
+    needs: [backend-ci, backend-build, frontend-ci, frontend-build, frontend-e2e, security-sast]
     if: always()
     steps:
       - name: Check all jobs status
@@ -365,7 +364,7 @@ jobs:
              [[ "${{ needs.frontend-ci.result }}" != "success" ]] || \
              [[ "${{ needs.frontend-build.result }}" != "success" ]] || \
              [[ "${{ needs.frontend-e2e.result }}" != "success" ]] || \
-             [[ "${{ needs.security-scan.result }}" != "success" ]]; then
+             [[ "${{ needs.security-sast.result }}" != "success" ]]; then
             echo "❌ Critical CI jobs failed"
             exit 1
           fi
