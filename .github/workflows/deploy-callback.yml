@@ -30,9 +30,15 @@ jobs:
         env:
           PROJECT_NAME: shoreexplorer
           ENVIRONMENT: ${{ github.event.client_payload.environment }}
-          CUSTOM_DOMAIN_SECRET_NAME: ${{ github.event.client_payload.environment == 'prod' && 'PROD_DOMAIN' || 'TEST_DOMAIN' }}
+          PROD_DOMAIN: ${{ secrets.PROD_DOMAIN }}
+          TEST_DOMAIN: ${{ secrets.TEST_DOMAIN }}
         run: |
-          CUSTOM_DOMAIN="${{ secrets[env.CUSTOM_DOMAIN_SECRET_NAME] || '' }}"
+          if [[ "$ENVIRONMENT" == "prod" ]]; then
+            CUSTOM_DOMAIN="${PROD_DOMAIN:-}"
+          else
+            CUSTOM_DOMAIN="${TEST_DOMAIN:-}"
+          fi
+
           ALB_DNS=$(aws elbv2 describe-load-balancers \
             --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
             --query "LoadBalancers[0].DNSName" \
