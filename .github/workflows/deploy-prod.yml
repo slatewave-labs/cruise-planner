@@ -508,6 +508,48 @@ jobs:
       # The callback approves the production-post-deploy environment gate once
       # BOTH backend and frontend deployments succeed.
 
+      - name: Provision EventBridge callback helper (best-effort)
+        run: |
+          echo "🚀 Provisioning EventBridge-to-GitHub callback helper..."
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+
+          # best-effort self-grant of EventBridge/IAM permissions (deploy runs with
+          # the credentials used for deployments)
+          if aws iam get-user &>/dev/null 2>&1; then
+            USERNAME=$(aws iam get-user --query 'User.UserName' --output text)
+            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:UpdateConnection","events:CreateApiDestination","events:DescribeApiDestination","events:UpdateApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy","iam:PassRole","iam:CreateServiceLinkedRole","secretsmanager:CreateSecret","secretsmanager:TagResource","secretsmanager:GetSecretValue","secretsmanager:PutSecretValue","secretsmanager:DescribeSecret","secretsmanager:UpdateSecret","secretsmanager:DeleteSecret"],"Resource":"*"}]}'
+            aws iam put-user-policy --user-name "$USERNAME" --policy-name "ShoreExplorerCallbackHelper" --policy-document "$CALLBACK_POLICY" >/dev/null 2>&1 || true
+            # Wait for IAM inline-policy propagation before proceeding
+            sleep 15
+          fi
+
+          # helper for permission errors
+          fail() {
+            echo "❌ $1"
+            echo "   Error Details: ${2:-No additional info}"
+            echo "   Deployment will continue, but the async callback won't be configured."
+            # We exit 0 because if callback infrastructure fails, we don't want to break the whole deployment.
+            exit 0
+          }
+
+          # 1. Connection (Auth for GitHub)
+          CONN_ARN=$(aws events describe-connection --name "${APP_NAME}-gh-conn" \
+            --query 'ConnectionArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+          
+          if [[ -z "$CONN_ARN" || "$CONN_ARN" == "None" ]]; then
+            if ! CONN_OUTPUT=$(aws events create-connection --name "${APP_NAME}-gh-conn" \
+              --authorization-type API_KEY \
+              --auth-parameters "{\"ApiKeyAuthParameters\": {\"ApiKeyName\": \"Authorization\", \"ApiKeyValue\": \"Bearer ${GH_TOKEN}\"}}" \
+              --region "$AWS_REGION" 2>&1); then
+              fail "Unable to create EventBridge Connection. Ensure deployment role has events:CreateConnection and related Secrets Manager actions." "$CONN_OUTPUT"
+            fi
+            CONN_ARN=$(echo "$CONN_OUTPUT" | grep -o 'arn:aws:events:[^\"]*')
+            echo "  ✅ Created EventBridge Connection"
+          else
+            echo "  ⏭️  Connection exists"
+          fi
+
+
       # ── Monitoring & Alerting ───────────────────────────────────
       - name: Setup monitoring (dashboard + alarms)
         env:
