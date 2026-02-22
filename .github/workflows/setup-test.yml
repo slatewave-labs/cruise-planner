@@ -977,18 +977,12 @@ jobs:
           CODEDEPLOY_ROLE_ARN=$(aws iam get-role --role-name "${APP_NAME}-codedeploy-role" \
             --query 'Role.Arn' --output text --region "$AWS_REGION")
 
-          # Determine production traffic listeners
-          # CloudFront connects to ALB over HTTP (port 80), so CodeDeploy must
-          # manage BOTH listeners during Blue/Green deployments. Otherwise the
-          # HTTP listener still points to the old (empty) target group after
-          # a deployment, causing 503 errors from CloudFront.
+          # Determine production traffic listener
+          # CloudFront connects to ALB over HTTP (port 80), so the HTTP
+          # listener is the one CodeDeploy must manage during Blue/Green
+          # deployments. prodTrafficRoute accepts exactly one listener ARN.
           HTTP_LISTENER="${{ steps.alb.outputs.listener_arn }}"
-          HTTPS_LISTENER="${{ steps.https.outputs.prod_listener_arn }}"
-          if [[ -n "$HTTPS_LISTENER" && "$HTTPS_LISTENER" != "None" ]]; then
-            LISTENER_ARNS="\"${HTTP_LISTENER}\", \"${HTTPS_LISTENER}\""
-          else
-            LISTENER_ARNS="\"${HTTP_LISTENER}\""
-          fi
+          LISTENER_ARNS="\"${HTTP_LISTENER}\""
 
           # Create CodeDeploy application (ECS compute platform)
           if aws deploy get-application --application-name "$CODEDEPLOY_APP" \
