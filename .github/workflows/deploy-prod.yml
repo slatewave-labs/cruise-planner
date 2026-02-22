@@ -571,7 +571,7 @@ jobs:
           echo "  ✅ Configured Success and Failure Callback Routes"
 
       - name: Wait for production services to stabilize
-        if: secrets.GH_CALLBACK_TOKEN == ''
+        if: ${{ secrets.GH_CALLBACK_TOKEN == '' }}
         run: |
           echo "Waiting for production services to stabilize (up to 10 minutes)..."
           CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
@@ -616,7 +616,7 @@ jobs:
 
       # ── Smoke test ─────────────────────────────────────────────
       - name: Run production smoke test
-        if: secrets.GH_CALLBACK_TOKEN == '' && steps.alb.outputs.backend_url != 'http://localhost:8001'
+        if: ${{ secrets.GH_CALLBACK_TOKEN == '' && steps.alb.outputs.backend_url != 'http://localhost:8001' }}
         env:
           BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
         run: |

@@ -425,7 +425,7 @@ jobs:
 
       # ── Smoke test (Only if callback NOT configured) ───────────
       - name: Wait for deployment to stabilize
-        if: secrets.GH_CALLBACK_TOKEN == ''
+        if: ${{ secrets.GH_CALLBACK_TOKEN == '' }}
         run: |
           # aws ecs wait services-stable uses `length(deployments) == 1` which fails
           # when ECS keeps old INACTIVE deployment entries after a successful rolling
@@ -474,7 +474,7 @@ jobs:
 
       # ── Smoke test (Only if callback NOT configured) ───────────
       - name: Smoke test
-        if: secrets.GH_CALLBACK_TOKEN == ''
+        if: ${{ secrets.GH_CALLBACK_TOKEN == '' }}
         run: |
       - name: Run smoke test
         if: steps.alb.outputs.backend_url != 'http://localhost:8001'
