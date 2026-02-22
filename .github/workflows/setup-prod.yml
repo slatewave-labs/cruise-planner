@@ -970,7 +970,7 @@ jobs:
             --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
           
           aws events put-targets --rule "${APP_NAME}-codedeploy-success-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubSuccessDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_success\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": <dg>, \\\"status\\\": \\\"success\\\"}}\"}}]" \
+            --targets "[{\"Id\":\"GitHubSuccessDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_success\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": \\\"<dg>\\\", \\\"status\\\": \\\"success\\\"}}\"}}]" \
             --no-cli-pager >/dev/null
           echo "  ✅ Configured CodeDeploy Success Callback Route"
 
@@ -980,7 +980,7 @@ jobs:
             --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
           
           aws events put-targets --rule "${APP_NAME}-codedeploy-failure-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubFailureDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_failed\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": <dg>, \\\"status\\\": \\\"failed\\\"}}\"}}]" \
+            --targets "[{\"Id\":\"GitHubFailureDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_failed\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": \\\"<dg>\\\", \\\"status\\\": \\\"failed\\\"}}\"}}]" \
             --no-cli-pager >/dev/null
           echo "  ✅ Configured CodeDeploy Failure Callback Route"
 

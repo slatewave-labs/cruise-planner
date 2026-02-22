@@ -574,19 +574,13 @@ jobs:
                 --query "deploymentInfo.status" --output text \
                 --region "$AWS_REGION" 2>/dev/null || echo "")
 
-              if [[ "$STATUS" == "Succeeded" ]]; then
-                # CodeDeploy auto-rollback creates a new deployment with the previous revision
+              if [[ "$STATUS" == "InProgress" || "$STATUS" == "Created" || "$STATUS" == "Queued" || "$STATUS" == "Ready" ]]; then
                 aws deploy stop-deployment --deployment-id "$DEPLOY_ID" \
                   --auto-rollback-enabled \
                   --region "$AWS_REGION" 2>/dev/null || true
                 echo "  ⚠️  Stopped deployment ${DEPLOY_ID} for ${DG} (auto-rollback triggered)"
-              elif [[ "$STATUS" == "InProgress" || "$STATUS" == "Created" || "$STATUS" == "Queued" ]]; then
-                aws deploy stop-deployment --deployment-id "$DEPLOY_ID" \
-                  --auto-rollback-enabled \
-                  --region "$AWS_REGION" 2>/dev/null || true
-                echo "  ⚠️  Stopped in-progress deployment ${DEPLOY_ID} for ${DG}"
               else
-                echo "  ℹ️  Deployment ${DEPLOY_ID} for ${DG} is in state: ${STATUS}"
+                echo "  ℹ️  Deployment ${DEPLOY_ID} for ${DG} is in state: ${STATUS} — cannot stop"
               fi
             else
               echo "  ℹ️  No deployments found for ${DG}"
