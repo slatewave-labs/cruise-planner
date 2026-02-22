@@ -423,9 +423,18 @@ jobs:
             --no-cli-pager >/dev/null
           echo "  ✅ Configured Success and Failure Callback Routes"
 
+      - name: Check for callback token
+        id: callback_check
+        run: |
+          if [[ -n "${{ secrets.GH_CALLBACK_TOKEN }}" ]]; then
+            echo "has_callback=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_callback=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # ── Smoke test (Only if callback NOT configured) ───────────
       - name: Wait for deployment to stabilize
-        if: ${{ secrets.GH_CALLBACK_TOKEN == '' }}
+        if: steps.callback_check.outputs.has_callback == 'false'
         run: |
           # aws ecs wait services-stable uses `length(deployments) == 1` which fails
           # when ECS keeps old INACTIVE deployment entries after a successful rolling
@@ -473,11 +482,8 @@ jobs:
           echo "Deployment complete!"
 
       # ── Smoke test (Only if callback NOT configured) ───────────
-      - name: Smoke test
-        if: ${{ secrets.GH_CALLBACK_TOKEN == '' }}
-        run: |
       - name: Run smoke test
-        if: steps.alb.outputs.backend_url != 'http://localhost:8001'
+        if: steps.callback_check.outputs.has_callback == 'false' && steps.alb.outputs.backend_url != 'http://localhost:8001'
         env:
           BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
         run: |

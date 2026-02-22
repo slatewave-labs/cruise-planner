@@ -570,8 +570,17 @@ jobs:
             --no-cli-pager >/dev/null
           echo "  ✅ Configured Success and Failure Callback Routes"
 
+      - name: Check for callback token
+        id: callback_check
+        run: |
+          if [[ -n "${{ secrets.GH_CALLBACK_TOKEN }}" ]]; then
+            echo "has_callback=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_callback=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Wait for production services to stabilize
-        if: ${{ secrets.GH_CALLBACK_TOKEN == '' }}
+        if: steps.callback_check.outputs.has_callback == 'false'
         run: |
           echo "Waiting for production services to stabilize (up to 10 minutes)..."
           CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
@@ -616,7 +625,7 @@ jobs:
 
       # ── Smoke test ─────────────────────────────────────────────
       - name: Run production smoke test
-        if: ${{ secrets.GH_CALLBACK_TOKEN == '' && steps.alb.outputs.backend_url != 'http://localhost:8001' }}
+        if: steps.callback_check.outputs.has_callback == 'false' && steps.alb.outputs.backend_url != 'http://localhost:8001'
         env:
           BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
         run: |
