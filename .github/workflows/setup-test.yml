@@ -843,6 +843,7 @@ jobs:
                 --application-name "$CODEDEPLOY_APP" \
                 --current-deployment-group-name "$DG_NAME" \
                 --service-role-arn "$CODEDEPLOY_ROLE_ARN" \
+                --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
                 --ecs-services "clusterName=${APP_NAME}-cluster,serviceName=${SVC_NAME}" \
                 --load-balancer-info "$LOAD_BALANCER_INFO" \
                 --blue-green-deployment-configuration "$BG_CONFIG" \
@@ -855,6 +856,7 @@ jobs:
                 --application-name "$CODEDEPLOY_APP" \
                 --deployment-group-name "$DG_NAME" \
                 --service-role-arn "$CODEDEPLOY_ROLE_ARN" \
+                --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
                 --ecs-services "clusterName=${APP_NAME}-cluster,serviceName=${SVC_NAME}" \
                 --load-balancer-info "$LOAD_BALANCER_INFO" \
                 --blue-green-deployment-configuration "$BG_CONFIG" \
