@@ -16,6 +16,11 @@ on:
         default: "false"
         type: boolean
 
+# Cancel in-progress runs for the same environment/branch
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   id-token: write
   contents: read
@@ -130,38 +135,37 @@ jobs:
           echo "backend_url=${BACKEND_URL}" >> "$GITHUB_OUTPUT"
 
 
-      # ── Build and push backend ──────────────────────────────────
-      - name: Build backend image
-        run: |
-          docker build \
-            -t "${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}" \
-            -t "${{ steps.vars.outputs.backend_image }}:${ENVIRONMENT}-latest" \
-            -t "${{ steps.vars.outputs.backend_image }}:latest" \
-            -f backend/Dockerfile \
-            backend/
+      # ── Build and push images (optimized with caching) ──────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Push backend image
-        run: |
-          docker push "${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}"
-          docker push "${{ steps.vars.outputs.backend_image }}:${ENVIRONMENT}-latest"
-          docker push "${{ steps.vars.outputs.backend_image }}:latest"
+      - name: Build and push backend image
+        id: build-backend
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}
+            ${{ steps.vars.outputs.backend_image }}:${{ env.ENVIRONMENT }}-latest
+            ${{ steps.vars.outputs.backend_image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # ── Build and push frontend ────────────────────────────────
-      - name: Build frontend image
-        run: |
-          docker build \
-            --build-arg REACT_APP_BACKEND_URL="${{ steps.alb.outputs.backend_url }}" \
-            -t "${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}" \
-            -t "${{ steps.vars.outputs.frontend_image }}:${ENVIRONMENT}-latest" \
-            -t "${{ steps.vars.outputs.frontend_image }}:latest" \
-            -f frontend/Dockerfile \
-            frontend/
-
-      - name: Push frontend image
-        run: |
-          docker push "${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}"
-          docker push "${{ steps.vars.outputs.frontend_image }}:${ENVIRONMENT}-latest"
-          docker push "${{ steps.vars.outputs.frontend_image }}:latest"
+      - name: Build and push frontend image
+        id: build-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          push: true
+          build-args: |
+            REACT_APP_BACKEND_URL=${{ steps.alb.outputs.backend_url }}
+          tags: |
+            ${{ steps.vars.outputs.frontend_image }}:${{ steps.vars.outputs.image_tag }}
+            ${{ steps.vars.outputs.frontend_image }}:${{ env.ENVIRONMENT }}-latest
+            ${{ steps.vars.outputs.frontend_image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # ── Deploy to ECS ──────────────────────────────────────────
       # First, register updated task definitions with correct env vars
@@ -350,7 +354,87 @@ jobs:
 
           aws ecs update-service "${ARGS[@]}"
 
+      # ── Async Deployment Callback (LEAN WAIT) ───────────────
+      - name: Provision async deployment callback infrastructure
+        env:
+          GH_TOKEN: ${{ secrets.GH_CALLBACK_TOKEN }}
+        run: |
+          # Only provision if callback token is available
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "⏭️  GH_CALLBACK_TOKEN is not set. Skipping callback infrastructure setup."
+            echo "Deployment will still occur, but without the automated async callback job."
+            exit 0
+          fi
+
+          echo "🚀 Provisioning EventBridge-to-GitHub callback infrastructure..."
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          
+          # 1. Connection (Auth for GitHub)
+          CONN_ARN=$(aws events describe-connection --name "${APP_NAME}-gh-conn" \
+            --query 'ConnectionArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+          
+          if [[ -z "$CONN_ARN" || "$CONN_ARN" == "None" ]]; then
+            CONN_ARN=$(aws events create-connection --name "${APP_NAME}-gh-conn" \
+              --authorization-type API_KEY \
+              --auth-parameters "{\"ApiKeyAuthParameters\": {\"ApiKeyName\": \"Authorization\", \"ApiKeyValue\": \"Bearer ${GH_TOKEN}\"}}" \
+              --query 'ConnectionArn' --output text --region "$AWS_REGION")
+          fi
+
+          # 2. API Destination (GitHub Repos Dispatch)
+          DEST_ARN=$(aws events describe-api-destination --name "${APP_NAME}-gh-dispatch" \
+            --query 'ApiDestinationArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+          
+          if [[ -z "$DEST_ARN" || "$DEST_ARN" == "None" ]]; then
+            DEST_URL="https://api.github.com/repos/${{ github.repository }}/dispatches"
+            DEST_ARN=$(aws events create-api-destination --name "${APP_NAME}-gh-dispatch" \
+              --connection-arn "$CONN_ARN" \
+              --invocation-endpoint "$DEST_URL" \
+              --http-method POST \
+              --query 'ApiDestinationArn' --output text --region "$AWS_REGION")
+          fi
+
+          # 3. IAM Role for EventBridge to call API Destination
+          ROLE_NAME="${APP_NAME}-eventbridge-callback-role"
+          if ! aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
+            TRUST_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"events.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+            aws iam create-role --role-name "$ROLE_NAME" --assume-role-policy-document "$TRUST_POLICY" >/dev/null
+            
+            POLICY_DOC="{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"events:InvokeApiDestination\",\"Resource\":\"$DEST_ARN\"}]}"
+            aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name "InvokeAPIDestination" --policy-document "$POLICY_DOC"
+          fi
+          ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
+
+          # 4. Rule (Listen for SUCCESS)
+          aws events put-rule --name "${APP_NAME}-ecs-success-rule" \
+            --event-pattern "{\"source\":[\"aws.ecs\"],\"detail-type\":[\"ECS Service Action\"],\"detail\":{\"clusterArn\":[\"arn:aws:ecs:${AWS_REGION}:${{ steps.vars.outputs.account_id }}:cluster/${APP_NAME}-cluster\"],\"eventName\":[\"SERVICE_STEADY_STATE\"]}}" \
+            --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
+          
+          aws events put-targets --rule "${APP_NAME}-ecs-success-rule" --region "$AWS_REGION" \
+            --targets "[{\"Id\":\"GitHubSuccessDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"environment\":\"$.detail.clusterArn\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"ecs_deploy_success\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"status\\\": \\\"stable\\\"}}\"}}]" \
+            --no-cli-pager >/dev/null
+
+          # 5. Rule (Listen for FAILURE)
+          aws events put-rule --name "${APP_NAME}-ecs-failure-rule" \
+            --event-pattern "{\"source\":[\"aws.ecs\"],\"detail-type\":[\"ECS Service Action\"],\"detail\":{\"clusterArn\":[\"arn:aws:ecs:${AWS_REGION}:${{ steps.vars.outputs.account_id }}:cluster/${APP_NAME}-cluster\"],\"eventName\":[\"SERVICE_DEPLOYMENT_FAILED\"]}}" \
+            --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
+          
+          aws events put-targets --rule "${APP_NAME}-ecs-failure-rule" --region "$AWS_REGION" \
+            --targets "[{\"Id\":\"GitHubFailureDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"environment\":\"$.detail.clusterArn\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"ecs_deploy_failed\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"status\\\": \\\"failed\\\"}}\"}}]" \
+            --no-cli-pager >/dev/null
+          echo "  ✅ Configured Success and Failure Callback Routes"
+
+      - name: Check for callback token
+        id: callback_check
+        run: |
+          if [[ -n "${{ secrets.GH_CALLBACK_TOKEN }}" ]]; then
+            echo "has_callback=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_callback=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Smoke test (Only if callback NOT configured) ───────────
       - name: Wait for deployment to stabilize
+        if: steps.callback_check.outputs.has_callback == 'false'
         run: |
           # aws ecs wait services-stable uses `length(deployments) == 1` which fails
           # when ECS keeps old INACTIVE deployment entries after a successful rolling
@@ -397,9 +481,9 @@ jobs:
           fi
           echo "Deployment complete!"
 
-      # ── Smoke test ─────────────────────────────────────────────
+      # ── Smoke test (Only if callback NOT configured) ───────────
       - name: Run smoke test
-        if: steps.alb.outputs.backend_url != 'http://localhost:8001'
+        if: steps.callback_check.outputs.has_callback == 'false' && steps.alb.outputs.backend_url != 'http://localhost:8001'
         env:
           BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
         run: |
