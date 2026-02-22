@@ -306,8 +306,12 @@ If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deploym
       "Action": [
         "events:CreateConnection",
         "events:DescribeConnection",
+        "events:UpdateConnection",
+        "events:DeleteConnection",
         "events:CreateApiDestination",
         "events:DescribeApiDestination",
+        "events:UpdateApiDestination",
+        "events:DeleteApiDestination",
         "events:PutRule",
         "events:PutTargets",
         "iam:GetRole",
@@ -315,8 +319,14 @@ If you're using a dedicated IAM user (like `shoreexplorer-deployer`) for deploym
         "iam:PutRolePolicy",
         "iam:PutUserPolicy",
         "iam:PassRole",
+        "iam:CreateServiceLinkedRole",
         "secretsmanager:CreateSecret",
-        "secretsmanager:TagResource"
+        "secretsmanager:TagResource",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:UpdateSecret",
+        "secretsmanager:DeleteSecret"
       ],
       "Resource": "*"
     },
