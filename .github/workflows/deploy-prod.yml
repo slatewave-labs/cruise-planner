@@ -417,174 +417,96 @@ jobs:
             --tags "key=Project,value=${PROJECT_NAME}" "key=Environment,value=${ENVIRONMENT}" \
             --region "$AWS_REGION"
 
-      - name: Update backend ECS service
+      # ── Deploy via CodeDeploy Blue/Green ─────────────────────────
+      - name: Deploy backend via CodeDeploy
+        id: deploy-backend
         run: |
-          aws ecs update-service \
-            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-            --service "${PROJECT_NAME}-${ENVIRONMENT}-backend" \
-            --task-definition "${PROJECT_NAME}-${ENVIRONMENT}-backend-task" \
-            --force-new-deployment \
-            --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
-            --region "$AWS_REGION"
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
 
-      - name: Ensure frontend port 8080 infrastructure
-        id: frontend-infra
-        run: |
-          # Environments originally provisioned with port 80 need their
-          # ECS security-group rule and service load-balancer config updated
-          # to port 8080 (non-root nginx). This step is idempotent.
+          # Get the latest backend task definition ARN
+          TASK_DEF_ARN=$(aws ecs describe-task-definition \
+            --task-definition "${APP_NAME}-backend-task" \
+            --query 'taskDefinition.taskDefinitionArn' --output text \
+            --region "$AWS_REGION")
 
-          # --- Security group: allow port 8080 from ALB ---
-          ECS_SG_ID=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=${PROJECT_NAME}-${ENVIRONMENT}-ecs-sg" \
-            --query 'SecurityGroups[0].GroupId' --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          ALB_SG_ID=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=${PROJECT_NAME}-${ENVIRONMENT}-alb-sg" \
-            --query 'SecurityGroups[0].GroupId' --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          if [[ -n "$ECS_SG_ID" && "$ECS_SG_ID" != "None" && -n "$ALB_SG_ID" && "$ALB_SG_ID" != "None" ]]; then
-            aws ec2 authorize-security-group-ingress \
-              --group-id "$ECS_SG_ID" \
-              --protocol tcp --port 8080 --source-group "$ALB_SG_ID" \
-              --region "$AWS_REGION" 2>/dev/null || true
-            echo "✅ ECS security group allows port 8080 from ALB"
-          else
-            echo "⚠️  Could not find security groups — skipping SG update"
-          fi
-
-          # --- Retrieve frontend target group ARN from current service ---
-          FRONTEND_TG_ARN=$(aws ecs describe-services \
-            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-            --services "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
-            --query 'services[0].loadBalancers[0].targetGroupArn' \
-            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          echo "frontend_tg_arn=${FRONTEND_TG_ARN}" >> "$GITHUB_OUTPUT"
-
-      - name: Update frontend ECS service
-        run: |
-          FRONTEND_TG_ARN="${{ steps.frontend-infra.outputs.frontend_tg_arn }}"
-
-          # Build update-service arguments
-          ARGS=(
-            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-            --service "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
-            --task-definition "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task"
-            --force-new-deployment
-            --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100"
-            --region "$AWS_REGION"
+          # Create AppSpec inline for backend
+          APPSPEC=$(cat <<EOF
+          {
+            "version": 0.0,
+            "Resources": [{
+              "TargetService": {
+                "Type": "AWS::ECS::Service",
+                "Properties": {
+                  "TaskDefinition": "${TASK_DEF_ARN}",
+                  "LoadBalancerInfo": {
+                    "ContainerName": "backend",
+                    "ContainerPort": 8001
+                  }
+                }
+              }
+            }]
+          }
+          EOF
           )
 
-          # Ensure ECS registers targets on port 8080 (migrates services
-          # originally created with containerPort 80)
-          if [[ -n "$FRONTEND_TG_ARN" && "$FRONTEND_TG_ARN" != "None" ]]; then
-            ARGS+=(--load-balancers "targetGroupArn=${FRONTEND_TG_ARN},containerName=frontend,containerPort=8080")
-          fi
+          DEPLOY_ID=$(aws deploy create-deployment \
+            --application-name "$CODEDEPLOY_APP" \
+            --deployment-group-name "${APP_NAME}-backend-dg" \
+            --revision "revisionType=AppSpecContent,appSpecContent={content='$(echo "$APPSPEC" | jq -c .)'}" \
+            --description "Backend deploy: ${{ steps.vars.outputs.image_tag }}" \
+            --query 'deploymentId' --output text \
+            --region "$AWS_REGION")
+          echo "🚀 Backend CodeDeploy deployment started: ${DEPLOY_ID}"
+          echo "deployment_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
 
-          aws ecs update-service "${ARGS[@]}"
-
-      # ── Async Deployment Callback (LEAN WAIT) ───────────────
-      - name: Provision async deployment callback infrastructure
-        env:
-          GH_TOKEN: ${{ secrets.GH_CALLBACK_TOKEN }}
+      - name: Deploy frontend via CodeDeploy
+        id: deploy-frontend
         run: |
-          # Only provision if callback token is available
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "⏭️  GH_CALLBACK_TOKEN is not set. Skipping callback infrastructure setup."
-            echo "Deployment will still occur, but without the automated async callback job."
-            exit 0
-          fi
-
-          echo "🚀 Provisioning EventBridge-to-GitHub callback infrastructure..."
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          
-          # best-effort self-grant of EventBridge/IAM permissions
-          if aws iam get-user &>/dev/null 2>&1; then
-            USERNAME=$(aws iam get-user --query 'User.UserName' --output text)
-            # Full permission block required for EventBridge to manage its own connections (incl. Secrets Manager)
-            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:UpdateConnection","events:CreateApiDestination","events:DescribeApiDestination","events:UpdateApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy","iam:PassRole","iam:CreateServiceLinkedRole","secretsmanager:CreateSecret","secretsmanager:TagResource","secretsmanager:GetSecretValue","secretsmanager:PutSecretValue","secretsmanager:DescribeSecret","secretsmanager:UpdateSecret","secretsmanager:DeleteSecret"],"Resource":"*"}]}'
-            aws iam put-user-policy --user-name "$USERNAME" --policy-name "ShoreExplorerCallbackHelper" --policy-document "$CALLBACK_POLICY" >/dev/null 2>&1 || true
-            # Wait for IAM inline-policy propagation before proceeding
-            sleep 15
-          fi
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
 
-          # helper that allows us to bail out when our IAM credentials lack permission
-          fail() {
-            echo "❌ $1"
-            echo "   Error Details: ${2:-No additional info}"
-            echo "   Deployment will continue, but the async callback won't be configured."
-            # We exit 0 because if callback infrastructure fails, we don't want to break the whole deployment.
-            # But we show a clear X in the logs.
-            exit 0
+          # Get the latest frontend task definition ARN
+          TASK_DEF_ARN=$(aws ecs describe-task-definition \
+            --task-definition "${APP_NAME}-frontend-task" \
+            --query 'taskDefinition.taskDefinitionArn' --output text \
+            --region "$AWS_REGION")
+
+          # Create AppSpec inline for frontend
+          APPSPEC=$(cat <<EOF
+          {
+            "version": 0.0,
+            "Resources": [{
+              "TargetService": {
+                "Type": "AWS::ECS::Service",
+                "Properties": {
+                  "TaskDefinition": "${TASK_DEF_ARN}",
+                  "LoadBalancerInfo": {
+                    "ContainerName": "frontend",
+                    "ContainerPort": 8080
+                  }
+                }
+              }
+            }]
           }
+          EOF
+          )
 
-          # 1. Connection (Auth for GitHub)
-          CONN_ARN=$(aws events describe-connection --name "${APP_NAME}-gh-conn" \
-            --query 'ConnectionArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          
-          if [[ -z "$CONN_ARN" || "$CONN_ARN" == "None" ]]; then
-            if ! CONN_OUTPUT=$(aws events create-connection --name "${APP_NAME}-gh-conn" \
-              --authorization-type API_KEY \
-              --auth-parameters "{\"ApiKeyAuthParameters\": {\"ApiKeyName\": \"Authorization\", \"ApiKeyValue\": \"Bearer ${GH_TOKEN}\"}}" \
-              --region "$AWS_REGION" 2>&1); then
-              fail "Unable to create EventBridge Connection. Ensure IAM policy allows events:CreateConnection and related Secrets Manager actions." "$CONN_OUTPUT"
-            fi
-            CONN_ARN=$(echo "$CONN_OUTPUT" | grep -o 'arn:aws:events:[^"]*')
-          fi
+          DEPLOY_ID=$(aws deploy create-deployment \
+            --application-name "$CODEDEPLOY_APP" \
+            --deployment-group-name "${APP_NAME}-frontend-dg" \
+            --revision "revisionType=AppSpecContent,appSpecContent={content='$(echo "$APPSPEC" | jq -c .)'}" \
+            --description "Frontend deploy: ${{ steps.vars.outputs.image_tag }}" \
+            --query 'deploymentId' --output text \
+            --region "$AWS_REGION")
+          echo "🚀 Frontend CodeDeploy deployment started: ${DEPLOY_ID}"
+          echo "deployment_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
 
-          # 2. API Destination (GitHub Repos Dispatch)
-          DEST_ARN=$(aws events describe-api-destination --name "${APP_NAME}-gh-dispatch" \
-            --query 'ApiDestinationArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          
-          if [[ -z "$DEST_ARN" || "$DEST_ARN" == "None" ]]; then
-            DEST_URL="https://api.github.com/repos/${{ github.repository }}/dispatches"
-            if ! DEST_OUTPUT=$(aws events create-api-destination --name "${APP_NAME}-gh-dispatch" \
-              --connection-arn "$CONN_ARN" \
-              --invocation-endpoint "$DEST_URL" \
-              --http-method POST \
-              --region "$AWS_REGION" 2>&1); then
-              fail "Unable to create API Destination. Ensure IAM policy allows events:CreateApiDestination." "$DEST_OUTPUT"
-            fi
-            DEST_ARN=$(echo "$DEST_OUTPUT" | grep -o 'arn:aws:events:[^"]*')
-          fi
-
-          # 3. IAM Role for EventBridge to call API Destination
-          ROLE_NAME="${APP_NAME}-eventbridge-callback-role"
-          if ! aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
-            TRUST_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"events.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-            if ! aws iam create-role --role-name "$ROLE_NAME" --assume-role-policy-document "$TRUST_POLICY" >/dev/null 2>&1; then
-              fail "Unable to create IAM role. Ensure IAM policy allows iam:CreateRole."
-            fi
-            
-            POLICY_DOC="{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"events:InvokeApiDestination\",\"Resource\":\"$DEST_ARN\"}]}"
-            if ! aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name "InvokeAPIDestination" --policy-document "$POLICY_DOC" >/dev/null 2>&1; then
-              fail "Unable to attach policy to callback IAM role. Ensure IAM policy allows iam:PutRolePolicy."
-            fi
-            echo "  ✅ Created IAM Role for EventBridge callback"
-          fi
-          ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
-
-          # 4. Rule (Listen for SUCCESS)
-          aws events put-rule --name "${APP_NAME}-ecs-success-rule" \
-            --event-pattern "{\"source\":[\"aws.ecs\"],\"detail-type\":[\"ECS Service Action\"],\"detail\":{\"clusterArn\":[\"arn:aws:ecs:${AWS_REGION}:${{ steps.vars.outputs.account_id }}:cluster/${APP_NAME}-cluster\"],\"eventName\":[\"SERVICE_STEADY_STATE\"]}}" \
-            --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
-          
-          aws events put-targets --rule "${APP_NAME}-ecs-success-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubSuccessDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"environment\":\"$.detail.clusterArn\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"ecs_deploy_success\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"status\\\": \\\"stable\\\"}}\"}}]" \
-            --no-cli-pager >/dev/null
-
-          # 5. Rule (Listen for FAILURE)
-          aws events put-rule --name "${APP_NAME}-ecs-failure-rule" \
-            --event-pattern "{\"source\":[\"aws.ecs\"],\"detail-type\":[\"ECS Service Action\"],\"detail\":{\"clusterArn\":[\"arn:aws:ecs:${AWS_REGION}:${{ steps.vars.outputs.account_id }}:cluster/${APP_NAME}-cluster\"],\"eventName\":[\"SERVICE_DEPLOYMENT_FAILED\"]}}" \
-            --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
-          
-          aws events put-targets --rule "${APP_NAME}-ecs-failure-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubFailureDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"environment\":\"$.detail.clusterArn\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"ecs_deploy_failed\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"status\\\": \\\"failed\\\"}}\"}}]" \
-            --no-cli-pager >/dev/null
-          echo "  ✅ Configured Success and Failure Callback Routes"
+      # ── Async Deployment Callback ────────────────────────────────
+      # EventBridge rules (created by setup workflow) listen for CodeDeploy
+      # deployment state changes and dispatch to deploy-callback.yml.
+      # The callback approves the production-post-deploy environment gate once
+      # BOTH backend and frontend deployments succeed.
 
       # ── Monitoring & Alerting ───────────────────────────────────
       - name: Setup monitoring (dashboard + alarms)
@@ -633,41 +555,44 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Rollback to previous task definition
+      - name: Rollback via CodeDeploy
         run: |
-          echo "⚠️  Deployment failed. Rolling back..."
+          echo "⚠️  Deployment failed. Rolling back via CodeDeploy..."
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
 
-          for SERVICE in backend frontend; do
-            FULL_SERVICE="${PROJECT_NAME}-${ENVIRONMENT}-${SERVICE}"
-            FAMILY="${PROJECT_NAME}-${ENVIRONMENT}-${SERVICE}-task"
+          for DG in "${APP_NAME}-backend-dg" "${APP_NAME}-frontend-dg"; do
+            # Get the most recent deployment for this deployment group
+            DEPLOY_ID=$(aws deploy list-deployments \
+              --application-name "$CODEDEPLOY_APP" \
+              --deployment-group-name "$DG" \
+              --query "deployments[0]" --output text \
+              --region "$AWS_REGION" 2>/dev/null || echo "")
 
-            # Get the previous task definition (second most recent)
-            PREVIOUS_TD=$(aws ecs list-task-definitions \
-              --family-prefix "$FAMILY" \
-              --sort DESC \
-              --query "taskDefinitionArns[1]" \
-              --output text --region "$AWS_REGION")
+            if [[ -n "$DEPLOY_ID" && "$DEPLOY_ID" != "None" ]]; then
+              STATUS=$(aws deploy get-deployment --deployment-id "$DEPLOY_ID" \
+                --query "deploymentInfo.status" --output text \
+                --region "$AWS_REGION" 2>/dev/null || echo "")
 
-            if [[ -n "$PREVIOUS_TD" && "$PREVIOUS_TD" != "None" ]]; then
-              aws ecs update-service \
-                --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-                --service "$FULL_SERVICE" \
-                --task-definition "$PREVIOUS_TD" \
-                --force-new-deployment \
-                --region "$AWS_REGION"
-              echo "Rolled back $SERVICE to: $PREVIOUS_TD"
+              if [[ "$STATUS" == "Succeeded" ]]; then
+                # CodeDeploy auto-rollback creates a new deployment with the previous revision
+                aws deploy stop-deployment --deployment-id "$DEPLOY_ID" \
+                  --auto-rollback-enabled \
+                  --region "$AWS_REGION" 2>/dev/null || true
+                echo "  ⚠️  Stopped deployment ${DEPLOY_ID} for ${DG} (auto-rollback triggered)"
+              elif [[ "$STATUS" == "InProgress" || "$STATUS" == "Created" || "$STATUS" == "Queued" ]]; then
+                aws deploy stop-deployment --deployment-id "$DEPLOY_ID" \
+                  --auto-rollback-enabled \
+                  --region "$AWS_REGION" 2>/dev/null || true
+                echo "  ⚠️  Stopped in-progress deployment ${DEPLOY_ID} for ${DG}"
+              else
+                echo "  ℹ️  Deployment ${DEPLOY_ID} for ${DG} is in state: ${STATUS}"
+              fi
             else
-              echo "No previous task definition found for $SERVICE"
+              echo "  ℹ️  No deployments found for ${DG}"
             fi
           done
-
-      - name: Wait for rollback to stabilize
-        run: |
-          aws ecs wait services-stable \
-            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-            --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend" \
-            --region "$AWS_REGION"
-          echo "Rollback complete."
+          echo "Rollback initiated. CodeDeploy will handle the blue/green swap back."
 
   # ─────────────────────────────────────────────────
   # Post-deployment cleanup and smoke tests
@@ -707,48 +632,9 @@ jobs:
           fi
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for ECS services to stabilize
-        if: needs.deploy-prod.result == 'success'
-        run: |
-          echo "Waiting for ECS services to stabilize (up to 10 minutes)..."
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-          SERVICES=(
-            "${PROJECT_NAME}-${ENVIRONMENT}-backend"
-            "${PROJECT_NAME}-${ENVIRONMENT}-frontend"
-          )
-          MAX_WAIT=600
-          POLL_INTERVAL=15
-          elapsed=0
-
-          while [[ $elapsed -lt $MAX_WAIT ]]; do
-            all_stable=true
-            for svc in "${SERVICES[@]}"; do
-              svc_info=$(aws ecs describe-services \
-                --cluster "$CLUSTER" --services "$svc" --region "$AWS_REGION" \
-                --query "services[0].{active: length(deployments[?status!='INACTIVE']), running: runningCount, desired: desiredCount}" \
-                --output json)
-              active=$(echo "$svc_info" | jq -r '.active')
-              running=$(echo "$svc_info" | jq -r '.running')
-              desired=$(echo "$svc_info" | jq -r '.desired')
-              echo "${svc}: active_deployments=${active}, running=${running}, desired=${desired}"
-              if [[ "$active" != "1" || "$running" != "$desired" ]]; then
-                all_stable=false
-              fi
-            done
-
-            if $all_stable; then
-              echo "✅ All production services stable!"
-              break
-            fi
-
-            sleep $POLL_INTERVAL
-            elapsed=$((elapsed + POLL_INTERVAL))
-          done
-
-          if [[ $elapsed -ge $MAX_WAIT ]]; then
-            echo "❌ Timed out after ${MAX_WAIT}s waiting for production services to stabilize"
-            exit 1
-          fi
+      # NOTE: No ECS polling needed — the environment gate (production-post-deploy)
+      # holds this job until the CodeDeploy callback approves it, meaning
+      # services are already stable when this job starts running.
 
       - name: Run smoke tests
         if: needs.deploy-prod.result == 'success' && steps.alb.outputs.url != 'http://localhost:8001'
