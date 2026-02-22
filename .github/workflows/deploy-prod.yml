@@ -529,7 +529,7 @@ jobs:
           fail() {
             echo "⚠️ $1"
             echo "   Deployment will continue without async callback."
-            exit 0
+            exit 1
           }
 
           # 1. Connection (Auth for GitHub)
