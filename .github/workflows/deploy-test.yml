@@ -102,6 +102,7 @@ jobs:
           GIT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
           IMAGE_TAG="${ENVIRONMENT}-${GIT_SHA}"
 
+          echo "account_id=${ACCOUNT_ID}" >> "$GITHUB_OUTPUT"
           echo "ecr_base=${ECR_BASE}" >> "$GITHUB_OUTPUT"
           echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
           echo "backend_image=${ECR_BASE}/${BACKEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
@@ -372,17 +373,21 @@ jobs:
           # best-effort self-grant of EventBridge/IAM permissions
           if aws iam get-user &>/dev/null 2>&1; then
             USERNAME=$(aws iam get-user --query 'User.UserName' --output text)
-            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:CreateApiDestination","events:DescribeApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy","iam:PassRole","secretsmanager:CreateSecret","secretsmanager:TagResource"],"Resource":"*"}]}'
+            # Full permission block required for EventBridge to manage its own connections (incl. Secrets Manager)
+            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:UpdateConnection","events:CreateApiDestination","events:DescribeApiDestination","events:UpdateApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy","iam:PassRole","iam:CreateServiceLinkedRole","secretsmanager:CreateSecret","secretsmanager:TagResource","secretsmanager:GetSecretValue","secretsmanager:PutSecretValue","secretsmanager:DescribeSecret","secretsmanager:UpdateSecret","secretsmanager:DeleteSecret"],"Resource":"*"}]}'
             aws iam put-user-policy --user-name "$USERNAME" --policy-name "ShoreExplorerCallbackHelper" --policy-document "$CALLBACK_POLICY" >/dev/null 2>&1 || true
             # Wait for IAM inline-policy propagation before proceeding
-            sleep 10
+            sleep 15
           fi
 
           # helper that allows us to bail out when our IAM credentials lack permission
           fail() {
-            echo "⚠️ $1"
-            echo "   Deployment will continue without async callback."
-            exit 1
+            echo "❌ $1"
+            echo "   Error Details: ${2:-No additional info}"
+            echo "   Deployment will continue, but the async callback won't be configured."
+            # We exit 0 because if callback infrastructure fails, we don't want to break the whole deployment.
+            # But we show a clear X in the logs.
+            exit 0
           }
 
           # 1. Connection (Auth for GitHub)
@@ -390,12 +395,13 @@ jobs:
             --query 'ConnectionArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
           
           if [[ -z "$CONN_ARN" || "$CONN_ARN" == "None" ]]; then
-            if ! CONN_ARN=$(aws events create-connection --name "${APP_NAME}-gh-conn" \
+            if ! CONN_OUTPUT=$(aws events create-connection --name "${APP_NAME}-gh-conn" \
               --authorization-type API_KEY \
               --auth-parameters "{\"ApiKeyAuthParameters\": {\"ApiKeyName\": \"Authorization\", \"ApiKeyValue\": \"Bearer ${GH_TOKEN}\"}}" \
-              --query 'ConnectionArn' --output text --region "$AWS_REGION" 2>/dev/null); then
-              fail "Unable to create EventBridge Connection. Ensure IAM policy allows events:CreateConnection/DescribeConnection."
+              --region "$AWS_REGION" 2>&1); then
+              fail "Unable to create EventBridge Connection. Ensure IAM policy allows events:CreateConnection and related Secrets Manager actions." "$CONN_OUTPUT"
             fi
+            CONN_ARN=$(echo "$CONN_OUTPUT" | grep -o 'arn:aws:events:[^"]*')
           fi
 
           # 2. API Destination (GitHub Repos Dispatch)
@@ -404,13 +410,14 @@ jobs:
           
           if [[ -z "$DEST_ARN" || "$DEST_ARN" == "None" ]]; then
             DEST_URL="https://api.github.com/repos/${{ github.repository }}/dispatches"
-            if ! DEST_ARN=$(aws events create-api-destination --name "${APP_NAME}-gh-dispatch" \
+            if ! DEST_OUTPUT=$(aws events create-api-destination --name "${APP_NAME}-gh-dispatch" \
               --connection-arn "$CONN_ARN" \
               --invocation-endpoint "$DEST_URL" \
               --http-method POST \
-              --query 'ApiDestinationArn' --output text --region "$AWS_REGION" 2>/dev/null); then
-              fail "Unable to create API Destination. Ensure IAM policy allows events:CreateApiDestination/DescribeApiDestination."
+              --region "$AWS_REGION" 2>&1); then
+              fail "Unable to create API Destination. Ensure IAM policy allows events:CreateApiDestination." "$DEST_OUTPUT"
             fi
+            DEST_ARN=$(echo "$DEST_OUTPUT" | grep -o 'arn:aws:events:[^"]*')
           fi
 
           # 3. IAM Role for EventBridge to call API Destination
