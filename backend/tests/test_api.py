@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -147,8 +148,6 @@ def test_create_trip_includes_expiry(mock_db_client):
     assert "ttl" in data, "Trip should include ttl field"
 
     # Verify expires_at is ~28 days after created_at
-    from datetime import datetime, timezone
-
     created = datetime.fromisoformat(data["created_at"])
     expires = datetime.fromisoformat(data["expires_at"])
     delta = expires - created

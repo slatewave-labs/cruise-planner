@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Ship, MapPin, Calendar, Plus, Loader2, Anchor, HardDrive, FileText, Wifi, WifiOff, Timer } from 'lucide-react';
 import api from '../api';
 import { motion } from 'framer-motion';
-import { getAllCachedTrips, cacheTrip, getCachedPlanCountForTrip } from '../utils';
+import { getAllCachedTrips, cacheTrip, getCachedPlanCountForTrip, formatExpiryDate } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -131,7 +131,7 @@ export default function MyTrips() {
                     {trip.expires_at && (
                       <div className="flex items-center gap-1 text-amber-600" data-testid={`trip-expiry-${i}`}>
                         <Timer className="w-3.5 h-3.5" />
-                        Expires {new Date(trip.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        Expires {formatExpiryDate(trip.expires_at)}
                       </div>
                     )}
                     {planCount > 0 && (

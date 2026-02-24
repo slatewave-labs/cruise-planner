@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Ship, MapPin, Calendar, Clock, Compass, Edit, Trash2, Loader2, ArrowRight, HardDrive, FileText, Timer } from 'lucide-react';
 import api from '../api';
-import { cacheTrip, getCachedTrip, removeCachedTrip, getCachedPlansForTrip, getCurrencySymbol } from '../utils';
+import { cacheTrip, getCachedTrip, removeCachedTrip, getCachedPlansForTrip, getCurrencySymbol, formatExpiryDate } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -134,7 +134,7 @@ export default function TripDetail() {
       {trip.expires_at && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-6 text-sm text-amber-700 flex items-center gap-2" data-testid="trip-expiry-banner">
           <Timer className="w-4 h-4 shrink-0" />
-          <span>This trip and its plans will be automatically removed on <strong>{new Date(trip.expires_at).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
+          <span>This trip and its plans will be automatically removed on <strong>{formatExpiryDate(trip.expires_at, { weekday: 'short' })}</strong></span>
         </div>
       )}
 

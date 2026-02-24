@@ -180,3 +180,9 @@ export function getErrorMessage(error) {
   // Fallback to error.message or generic message
   return error.message || 'An unexpected error occurred. Please try again.';
 }
+
+export function formatExpiryDate(dateStr, options = {}) {
+  if (!dateStr) return '';
+  const defaults = { day: 'numeric', month: 'short', year: 'numeric', ...options };
+  return new Date(dateStr).toLocaleDateString('en-GB', defaults);
+}
