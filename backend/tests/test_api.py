@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -9,36 +8,25 @@ from fastapi.testclient import TestClient
 # Import app from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-# Mock DynamoDB client before importing app
-with patch("boto3.resource") as mock_boto_resource:
-    # Configure mock to simulate successful connection
-    mock_dynamodb = MagicMock()
-    mock_boto_resource.return_value = mock_dynamodb
-    import server
-    from server import app
+import server
+from server import app
 
 client = TestClient(app)
 
 
 def test_health_check():
     """Test that health check endpoint works."""
-    with patch("server.db_client") as mock_db_client:
-        mock_db_client.health_check.return_value = True
-        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
-            response = client.get("/api/health")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "ok"
-            assert "checks" in data
+    with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert "checks" in data
 
 
 @patch("server.LLMClient")
-@patch("server.db_client")
-def test_generate_plan_success(mock_db_client, mock_llm_client_class):
+def test_generate_plan_success(mock_llm_client_class):
     """Test successful plan generation with port details in request body."""
-    # Setup database mock
-    mock_db_client.health_check.return_value = True
-
     # Setup mocks
     mock_device_id = "test-device"
 
@@ -87,29 +75,23 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
     assert data["plan"]["plan_title"] == "Mock Plan"
     assert data["port_name"] == "Barcelona"
     assert data["port_country"] == "Spain"
-    # Plan is returned without saving to DB
     assert "plan_id" in data
-    assert "expires_at" in data
 
 
 def test_cors_allowed_origin():
     """Allowed origin receives Access-Control-Allow-Origin header."""
     allowed = server._allowed_origins[0]
-    with patch("server.db_client") as mock_db_client:
-        mock_db_client.health_check.return_value = True
-        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
-            response = client.get("/api/health", headers={"Origin": allowed})
+    with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+        response = client.get("/api/health", headers={"Origin": allowed})
     assert response.headers.get("access-control-allow-origin") == allowed
 
 
 def test_cors_disallowed_origin():
     """Unknown origin does not receive Access-Control-Allow-Origin header."""
-    with patch("server.db_client") as mock_db_client:
-        mock_db_client.health_check.return_value = True
-        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
-            response = client.get(
-                "/api/health", headers={"Origin": "http://evil.example.com"}
-            )
+    with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+        response = client.get(
+            "/api/health", headers={"Origin": "http://evil.example.com"}
+        )
     assert "access-control-allow-origin" not in response.headers
 
 

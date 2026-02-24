@@ -4,11 +4,10 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 import httpx
-from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +17,6 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from affiliate_config import process_plan_activities
-from dynamodb_client import DynamoDBClient
 from llm_client import (
     LLMAPIError,
     LLMAuthenticationError,
@@ -109,26 +107,6 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-table_name = os.environ.get("DYNAMODB_TABLE_NAME", "shoreexplorer")
-region_name = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-endpoint_url = os.environ.get("DYNAMODB_ENDPOINT_URL")  # For local development
-
-try:
-    db_client = DynamoDBClient(
-        table_name=table_name, region_name=region_name, endpoint_url=endpoint_url
-    )
-    # Test connection
-    db_client.ping()
-    logger.info(
-        f"Successfully connected to DynamoDB table '{table_name}' "
-        f"in region '{region_name}'"
-    )
-except (BotoCoreError, ClientError) as e:
-    logger.error(f"Failed to connect to DynamoDB: {str(e)}")
-    # Create placeholder client to avoid immediate startup failure
-    # The actual operations will fail with informative errors
-    db_client = None
-
 # --- Pydantic Models ---
 
 _VALID_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
@@ -199,41 +177,6 @@ class GeneratePlanInput(BaseModel):
     preferences: PlanPreferences
 
 
-# --- Helper ---
-
-
-def check_db_connection():
-    """Check if database is available and raise informative error if not."""
-    if db_client is None:
-        logger.error("Database operation attempted but DynamoDB is not connected")
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "database_unavailable",
-                "message": (
-                    "Database service is currently unavailable. "
-                    "Please try again later."
-                ),
-                "troubleshooting": (
-                    "If you're the administrator, check the DYNAMODB_TABLE_NAME "
-                    "and AWS credentials, and ensure DynamoDB table exists."
-                ),
-            },
-        )
-    try:
-        db_client.ping()
-    except Exception as e:
-        logger.error(f"Database ping failed: {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "database_connection_lost",
-                "message": "Lost connection to database. Please try again.",
-                "technical_details": str(e),
-            },
-        )
-
-
 # --- Health ---
 
 
@@ -244,21 +187,8 @@ def health():
         "status": "ok",
         "service": "ShoreExplorer API",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "checks": {"database": "unknown", "ai_service": "unknown"},
+        "checks": {"ai_service": "unknown"},
     }
-
-    # Check database
-    try:
-        if db_client is not None:
-            db_client.ping()
-            status["checks"]["database"] = "healthy"
-        else:
-            status["checks"]["database"] = "not_configured"
-            status["status"] = "degraded"
-    except Exception as e:
-        logger.warning(f"Health check: Database unhealthy - {str(e)}")
-        status["checks"]["database"] = "unhealthy"
-        status["status"] = "degraded"
 
     # Check AI service configuration
     if os.environ.get("GROQ_API_KEY"):
@@ -640,9 +570,8 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             ),
         }
 
-    # Build plan response (stored on-device by the frontend, not in DynamoDB)
+    # Build plan response (stored on-device by the frontend)
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(days=28)
     plan = {
         "plan_id": str(uuid.uuid4()),
         "trip_id": data.trip_id,
@@ -657,7 +586,6 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         ),
         "plan": plan_data,
         "generated_at": now.isoformat(),
-        "expires_at": expires_at.isoformat(),
     }
     logger.info(f"Successfully generated plan {plan['plan_id']} for port {port_name}")
     return plan

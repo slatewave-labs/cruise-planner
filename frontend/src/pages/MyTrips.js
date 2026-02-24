@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Ship, MapPin, Calendar, Plus, Anchor, HardDrive, FileText, Timer } from 'lucide-react';
+import { Ship, MapPin, Calendar, Plus, Anchor, HardDrive, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { listTrips, getPlanCountForTrip } from '../storage';
-import { formatExpiryDate } from '../utils';
 
 export default function MyTrips() {
   const [trips, setTrips] = useState([]);
@@ -83,12 +82,6 @@ export default function MyTrips() {
                       <Calendar className="w-3.5 h-3.5" />
                       {new Date(trip.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                     </div>
-                    {trip.expires_at && (
-                      <div className="flex items-center gap-1 text-amber-600" data-testid={`trip-expiry-${i}`}>
-                        <Timer className="w-3.5 h-3.5" />
-                        Expires {formatExpiryDate(trip.expires_at)}
-                      </div>
-                    )}
                     {planCount > 0 && (
                       <div className="flex items-center gap-1 text-success" data-testid={`saved-plans-badge-${i}`}>
                         <HardDrive className="w-3.5 h-3.5" />

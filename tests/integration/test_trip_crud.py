@@ -12,13 +12,7 @@ import json
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../backend'))
 
-# Mock DynamoDB before importing app
-with patch('boto3.resource') as mock_boto3:
-    mock_table = MagicMock()
-    mock_dynamodb = MagicMock()
-    mock_dynamodb.Table.return_value = mock_table
-    mock_boto3.return_value = mock_dynamodb
-    from backend.server import app
+from backend.server import app
 
 client = TestClient(app)
 

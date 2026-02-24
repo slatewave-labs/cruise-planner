@@ -11,12 +11,7 @@ from fastapi.testclient import TestClient
 # Import app from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-# Mock DynamoDB client before importing app
-with patch("boto3.resource") as mock_boto_resource:
-    # Configure mock to simulate successful connection
-    mock_dynamodb = MagicMock()
-    mock_boto_resource.return_value = mock_dynamodb
-    from server import app
+from server import app
 
 client = TestClient(app)
 
@@ -24,36 +19,18 @@ client = TestClient(app)
 class TestHealthCheck:
     """Test the enhanced health check endpoint."""
 
-    @patch("server.db_client")
-    def test_health_check_all_services_healthy(self, mock_db_client):
+    def test_health_check_all_services_healthy(self):
         """Test health check when all services are healthy."""
-        mock_db_client.health_check.return_value = True
-
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
             response = client.get("/api/health")
 
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
-        assert data["checks"]["database"] == "healthy"
         assert data["checks"]["ai_service"] == "configured"
 
-    @patch("server.db_client", None)
-    def test_health_check_database_not_configured(self):
-        """Test health check when database is not configured."""
-        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
-            response = client.get("/api/health")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "degraded"
-        assert data["checks"]["database"] == "not_configured"
-
-    @patch("server.db_client")
-    def test_health_check_ai_service_not_configured(self, mock_db_client):
+    def test_health_check_ai_service_not_configured(self):
         """Test health check when AI service is not configured."""
-        mock_db_client.health_check.return_value = True
-
         with patch.dict(os.environ, {}, clear=True):
             response = client.get("/api/health")
 
@@ -142,8 +119,7 @@ class TestPlanGenerationErrors:
         assert "troubleshooting" in data["detail"]
 
     @patch("server.LLMClient")
-    @patch("server.db_client")
-    def test_generate_plan_quota_exceeded(self, mock_db_client, mock_llm_client_class):
+    def test_generate_plan_quota_exceeded(self, mock_llm_client_class):
         """Test plan generation handles quota exceeded errors."""
         from llm_client import LLMQuotaExceededError
 
@@ -184,10 +160,7 @@ class TestPlanGenerationErrors:
         assert "retry_after" in data["detail"]
 
     @patch("server.LLMClient")
-    @patch("server.db_client")
-    def test_generate_plan_authentication_error(
-        self, mock_db_client, mock_llm_client_class
-    ):
+    def test_generate_plan_authentication_error(self, mock_llm_client_class):
         """Test plan generation handles authentication errors."""
         from llm_client import LLMAuthenticationError
 
@@ -227,10 +200,7 @@ class TestPlanGenerationErrors:
         assert data["detail"]["error"] == "ai_service_auth_failed"
 
     @patch("server.LLMClient")
-    @patch("server.db_client")
-    def test_generate_plan_with_malformed_json_response(
-        self, mock_db_client, mock_llm_client_class
-    ):
+    def test_generate_plan_with_malformed_json_response(self, mock_llm_client_class):
         """Test plan generation handles malformed JSON from AI."""
         import json as json_module
 

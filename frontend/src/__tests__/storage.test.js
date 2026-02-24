@@ -1,6 +1,6 @@
 /**
  * Unit tests for localStorage-based storage module (storage.js).
- * Tests trip/plan CRUD, 28-day TTL, and cascade deletions.
+ * Tests trip/plan CRUD, cascade deletions, and prototype-pollution guards.
  */
 import {
   createTrip,
@@ -16,7 +16,6 @@ import {
   getPlansForTrip,
   getPlansForPort,
   getPlanCountForTrip,
-  TTL_DAYS,
 } from '../storage';
 
 let testStore = {};
@@ -34,21 +33,18 @@ describe('Trip CRUD', () => {
     });
   });
 
-  test('createTrip returns a trip with id and expiry', () => {
+  test('createTrip returns a trip with id and timestamps', () => {
     const trip = createTrip({ ship_name: 'Test Ship', cruise_line: 'Royal' });
     expect(trip.trip_id).toBeDefined();
     expect(trip.ship_name).toBe('Test Ship');
     expect(trip.cruise_line).toBe('Royal');
     expect(trip.ports).toEqual([]);
-    expect(trip.expires_at).toBeDefined();
-
-    const created = new Date(trip.created_at);
-    const expires = new Date(trip.expires_at);
-    const diffDays = Math.round((expires - created) / (1000 * 60 * 60 * 24));
-    expect(diffDays).toBe(TTL_DAYS);
+    expect(trip.created_at).toBeDefined();
+    expect(trip.updated_at).toBeDefined();
+    expect(trip.expires_at).toBeUndefined();
   });
 
-  test('listTrips returns all non-expired trips', () => {
+  test('listTrips returns all trips', () => {
     createTrip({ ship_name: 'Ship A' });
     createTrip({ ship_name: 'Ship B' });
     const trips = listTrips();
@@ -167,7 +163,6 @@ describe('Plan Storage', () => {
     port_id: 'port-1',
     plan: { plan_title: 'Test', activities: [] },
     generated_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
   };
 
   test('savePlan and getPlan round-trip', () => {
@@ -202,7 +197,7 @@ describe('Plan Storage', () => {
   });
 });
 
-describe('TTL Expiry', () => {
+describe('Prototype Pollution Guards', () => {
   beforeEach(() => {
     testStore = {};
     jest.clearAllMocks();
@@ -212,32 +207,24 @@ describe('TTL Expiry', () => {
     });
   });
 
-  test('expired trips are filtered out by listTrips', () => {
-    const trip = createTrip({ ship_name: 'Expired' });
-    // Manually expire it
-    const store = JSON.parse(testStore['shoreexplorer_trips']);
-    store[trip.trip_id].expires_at = new Date(Date.now() - 1000).toISOString();
-    testStore['shoreexplorer_trips'] = JSON.stringify(store);
-    expect(listTrips()).toHaveLength(0);
+  test('getTrip rejects __proto__ key', () => {
+    expect(getTrip('__proto__')).toBeNull();
   });
 
-  test('expired trips are filtered out by getTrip', () => {
-    const trip = createTrip({ ship_name: 'Expired' });
-    const store = JSON.parse(testStore['shoreexplorer_trips']);
-    store[trip.trip_id].expires_at = new Date(Date.now() - 1000).toISOString();
-    testStore['shoreexplorer_trips'] = JSON.stringify(store);
-    expect(getTrip(trip.trip_id)).toBeNull();
+  test('updateTrip rejects __proto__ key', () => {
+    expect(updateTrip('__proto__', { ship_name: 'X' })).toBeNull();
   });
 
-  test('expired plans are filtered out by getPlan', () => {
-    savePlan({
-      plan_id: 'plan-expired',
-      trip_id: 'trip-1',
-      port_id: 'port-1',
-      generated_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() - 1000).toISOString(),
-    });
-    expect(getPlan('plan-expired')).toBeNull();
+  test('deleteTrip rejects constructor key', () => {
+    expect(deleteTrip('constructor')).toBe(false);
+  });
+
+  test('addPort rejects prototype key', () => {
+    expect(addPort('prototype', { name: 'X' })).toBeNull();
+  });
+
+  test('getPlan rejects __proto__ key', () => {
+    expect(getPlan('__proto__')).toBeNull();
   });
 });
 
@@ -258,7 +245,6 @@ describe('Cascade Deletion', () => {
       trip_id: trip.trip_id,
       port_id: 'port-1',
       generated_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
     });
     deleteTrip(trip.trip_id);
     expect(getPlan('plan-cascade')).toBeNull();
@@ -279,7 +265,6 @@ describe('Cascade Deletion', () => {
       trip_id: trip.trip_id,
       port_id: port.port_id,
       generated_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
     });
     deletePort(trip.trip_id, port.port_id);
     expect(getPlan('plan-port-cascade')).toBeNull();

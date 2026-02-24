@@ -10,9 +10,7 @@ from fastapi.testclient import TestClient
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-with patch("boto3.resource") as mock_boto_resource:
-    mock_boto_resource.return_value = MagicMock()
-    from server import _sanitize, app
+from server import _sanitize, app
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -21,30 +19,22 @@ client = TestClient(app, raise_server_exceptions=False)
 
 
 class TestSecurityHeaders:
-    @patch("server.db_client")
-    def test_x_content_type_options(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_x_content_type_options(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert r.headers.get("x-content-type-options") == "nosniff"
 
-    @patch("server.db_client")
-    def test_x_frame_options(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_x_frame_options(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert r.headers.get("x-frame-options") == "DENY"
 
-    @patch("server.db_client")
-    def test_referrer_policy(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_referrer_policy(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
 
-    @patch("server.db_client")
-    def test_content_security_policy_present(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_content_security_policy_present(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert "content-security-policy" in r.headers

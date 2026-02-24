@@ -9,13 +9,7 @@ from fastapi.testclient import TestClient
 # Add backend to path so we can import server
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../backend"))
 
-# Mock DynamoDB before importing app to avoid connection errors
-with patch('boto3.resource') as mock_boto3:
-    mock_table = MagicMock()
-    mock_dynamodb = MagicMock()
-    mock_dynamodb.Table.return_value = mock_table
-    mock_boto3.return_value = mock_dynamodb
-    from backend.server import app
+from backend.server import app
 
 # Import exceptions from the same path as server.py uses
 from llm_client import LLMAuthenticationError, LLMQuotaExceededError
@@ -44,8 +38,7 @@ PLAN_PAYLOAD = {
 
 
 @patch("backend.server.LLMClient")
-@patch("backend.server.db_client")
-def test_generate_plan_success(mock_db_client, mock_llm_client_class):
+def test_generate_plan_success(mock_llm_client_class):
     # 1. Setup mocks
     mock_device_id = "test-device-123"
 
@@ -99,46 +92,41 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
             "system_instruction"
         ].lower()
 
-        # Plan is returned directly (no DB save)
-        assert not mock_db_client.create_plan.called
-
 
 def test_generate_plan_missing_api_key():
     # Mock missing API key env var
     with patch.dict(os.environ, {"GROQ_API_KEY": ""}, clear=True):
-        with patch("backend.server.db_client"):
-            payload = {
-                "trip_id": "t",
-                "port_id": "p",
-                "port_name": "N",
-                "port_country": "C",
-                "latitude": 0.0,
-                "longitude": 0.0,
-                "arrival": "2023-10-01T08:00:00",
-                "departure": "2023-10-01T18:00:00",
-                "ship_name": "Test Ship",
-                "preferences": {
-                    "party_type": "solo",
-                    "activity_level": "light",
-                    "transport_mode": "walking",
-                    "budget": "free",
-                },
-            }
-            response = client.post(
-                "/api/plans/generate", json=payload, headers={"X-Device-Id": "d"}
-            )
+        payload = {
+            "trip_id": "t",
+            "port_id": "p",
+            "port_name": "N",
+            "port_country": "C",
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "arrival": "2023-10-01T08:00:00",
+            "departure": "2023-10-01T18:00:00",
+            "ship_name": "Test Ship",
+            "preferences": {
+                "party_type": "solo",
+                "activity_level": "light",
+                "transport_mode": "walking",
+                "budget": "free",
+            },
+        }
+        response = client.post(
+            "/api/plans/generate", json=payload, headers={"X-Device-Id": "d"}
+        )
 
-            assert response.status_code == 503
-            detail = response.json()["detail"]
-            # New structured error format
-            assert isinstance(detail, dict)
-            assert detail["error"] == "ai_service_not_configured"
-            assert "not configured" in detail["message"].lower()
+        assert response.status_code == 503
+        detail = response.json()["detail"]
+        # New structured error format
+        assert isinstance(detail, dict)
+        assert detail["error"] == "ai_service_not_configured"
+        assert "not configured" in detail["message"].lower()
 
 
 @patch("backend.server.LLMClient")
-@patch("backend.server.db_client")
-def test_generate_plan_quota_exceeded(mock_db_client, mock_llm_client_class):
+def test_generate_plan_quota_exceeded(mock_llm_client_class):
     """Test handling of API quota exceeded errors."""
     mock_device_id = "test-device-123"
 
@@ -171,8 +159,7 @@ def test_generate_plan_quota_exceeded(mock_db_client, mock_llm_client_class):
 
 
 @patch("backend.server.LLMClient")
-@patch("backend.server.db_client")
-def test_generate_plan_auth_error(mock_db_client, mock_llm_client_class):
+def test_generate_plan_auth_error(mock_llm_client_class):
     """Test handling of API authentication errors."""
     mock_device_id = "test-device-123"
 

@@ -12,13 +12,7 @@ from unittest.mock import Mock, patch
 # Add backend directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../backend"))
 
-# Mock DynamoDB before importing app
-with patch('boto3.resource') as mock_boto3:
-    mock_table = Mock()
-    mock_dynamodb = Mock()
-    mock_dynamodb.Table.return_value = mock_table
-    mock_boto3.return_value = mock_dynamodb
-    from server import app
+from server import app
 
 from affiliate_config import add_affiliate_params
 from fastapi.testclient import TestClient
@@ -28,41 +22,6 @@ from fastapi.testclient import TestClient
 def test_client():
     """Create a test client for the FastAPI app."""
     return TestClient(app)
-
-
-@pytest.fixture
-def mock_db(monkeypatch):
-    """Mock database operations."""
-    mock_db_client = Mock()
-    
-    # Mock successful trip lookup
-    mock_db_client.get_trip.return_value = {
-        "trip_id": "test-trip-123",
-        "device_id": "test-device",
-        "ship_name": "Test Ship",
-        "ports": [
-            {
-                "port_id": "test-port-456",
-                "name": "Barcelona",
-                "country": "Spain",
-                "latitude": 41.3851,
-                "longitude": 2.1734,
-                "arrival": "2024-06-15T08:00:00",
-                "departure": "2024-06-15T18:00:00",
-            }
-        ],
-    }
-    
-    # Mock successful plan save
-    def create_plan_side_effect(plan):
-        return plan
-    mock_db_client.create_plan.side_effect = create_plan_side_effect
-    
-    # Patch the db_client in the server module
-    import server
-    monkeypatch.setattr("server.db_client", mock_db_client)
-    
-    return mock_db_client
 
 
 class TestAffiliateLinksInPlanGeneration:
@@ -95,7 +54,7 @@ class TestAffiliateLinksInPlanGeneration:
 
     @patch("server.LLMClient")
     def test_plan_generation_processes_affiliate_links(
-        self, mock_llm_client_class, test_client, mock_db, monkeypatch
+        self, mock_llm_client_class, test_client, monkeypatch
     ):
         """Test that generated plans have affiliate parameters added to booking URLs."""
         monkeypatch.setenv("GROQ_API_KEY", "test-key")

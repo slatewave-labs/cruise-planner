@@ -1,14 +1,18 @@
 /**
  * Local storage service for trips and plans.
- * All trip/plan data lives on-device in localStorage with a 28-day TTL.
+ * All trip/plan data lives on-device in localStorage.
  * The backend is only used for AI plan generation, weather, and port search.
  */
 
 const TRIPS_KEY = 'shoreexplorer_trips';
 const PLANS_KEY = 'shoreexplorer_plans';
-const TTL_DAYS = 28;
 
 // --- Helpers ---
+
+/** Reject keys that could pollute Object.prototype. */
+function isSafeKey(key) {
+  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
+}
 
 function generateId() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -20,15 +24,6 @@ function generateId() {
 
 function nowISO() {
   return new Date().toISOString();
-}
-
-function expiresAtISO() {
-  return new Date(Date.now() + TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
-}
-
-function isExpired(item) {
-  if (!item.expires_at) return false;
-  return new Date(item.expires_at).getTime() <= Date.now();
 }
 
 function readStore(key) {
@@ -57,7 +52,6 @@ export function createTrip({ ship_name, cruise_line = '' }) {
     ports: [],
     created_at: now,
     updated_at: now,
-    expires_at: expiresAtISO(),
   };
   const store = readStore(TRIPS_KEY);
   store[trip.trip_id] = trip;
@@ -65,53 +59,36 @@ export function createTrip({ ship_name, cruise_line = '' }) {
   return trip;
 }
 
-/** List all non-expired trips, sorted newest-first. */
+/** List all trips, sorted newest-first. */
 export function listTrips() {
   const store = readStore(TRIPS_KEY);
-  const trips = [];
-  let changed = false;
-  for (const [id, trip] of Object.entries(store)) {
-    if (isExpired(trip)) {
-      delete store[id];
-      changed = true;
-    } else {
-      trips.push(trip);
-    }
-  }
-  if (changed) writeStore(TRIPS_KEY, store);
-  // Clean up expired plans too
-  if (changed) purgeExpiredPlans();
-  return trips.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return Object.values(store)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
-/** Get a single trip by ID, or null if not found / expired. */
+/** Get a single trip by ID, or null if not found. */
 export function getTrip(tripId) {
+  if (!isSafeKey(tripId)) return null;
   const store = readStore(TRIPS_KEY);
-  const trip = store[tripId];
-  if (!trip) return null;
-  if (isExpired(trip)) {
-    delete store[tripId];
-    writeStore(TRIPS_KEY, store);
-    return null;
-  }
-  return trip;
+  return store[tripId] || null;
 }
 
 /** Update trip fields (ship_name, cruise_line). Returns updated trip or null. */
 export function updateTrip(tripId, updates) {
+  if (!isSafeKey(tripId)) return null;
   const store = readStore(TRIPS_KEY);
   const trip = store[tripId];
-  if (!trip || isExpired(trip)) return null;
-  if (updates.ship_name !== undefined) trip.ship_name = updates.ship_name;
-  if (updates.cruise_line !== undefined) trip.cruise_line = updates.cruise_line;
-  trip.updated_at = nowISO();
-  store[tripId] = trip;
+  if (!trip) return null;
+  if (updates.ship_name !== undefined) store[tripId].ship_name = updates.ship_name;
+  if (updates.cruise_line !== undefined) store[tripId].cruise_line = updates.cruise_line;
+  store[tripId].updated_at = nowISO();
   writeStore(TRIPS_KEY, store);
-  return trip;
+  return store[tripId];
 }
 
 /** Delete a trip and its associated plans. Returns true if trip existed. */
 export function deleteTrip(tripId) {
+  if (!isSafeKey(tripId)) return false;
   const store = readStore(TRIPS_KEY);
   if (!store[tripId]) return false;
   delete store[tripId];
@@ -125,9 +102,10 @@ export function deleteTrip(tripId) {
 
 /** Add a port to a trip. Returns the new port object, or null if trip not found. */
 export function addPort(tripId, portData) {
+  if (!isSafeKey(tripId)) return null;
   const store = readStore(TRIPS_KEY);
   const trip = store[tripId];
-  if (!trip || isExpired(trip)) return null;
+  if (!trip) return null;
   const port = {
     port_id: generateId(),
     name: portData.name,
@@ -137,22 +115,22 @@ export function addPort(tripId, portData) {
     arrival: portData.arrival,
     departure: portData.departure,
   };
-  trip.ports = trip.ports || [];
-  trip.ports.push(port);
-  trip.updated_at = nowISO();
-  store[tripId] = trip;
+  store[tripId].ports = store[tripId].ports || [];
+  store[tripId].ports.push(port);
+  store[tripId].updated_at = nowISO();
   writeStore(TRIPS_KEY, store);
   return port;
 }
 
 /** Update an existing port in a trip. Returns true if successful. */
 export function updatePort(tripId, portId, portData) {
+  if (!isSafeKey(tripId)) return false;
   const store = readStore(TRIPS_KEY);
   const trip = store[tripId];
-  if (!trip || isExpired(trip)) return false;
+  if (!trip) return false;
   const idx = (trip.ports || []).findIndex(p => p.port_id === portId);
   if (idx === -1) return false;
-  trip.ports[idx] = {
+  store[tripId].ports[idx] = {
     port_id: portId,
     name: portData.name,
     country: portData.country,
@@ -161,22 +139,21 @@ export function updatePort(tripId, portId, portData) {
     arrival: portData.arrival,
     departure: portData.departure,
   };
-  trip.updated_at = nowISO();
-  store[tripId] = trip;
+  store[tripId].updated_at = nowISO();
   writeStore(TRIPS_KEY, store);
   return true;
 }
 
 /** Remove a port from a trip. Returns true if successful. */
 export function deletePort(tripId, portId) {
+  if (!isSafeKey(tripId)) return false;
   const store = readStore(TRIPS_KEY);
   const trip = store[tripId];
-  if (!trip || isExpired(trip)) return false;
+  if (!trip) return false;
   const before = (trip.ports || []).length;
-  trip.ports = (trip.ports || []).filter(p => p.port_id !== portId);
-  if (trip.ports.length === before) return false;
-  trip.updated_at = nowISO();
-  store[tripId] = trip;
+  store[tripId].ports = (trip.ports || []).filter(p => p.port_id !== portId);
+  if (store[tripId].ports.length === before) return false;
+  store[tripId].updated_at = nowISO();
   writeStore(TRIPS_KEY, store);
   // Cascade-delete plans for this port
   deletePlansByPort(portId);
@@ -187,29 +164,24 @@ export function deletePort(tripId, portId) {
 
 /** Save a plan to localStorage. */
 export function savePlan(plan) {
+  if (!plan.plan_id || !isSafeKey(plan.plan_id)) return;
   const store = readStore(PLANS_KEY);
   store[plan.plan_id] = plan;
   writeStore(PLANS_KEY, store);
 }
 
-/** Get a single plan by ID, or null if not found / expired. */
+/** Get a single plan by ID, or null if not found. */
 export function getPlan(planId) {
+  if (!isSafeKey(planId)) return null;
   const store = readStore(PLANS_KEY);
-  const plan = store[planId];
-  if (!plan) return null;
-  if (isExpired(plan)) {
-    delete store[planId];
-    writeStore(PLANS_KEY, store);
-    return null;
-  }
-  return plan;
+  return store[planId] || null;
 }
 
 /** Get all plans for a specific trip, sorted newest-first. */
 export function getPlansForTrip(tripId) {
   const store = readStore(PLANS_KEY);
   return Object.values(store)
-    .filter(p => p.trip_id === tripId && !isExpired(p))
+    .filter(p => p.trip_id === tripId)
     .sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at));
 }
 
@@ -217,7 +189,7 @@ export function getPlansForTrip(tripId) {
 export function getPlansForPort(tripId, portId) {
   const store = readStore(PLANS_KEY);
   return Object.values(store)
-    .filter(p => p.trip_id === tripId && p.port_id === portId && !isExpired(p))
+    .filter(p => p.trip_id === tripId && p.port_id === portId)
     .sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at));
 }
 
@@ -251,19 +223,3 @@ function deletePlansByPort(portId) {
   }
   if (changed) writeStore(PLANS_KEY, store);
 }
-
-/** Remove all expired plans. */
-function purgeExpiredPlans() {
-  const store = readStore(PLANS_KEY);
-  let changed = false;
-  for (const [id, plan] of Object.entries(store)) {
-    if (isExpired(plan)) {
-      delete store[id];
-      changed = true;
-    }
-  }
-  if (changed) writeStore(PLANS_KEY, store);
-}
-
-// Exported for testing
-export { TTL_DAYS };

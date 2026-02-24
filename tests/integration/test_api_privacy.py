@@ -6,23 +6,15 @@ import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../backend'))
 
-# Mock DynamoDB before importing app
-with patch('boto3.resource') as mock_boto3:
-    mock_table = MagicMock()
-    mock_dynamodb = MagicMock()
-    mock_dynamodb.Table.return_value = mock_table
-    mock_boto3.return_value = mock_dynamodb
-    from backend.server import app
+from backend.server import app
 
 client = TestClient(app)
 
 
 def test_health_endpoint_is_public():
     """Health endpoint does not require X-Device-Id."""
-    with patch('backend.server.db_client') as mock_db_client:
-        mock_db_client.health_check.return_value = True
-        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
-            response = client.get("/api/health")
+    with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+        response = client.get("/api/health")
     assert response.status_code == 200
 
 
