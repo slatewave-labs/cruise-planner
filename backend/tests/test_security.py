@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from server import _sanitize, app
+from server import _sanitize, app  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
 

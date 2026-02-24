@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 # Import app from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-import server
-from server import app
+import server  # noqa: E402
+from server import app  # noqa: E402
 
 client = TestClient(app)
 
