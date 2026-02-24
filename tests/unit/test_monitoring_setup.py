@@ -151,9 +151,9 @@ def test_put_dashboard_error_is_surfaced():
     with open(MONITORING_SCRIPT) as f:
         content = f.read()
 
-    # Find the put-dashboard section (between the heredoc end and rm -f)
+    # Find the put-dashboard section (between the JSON write and rm -f)
     dashboard_section = re.search(
-        r"DASHBOARD_EOF.*?rm\s+-f\s+/tmp/dashboard-body\.json",
+        r"dashboard-body\.json.*?rm\s+-f\s+/tmp/dashboard-body\.json",
         content,
         re.DOTALL,
     )
@@ -174,47 +174,51 @@ def test_put_dashboard_error_is_surfaced():
 
 
 def test_dashboard_json_template_produces_valid_json():
-    """The dashboard heredoc template must produce valid JSON after variable expansion.
+    """The dashboard generation must produce valid JSON after variable expansion.
 
-    Runs the heredoc through bash with representative variable values and validates
-    that the output is well-formed JSON with the expected widget structure.
+    Runs the dashboard-building section through bash with representative variable
+    values and validates that the output is well-formed JSON with the expected
+    widget structure. The dashboard is built dynamically via string concatenation
+    to safely handle optional sections (e.g. S3/CloudFront widgets only when present).
     """
-    # Simulate the shell variable expansion by running the heredoc in bash
+    # Read the monitoring script
+    with open(MONITORING_SCRIPT) as f:
+        content = f.read()
+
+    # Extract the section that builds the WIDGETS variable and writes JSON
+    # It starts with "WIDGETS='['" and ends with the echo to dashboard-body.json
+    widgets_match = re.search(
+        r"(WIDGETS='\[.*?echo.*?dashboard-body\.json)",
+        content,
+        re.DOTALL,
+    )
+    assert widgets_match, "Could not find WIDGETS building section in monitoring script"
+
+    widgets_section = widgets_match.group(1)
+
+    # Run the dashboard building through bash with representative variables
     script = r"""
+        set -euo pipefail
         ENVIRONMENT=test
         PROJECT_NAME=shoreexplorer
         APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
         AWS_REGION=us-east-1
         ECS_CLUSTER_NAME="${APP_NAME}-cluster"
         BACKEND_SERVICE_NAME="${APP_NAME}-backend"
-        FRONTEND_SERVICE_NAME="${APP_NAME}-frontend"
         ALB_ARN_SUFFIX="app/test-alb/abc123"
         BACKEND_TG_ARN_SUFFIX="test-backend-tg/def456"
-        FRONTEND_TG_ARN_SUFFIX="test-frontend-tg/ghi789"
+        CF_DIST_ID="E1234567890"
+        S3_BUCKET="${APP_NAME}-frontend"
         METRIC_NAMESPACE="${PROJECT_NAME}/${ENVIRONMENT}"
     """
 
-    # Read the heredoc from the monitoring script
-    with open(MONITORING_SCRIPT) as f:
-        content = f.read()
-
-    heredoc_match = re.search(
-        r"cat > /tmp/dashboard-body\.json << DASHBOARD_EOF\n(.*?)\nDASHBOARD_EOF",
-        content,
-        re.DOTALL,
-    )
-    assert heredoc_match, "Could not find dashboard heredoc in monitoring script"
-
-    heredoc_body = heredoc_match.group(1)
-
-    # Run through bash to expand variables
-    full_script = script + '\ncat << DASHBOARD_EOF\n' + heredoc_body + '\nDASHBOARD_EOF'
+    full_script = script + '\n' + widgets_section + '\ncat /tmp/dashboard-body.json'
     result = subprocess.run(
         ["bash", "-c", full_script],
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, f"Heredoc expansion failed: {result.stderr}"
+    assert result.returncode == 0, f"Dashboard generation failed: {result.stderr}"
 
     # Validate JSON
     dashboard = json.loads(result.stdout)
@@ -235,3 +239,19 @@ def test_dashboard_json_template_produces_valid_json():
         assert widget["x"] + widget["width"] <= 24, (
             f"Widget exceeds grid: x={widget['x']} + width={widget['width']} > 24"
         )
+
+    # Verify that S3/CloudFront widgets are present (not ECS frontend)
+    widget_titles = [
+        w.get("properties", {}).get("title", "")
+        for w in dashboard["widgets"]
+        if w["type"] == "metric"
+    ]
+    assert any("CloudFront" in t for t in widget_titles), (
+        "Dashboard must include CloudFront metrics widgets (frontend is S3/CloudFront)"
+    )
+    assert not any("Frontend CPU" in t for t in widget_titles), (
+        "Dashboard must NOT include Frontend ECS CPU widget (frontend is S3/CloudFront, not ECS)"
+    )
+    assert not any("Frontend Memory" in t for t in widget_titles), (
+        "Dashboard must NOT include Frontend ECS Memory widget (frontend is S3/CloudFront, not ECS)"
+    )
