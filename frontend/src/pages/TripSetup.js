@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { Ship, Plus, Trash2, MapPin, Calendar, Clock, ArrowRight, Loader2, Search, Globe } from 'lucide-react';
 import api from '../api';
-import { getErrorMessage } from '../utils';
-import { createTrip, getTrip, updateTrip, addPort, updatePort } from '../storage';
+import { createTrip, getTrip, updateTrip, addPort as addPortToStorage, updatePort as updatePortInStorage } from '../storage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const DROPDOWN_CLOSE_DELAY_MS = 250;
@@ -217,9 +216,9 @@ export default function TripSetup() {
           departure: port.departure,
         };
         if (port.port_id && !port.port_id.startsWith('temp-')) {
-          updatePort(savedTripId, port.port_id, portData);
+          updatePortInStorage(savedTripId, port.port_id, portData);
         } else {
-          addPort(savedTripId, portData);
+          addPortToStorage(savedTripId, portData);
         }
       }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Ship, MapPin, Calendar, Clock, Compass, Edit, Trash2, ArrowRight, HardDrive, FileText, Timer } from 'lucide-react';
-import { getTrip as getLocalTrip, deleteTrip, getPlansForTrip, getPlanCountForTrip } from '../storage';
+import { getTrip as getLocalTrip, deleteTrip, getPlansForTrip } from '../storage';
 import { getCurrencySymbol, formatExpiryDate } from '../utils';
 
 export default function TripDetail() {

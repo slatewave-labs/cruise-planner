@@ -51,6 +51,13 @@ def test_generate_plan_input_valid():
     data = {
         "trip_id": "trip123",
         "port_id": "port456",
+        "port_name": "Barcelona",
+        "port_country": "Spain",
+        "latitude": 41.38,
+        "longitude": 2.19,
+        "arrival": "2023-10-01T08:00:00",
+        "departure": "2023-10-01T18:00:00",
+        "ship_name": "Test Ship",
         "preferences": {
             "party_type": "solo",
             "activity_level": "intensive",
@@ -60,6 +67,7 @@ def test_generate_plan_input_valid():
     }
     obj = GeneratePlanInput(**data)
     assert obj.trip_id == "trip123"
+    assert obj.port_name == "Barcelona"
     assert obj.preferences.party_type == "solo"
 
 def test_plan_preferences_invalid_budget():

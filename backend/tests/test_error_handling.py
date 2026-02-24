@@ -66,57 +66,13 @@ class TestHealthCheck:
 class TestDatabaseErrors:
     """Test database connection error handling."""
 
-    @patch("server.db_client", None)
-    def test_trip_creation_fails_when_db_unavailable(self):
-        """Test that trip creation fails gracefully when database is unavailable."""
-        response = client.post(
-            "/api/trips",
-            json={"ship_name": "Test Ship", "cruise_line": "Test Line"},
-            headers={"X-Device-Id": "test-device"},
-        )
-
-        assert response.status_code == 503
-        data = response.json()
-        assert "detail" in data
-        assert data["detail"]["error"] == "database_unavailable"
-        assert "troubleshooting" in data["detail"]
+    pass  # Trip CRUD moved to client-side localStorage
 
 
 class TestNotFoundErrors:
     """Test 404 error responses with detailed messages."""
 
-    @patch("server.db_client")
-    def test_get_trip_not_found(self, mock_db_client):
-        """Test getting a non-existent trip returns detailed error."""
-        mock_db_client.get_trip.return_value = None
-        mock_db_client.health_check.return_value = True
-
-        response = client.get(
-            "/api/trips/nonexistent-id", headers={"X-Device-Id": "test-device"}
-        )
-
-        assert response.status_code == 404
-        data = response.json()
-        assert "detail" in data
-        assert data["detail"]["error"] == "trip_not_found"
-        assert "trip_id" in data["detail"]
-        assert data["detail"]["trip_id"] == "nonexistent-id"
-
-    @patch("server.db_client")
-    def test_get_plan_not_found(self, mock_db_client):
-        """Test getting a non-existent plan returns detailed error."""
-        mock_db_client.get_plan.return_value = None
-        mock_db_client.health_check.return_value = True
-
-        response = client.get(
-            "/api/plans/nonexistent-id", headers={"X-Device-Id": "test-device"}
-        )
-
-        assert response.status_code == 404
-        data = response.json()
-        assert "detail" in data
-        assert data["detail"]["error"] == "plan_not_found"
-        assert "plan_id" in data["detail"]
+    pass  # Trip/plan retrieval moved to client-side localStorage
 
 
 class TestWeatherAPIErrors:
@@ -165,27 +121,8 @@ class TestWeatherAPIErrors:
 class TestPlanGenerationErrors:
     """Test plan generation error scenarios."""
 
-    @patch("server.db_client")
-    def test_generate_plan_missing_api_key(self, mock_db_client):
+    def test_generate_plan_missing_api_key(self):
         """Test plan generation fails gracefully when API key is missing."""
-        mock_db_client.get_trip.return_value = {
-            "trip_id": "trip-123",
-            "device_id": "test-device",
-            "ship_name": "Test Ship",
-            "ports": [
-                {
-                    "port_id": "port-456",
-                    "name": "Barcelona",
-                    "country": "Spain",
-                    "latitude": 41.38,
-                    "longitude": 2.19,
-                    "arrival": "2023-10-01T08:00:00",
-                    "departure": "2023-10-01T18:00:00",
-                }
-            ],
-        }
-        mock_db_client.health_check.return_value = True
-
         with patch.dict(os.environ, {}, clear=True):
             with patch("httpx.AsyncClient"):
                 response = client.post(
@@ -193,6 +130,13 @@ class TestPlanGenerationErrors:
                     json={
                         "trip_id": "trip-123",
                         "port_id": "port-456",
+                        "port_name": "Barcelona",
+                        "port_country": "Spain",
+                        "latitude": 41.38,
+                        "longitude": 2.19,
+                        "arrival": "2023-10-01T08:00:00",
+                        "departure": "2023-10-01T18:00:00",
+                        "ship_name": "Test Ship",
                         "preferences": {
                             "party_type": "solo",
                             "activity_level": "light",
@@ -215,24 +159,6 @@ class TestPlanGenerationErrors:
         """Test plan generation handles quota exceeded errors."""
         from llm_client import LLMQuotaExceededError
 
-        mock_db_client.get_trip.return_value = {
-            "trip_id": "trip-123",
-            "device_id": "test-device",
-            "ship_name": "Test Ship",
-            "ports": [
-                {
-                    "port_id": "port-456",
-                    "name": "Barcelona",
-                    "country": "Spain",
-                    "latitude": 41.38,
-                    "longitude": 2.19,
-                    "arrival": "2023-10-01T08:00:00",
-                    "departure": "2023-10-01T18:00:00",
-                }
-            ],
-        }
-        mock_db_client.health_check.return_value = True
-
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
         mock_llm_instance.generate_day_plan.side_effect = LLMQuotaExceededError(
@@ -246,6 +172,13 @@ class TestPlanGenerationErrors:
                     json={
                         "trip_id": "trip-123",
                         "port_id": "port-456",
+                        "port_name": "Barcelona",
+                        "port_country": "Spain",
+                        "latitude": 41.38,
+                        "longitude": 2.19,
+                        "arrival": "2023-10-01T08:00:00",
+                        "departure": "2023-10-01T18:00:00",
+                        "ship_name": "Test Ship",
                         "preferences": {
                             "party_type": "solo",
                             "activity_level": "light",
@@ -270,24 +203,6 @@ class TestPlanGenerationErrors:
         """Test plan generation handles authentication errors."""
         from llm_client import LLMAuthenticationError
 
-        mock_db_client.get_trip.return_value = {
-            "trip_id": "trip-123",
-            "device_id": "test-device",
-            "ship_name": "Test Ship",
-            "ports": [
-                {
-                    "port_id": "port-456",
-                    "name": "Barcelona",
-                    "country": "Spain",
-                    "latitude": 41.38,
-                    "longitude": 2.19,
-                    "arrival": "2023-10-01T08:00:00",
-                    "departure": "2023-10-01T18:00:00",
-                }
-            ],
-        }
-        mock_db_client.health_check.return_value = True
-
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
         mock_llm_instance.generate_day_plan.side_effect = LLMAuthenticationError(
@@ -301,6 +216,13 @@ class TestPlanGenerationErrors:
                     json={
                         "trip_id": "trip-123",
                         "port_id": "port-456",
+                        "port_name": "Barcelona",
+                        "port_country": "Spain",
+                        "latitude": 41.38,
+                        "longitude": 2.19,
+                        "arrival": "2023-10-01T08:00:00",
+                        "departure": "2023-10-01T18:00:00",
+                        "ship_name": "Test Ship",
                         "preferences": {
                             "party_type": "solo",
                             "activity_level": "light",
@@ -324,24 +246,6 @@ class TestPlanGenerationErrors:
         """Test plan generation handles malformed JSON from AI."""
         import json as json_module
 
-        mock_db_client.get_trip.return_value = {
-            "trip_id": "trip-123",
-            "device_id": "test-device",
-            "ship_name": "Test Ship",
-            "ports": [
-                {
-                    "port_id": "port-456",
-                    "name": "Barcelona",
-                    "country": "Spain",
-                    "latitude": 41.38,
-                    "longitude": 2.19,
-                    "arrival": "2023-10-01T08:00:00",
-                    "departure": "2023-10-01T18:00:00",
-                }
-            ],
-        }
-        mock_db_client.health_check.return_value = True
-
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
         mock_llm_instance.generate_day_plan.return_value = (
@@ -358,6 +262,13 @@ class TestPlanGenerationErrors:
                     json={
                         "trip_id": "trip-123",
                         "port_id": "port-456",
+                        "port_name": "Barcelona",
+                        "port_country": "Spain",
+                        "latitude": 41.38,
+                        "longitude": 2.19,
+                        "arrival": "2023-10-01T08:00:00",
+                        "departure": "2023-10-01T18:00:00",
+                        "ship_name": "Test Ship",
                         "preferences": {
                             "party_type": "solo",
                             "activity_level": "light",

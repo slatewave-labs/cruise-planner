@@ -16,27 +16,41 @@ with patch('boto3.resource') as mock_boto3:
 
 client = TestClient(app)
 
-@patch('backend.server.db_client')
-def test_trip_isolation(mock_db_client):
-    # Setup
-    device_a = "device-a"
-    device_b = "device-b"
-    
-    # Mock list_trips for Device B (returns empty list)
-    mock_db_client.list_trips.return_value = []
-    
-    # Call list_trips as Device B
-    response = client.get("/api/trips", headers={"X-Device-Id": device_b})
-    
-    # Verify that the query to DynamoDB used device_b
-    mock_db_client.list_trips.assert_called()
-    call_args = mock_db_client.list_trips.call_args[0]
-    assert call_args[0] == device_b
-    
-    # Even if Device B tries to GET trip-a directly, it should fail
-    mock_db_client.get_trip.return_value = None  # Not found for B
-    response = client.get("/api/trips/trip-a", headers={"X-Device-Id": device_b})
-    assert response.status_code == 404
-    
-    # Verify get_trip was called with device_b
-    mock_db_client.get_trip.assert_called_with("trip-a", device_b)
+
+def test_health_endpoint_is_public():
+    """Health endpoint does not require X-Device-Id."""
+    with patch('backend.server.db_client') as mock_db_client:
+        mock_db_client.health_check.return_value = True
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}):
+            response = client.get("/api/health")
+    assert response.status_code == 200
+
+
+def test_port_search_is_public():
+    """Port search does not require authentication."""
+    response = client.get("/api/ports/search", params={"q": "Barcelona"})
+    assert response.status_code == 200
+
+
+def test_generate_plan_requires_device_id():
+    """Generate plan endpoint requires X-Device-Id header."""
+    payload = {
+        "trip_id": "trip-123",
+        "port_id": "port-456",
+        "port_name": "Barcelona",
+        "port_country": "Spain",
+        "latitude": 41.38,
+        "longitude": 2.19,
+        "arrival": "2023-10-01T08:00:00",
+        "departure": "2023-10-01T18:00:00",
+        "ship_name": "Test Ship",
+        "preferences": {
+            "party_type": "solo",
+            "activity_level": "light",
+            "transport_mode": "walking",
+            "budget": "free",
+        },
+    }
+    # No X-Device-Id header
+    response = client.post("/api/plans/generate", json=payload)
+    assert response.status_code == 422

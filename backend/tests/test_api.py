@@ -35,31 +35,12 @@ def test_health_check():
 @patch("server.LLMClient")
 @patch("server.db_client")
 def test_generate_plan_success(mock_db_client, mock_llm_client_class):
-    """Test successful plan generation."""
+    """Test successful plan generation with port details in request body."""
     # Setup database mock
     mock_db_client.health_check.return_value = True
 
     # Setup mocks
     mock_device_id = "test-device"
-    mock_trip_id = "trip-123"
-    mock_port_id = "port-456"
-
-    mock_db_client.get_trip.return_value = {
-        "trip_id": mock_trip_id,
-        "device_id": mock_device_id,
-        "ship_name": "Test Ship",
-        "ports": [
-            {
-                "port_id": mock_port_id,
-                "name": "Barcelona",
-                "country": "Spain",
-                "latitude": 41.38,
-                "longitude": 2.19,
-                "arrival": "2023-10-01T08:00:00",
-                "departure": "2023-10-01T18:00:00",
-            }
-        ],
-    }
 
     # Mock LLM Client
     mock_llm_instance = MagicMock()
@@ -69,8 +50,15 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
     mock_llm_instance.parse_json_response.return_value = json.loads(plan_json)
 
     payload = {
-        "trip_id": mock_trip_id,
-        "port_id": mock_port_id,
+        "trip_id": "trip-123",
+        "port_id": "port-456",
+        "port_name": "Barcelona",
+        "port_country": "Spain",
+        "latitude": 41.38,
+        "longitude": 2.19,
+        "arrival": "2023-10-01T08:00:00",
+        "departure": "2023-10-01T18:00:00",
+        "ship_name": "Test Ship",
         "preferences": {
             "party_type": "solo",
             "activity_level": "light",
@@ -95,7 +83,13 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
             )
 
     assert response.status_code == 200
-    assert response.json()["plan"]["plan_title"] == "Mock Plan"
+    data = response.json()
+    assert data["plan"]["plan_title"] == "Mock Plan"
+    assert data["port_name"] == "Barcelona"
+    assert data["port_country"] == "Spain"
+    # Plan is returned without saving to DB
+    assert "plan_id" in data
+    assert "expires_at" in data
 
 
 def test_cors_allowed_origin():
@@ -129,30 +123,3 @@ def test_cors_origins_parsed_from_env():
 def test_cors_no_wildcard():
     """Wildcard '*' is never used as an allowed origin."""
     assert "*" not in server._allowed_origins
-
-
-@patch("server.db_client")
-def test_create_trip_includes_expiry(mock_db_client):
-    """Test that trip creation includes expires_at and ttl fields (28-day expiry)."""
-    mock_db_client.create_trip.return_value = {}
-
-    response = client.post(
-        "/api/trips",
-        json={"ship_name": "Test Ship", "cruise_line": "Royal Caribbean"},
-        headers={"X-Device-Id": "test-device"},
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert "expires_at" in data, "Trip should include expires_at field"
-    assert "ttl" in data, "Trip should include ttl field"
-
-    # Verify expires_at is ~28 days after created_at
-    created = datetime.fromisoformat(data["created_at"])
-    expires = datetime.fromisoformat(data["expires_at"])
-    delta = expires - created
-    assert delta.days == 28, f"Expiry should be 28 days, got {delta.days}"
-
-    # Verify ttl is a Unix timestamp matching expires_at
-    assert isinstance(data["ttl"], int)
-    assert data["ttl"] == int(expires.timestamp())

@@ -22,40 +22,35 @@ from llm_client import LLMAuthenticationError, LLMQuotaExceededError
 
 client = TestClient(app)
 
+# Common payload with port details included (localStorage-backed on frontend)
+PLAN_PAYLOAD = {
+    "trip_id": "trip-456",
+    "port_id": "port-789",
+    "port_name": "Barcelona",
+    "port_country": "Spain",
+    "latitude": 41.38,
+    "longitude": 2.19,
+    "arrival": "2023-10-01T08:00:00",
+    "departure": "2023-10-01T18:00:00",
+    "ship_name": "Test Ship",
+    "preferences": {
+        "party_type": "couple",
+        "activity_level": "moderate",
+        "transport_mode": "mixed",
+        "budget": "medium",
+        "currency": "GBP",
+    },
+}
+
 
 @patch("backend.server.LLMClient")
 @patch("backend.server.db_client")
 def test_generate_plan_success(mock_db_client, mock_llm_client_class):
     # 1. Setup mocks
     mock_device_id = "test-device-123"
-    mock_trip_id = "trip-456"
-    mock_port_id = "port-789"
 
     # Mock environment variable for API key
     with patch.dict(os.environ, {"GROQ_API_KEY": "test-api-key"}):
-        # Mock Trip in DB
-        mock_db_client.get_trip.return_value = {
-            "trip_id": mock_trip_id,
-            "device_id": mock_device_id,
-            "ship_name": "Test Ship",
-            "ports": [
-                {
-                    "port_id": mock_port_id,
-                    "name": "Barcelona",
-                    "country": "Spain",
-                    "latitude": 41.38,
-                    "longitude": 2.19,
-                    "arrival": "2023-10-01T08:00:00",
-                    "departure": "2023-10-01T18:00:00",
-                }
-            ],
-        }
-        
-        # Mock successful plan creation
-        def create_plan_side_effect(plan):
-            return plan
-        mock_db_client.create_plan.side_effect = create_plan_side_effect
-
         # Mock LLM Client
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
@@ -75,19 +70,6 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
         mock_llm_instance.generate_day_plan.return_value = response_json
         mock_llm_instance.parse_json_response.return_value = json.loads(response_json)
 
-        # 2. Call the endpoint
-        payload = {
-            "trip_id": mock_trip_id,
-            "port_id": mock_port_id,
-            "preferences": {
-                "party_type": "couple",
-                "activity_level": "moderate",
-                "transport_mode": "mixed",
-                "budget": "medium",
-                "currency": "GBP",
-            },
-        }
-
         headers = {"X-Device-Id": mock_device_id}
 
         # We use patch for httpx to avoid real weather API calls during AI test
@@ -100,7 +82,7 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
             mock_weather_get.return_value = mock_weather_resp
 
             response = client.post(
-                "/api/plans/generate", json=payload, headers=headers
+                "/api/plans/generate", json=PLAN_PAYLOAD, headers=headers
             )
 
         # 3. Assertions
@@ -116,36 +98,25 @@ def test_generate_plan_success(mock_db_client, mock_llm_client_class):
         assert "expert cruise port day planner" in call_kwargs[
             "system_instruction"
         ].lower()
-        
-        # Verify plan was saved to DynamoDB
-        assert mock_db_client.create_plan.called
+
+        # Plan is returned directly (no DB save)
+        assert not mock_db_client.create_plan.called
 
 
 def test_generate_plan_missing_api_key():
     # Mock missing API key env var
     with patch.dict(os.environ, {"GROQ_API_KEY": ""}, clear=True):
-        # Mock port/trip lookup to bypass it
-        with patch("backend.server.db_client") as mock_db_client:
-            mock_db_client.get_trip.return_value = {
-                "trip_id": "t",
-                "device_id": "d",
-                "ship_name": "Test Ship",
-                "ports": [
-                    {
-                        "port_id": "p",
-                        "name": "N",
-                        "country": "C",
-                        "latitude": 0,
-                        "longitude": 0,
-                        "arrival": "2023-10-01T08:00:00",
-                        "departure": "2023-10-01T18:00:00",
-                    }
-                ],
-            }
-
+        with patch("backend.server.db_client"):
             payload = {
                 "trip_id": "t",
                 "port_id": "p",
+                "port_name": "N",
+                "port_country": "C",
+                "latitude": 0.0,
+                "longitude": 0.0,
+                "arrival": "2023-10-01T08:00:00",
+                "departure": "2023-10-01T18:00:00",
+                "ship_name": "Test Ship",
                 "preferences": {
                     "party_type": "solo",
                     "activity_level": "light",
@@ -170,46 +141,14 @@ def test_generate_plan_missing_api_key():
 def test_generate_plan_quota_exceeded(mock_db_client, mock_llm_client_class):
     """Test handling of API quota exceeded errors."""
     mock_device_id = "test-device-123"
-    mock_trip_id = "trip-456"
-    mock_port_id = "port-789"
 
     with patch.dict(os.environ, {"GROQ_API_KEY": "test-api-key"}):
-        # Mock Trip in DB
-        mock_db_client.get_trip.return_value = {
-            "trip_id": mock_trip_id,
-            "device_id": mock_device_id,
-            "ship_name": "Test Ship",
-            "ports": [
-                {
-                    "port_id": mock_port_id,
-                    "name": "Barcelona",
-                    "country": "Spain",
-                    "latitude": 41.38,
-                    "longitude": 2.19,
-                    "arrival": "2023-10-01T08:00:00",
-                    "departure": "2023-10-01T18:00:00",
-                }
-            ],
-        }
-
         # Mock LLM to raise quota error
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
         mock_llm_instance.generate_day_plan.side_effect = LLMQuotaExceededError(
             "rate_limit exceeded"
         )
-
-        payload = {
-            "trip_id": mock_trip_id,
-            "port_id": mock_port_id,
-            "preferences": {
-                "party_type": "couple",
-                "activity_level": "moderate",
-                "transport_mode": "mixed",
-                "budget": "medium",
-                "currency": "GBP",
-            },
-        }
 
         with patch("httpx.AsyncClient.get") as mock_weather_get:
             mock_weather_resp = MagicMock()
@@ -221,7 +160,7 @@ def test_generate_plan_quota_exceeded(mock_db_client, mock_llm_client_class):
 
             response = client.post(
                 "/api/plans/generate",
-                json=payload,
+                json=PLAN_PAYLOAD,
                 headers={"X-Device-Id": mock_device_id},
             )
 
@@ -236,45 +175,14 @@ def test_generate_plan_quota_exceeded(mock_db_client, mock_llm_client_class):
 def test_generate_plan_auth_error(mock_db_client, mock_llm_client_class):
     """Test handling of API authentication errors."""
     mock_device_id = "test-device-123"
-    mock_trip_id = "trip-456"
-    mock_port_id = "port-789"
 
     with patch.dict(os.environ, {"GROQ_API_KEY": "invalid-key"}):
-        mock_db_client.get_trip.return_value = {
-            "trip_id": mock_trip_id,
-            "device_id": mock_device_id,
-            "ship_name": "Test Ship",
-            "ports": [
-                {
-                    "port_id": mock_port_id,
-                    "name": "Barcelona",
-                    "country": "Spain",
-                    "latitude": 41.38,
-                    "longitude": 2.19,
-                    "arrival": "2023-10-01T08:00:00",
-                    "departure": "2023-10-01T18:00:00",
-                }
-            ],
-        }
-
         # Mock LLM to raise auth error
         mock_llm_instance = MagicMock()
         mock_llm_client_class.return_value = mock_llm_instance
         mock_llm_instance.generate_day_plan.side_effect = LLMAuthenticationError(
             "API key is invalid"
         )
-
-        payload = {
-            "trip_id": mock_trip_id,
-            "port_id": mock_port_id,
-            "preferences": {
-                "party_type": "couple",
-                "activity_level": "moderate",
-                "transport_mode": "mixed",
-                "budget": "medium",
-                "currency": "GBP",
-            },
-        }
 
         with patch("httpx.AsyncClient.get") as mock_weather_get:
             mock_weather_resp = MagicMock()
@@ -286,7 +194,7 @@ def test_generate_plan_auth_error(mock_db_client, mock_llm_client_class):
 
             response = client.post(
                 "/api/plans/generate",
-                json=payload,
+                json=PLAN_PAYLOAD,
                 headers={"X-Device-Id": mock_device_id},
             )
 

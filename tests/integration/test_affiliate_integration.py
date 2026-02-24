@@ -159,6 +159,13 @@ class TestAffiliateLinksInPlanGeneration:
             json={
                 "trip_id": "test-trip-123",
                 "port_id": "test-port-456",
+                "port_name": "Barcelona",
+                "port_country": "Spain",
+                "latitude": 41.3874,
+                "longitude": 2.1686,
+                "arrival": "2023-10-01T08:00:00",
+                "departure": "2023-10-01T18:00:00",
+                "ship_name": "Test Ship",
                 "preferences": {
                     "party_type": "couple",
                     "activity_level": "moderate",
