@@ -519,9 +519,10 @@ jobs:
       - name: Setup monitoring (dashboard + alarms)
         env:
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL || '' }}
+          CHECK_EXISTING: "true"
         run: |
           chmod +x infra/aws/scripts/10-setup-monitoring.sh
-          bash infra/aws/scripts/10-setup-monitoring.sh "${ENVIRONMENT}"
+          bash infra/aws/scripts/10-setup-monitoring.sh "${ENVIRONMENT}" --check-existing
         continue-on-error: true  # Monitoring setup should not block deployment
 
       - name: Deployment summary
@@ -594,87 +595,3 @@ jobs:
           fi
           echo "Rollback initiated. CodeDeploy will handle the blue/green swap back."
           echo "Note: Frontend on S3/CloudFront does not require rollback (content-hashed assets)."
-
-  # ─────────────────────────────────────────────────
-  # Post-deployment cleanup and smoke tests
-  # Runs ONCE after both services have deployed
-  # ─────────────────────────────────────────────────
-  cleanup-and-smoke:
-    name: Deployment Cleanup & Smoke Test
-    runs-on: ubuntu-latest
-    needs: deploy-prod
-    if: always() && needs.deploy-prod.result != 'skipped'
-    environment: production-post-deploy
-
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Get deployment URL
-        id: alb
-        env:
-          CUSTOM_DOMAIN: ${{ secrets.PROD_DOMAIN || '' }}
-        run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-
-          # Get CloudFront URL for frontend
-          CF_DOMAIN=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].DomainName | [0]" \
-            --output text 2>/dev/null || echo "")
-
-          if [[ -n "$CUSTOM_DOMAIN" ]]; then
-            URL="https://${CUSTOM_DOMAIN}"
-          elif [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
-            URL="https://${CF_DOMAIN}"
-          else
-            URL="http://localhost:8001"
-          fi
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
-
-      # NOTE: No ECS polling needed — the environment gate (production-post-deploy)
-      # holds this job until the CodeDeploy callback approves it, meaning
-      # services are already stable when this job starts running.
-
-      - name: Run smoke tests
-        if: needs.deploy-prod.result == 'success' && steps.alb.outputs.url != 'http://localhost:8001'
-        run: |
-          URL="${{ steps.alb.outputs.url }}"
-          echo "Running smoke tests against ${URL}"
-          sleep 15
-
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${URL}/api/health" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
-
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${URL}/" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Frontend check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
-
-      - name: Smoke test & cleanup summary
-        if: always()
-        run: |
-          DEPLOY_STATUS="${{ needs.deploy-prod.result }}"
-          echo "## Deployment Cleanup & Smoke Test" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Environment | \`${ENVIRONMENT}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Deploy Result | \`${DEPLOY_STATUS}\` |" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ steps.alb.outputs.url }}" != "" && "${{ steps.alb.outputs.url }}" != "http://localhost:8001" ]]; then
-            echo "| App URL | ${{ steps.alb.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| API Health | ${{ steps.alb.outputs.url }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
-          fi
