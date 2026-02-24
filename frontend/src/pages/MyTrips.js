@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Ship, MapPin, Calendar, Plus, Loader2, Anchor, HardDrive, FileText, Wifi, WifiOff } from 'lucide-react';
+import { Ship, MapPin, Calendar, Plus, Loader2, Anchor, HardDrive, FileText, Wifi, WifiOff, Timer } from 'lucide-react';
 import api from '../api';
 import { motion } from 'framer-motion';
 import { getAllCachedTrips, cacheTrip, getCachedPlanCountForTrip } from '../utils';
@@ -128,6 +128,12 @@ export default function MyTrips() {
                       <Calendar className="w-3.5 h-3.5" />
                       {new Date(trip.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                     </div>
+                    {trip.expires_at && (
+                      <div className="flex items-center gap-1 text-amber-600" data-testid={`trip-expiry-${i}`}>
+                        <Timer className="w-3.5 h-3.5" />
+                        Expires {new Date(trip.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </div>
+                    )}
                     {planCount > 0 && (
                       <div className="flex items-center gap-1 text-success" data-testid={`saved-plans-badge-${i}`}>
                         <HardDrive className="w-3.5 h-3.5" />
