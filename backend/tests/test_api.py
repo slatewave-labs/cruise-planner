@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -128,3 +129,30 @@ def test_cors_origins_parsed_from_env():
 def test_cors_no_wildcard():
     """Wildcard '*' is never used as an allowed origin."""
     assert "*" not in server._allowed_origins
+
+
+@patch("server.db_client")
+def test_create_trip_includes_expiry(mock_db_client):
+    """Test that trip creation includes expires_at and ttl fields (28-day expiry)."""
+    mock_db_client.create_trip.return_value = {}
+
+    response = client.post(
+        "/api/trips",
+        json={"ship_name": "Test Ship", "cruise_line": "Royal Caribbean"},
+        headers={"X-Device-Id": "test-device"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "expires_at" in data, "Trip should include expires_at field"
+    assert "ttl" in data, "Trip should include ttl field"
+
+    # Verify expires_at is ~28 days after created_at
+    created = datetime.fromisoformat(data["created_at"])
+    expires = datetime.fromisoformat(data["expires_at"])
+    delta = expires - created
+    assert delta.days == 28, f"Expiry should be 28 days, got {delta.days}"
+
+    # Verify ttl is a Unix timestamp matching expires_at
+    assert isinstance(data["ttl"], int)
+    assert data["ttl"] == int(expires.timestamp())

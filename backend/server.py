@@ -4,7 +4,7 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
 import httpx
@@ -302,14 +302,18 @@ def create_trip(data: TripInput, x_device_id: str = Header()):
     """Create a new cruise trip."""
     check_db_connection()
     try:
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=28)
         trip = {
             "trip_id": str(uuid.uuid4()),
             "device_id": x_device_id,
             "ship_name": data.ship_name,
             "cruise_line": data.cruise_line or "",
             "ports": [],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "ttl": int(expires_at.timestamp()),
         }
         db_client.create_trip(trip)
         logger.info(f"Created trip {trip['trip_id']} for device {x_device_id}")
@@ -1062,6 +1066,8 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 
     # Save plan to database
     try:
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=28)
         plan = {
             "plan_id": str(uuid.uuid4()),
             "device_id": x_device_id,
@@ -1076,7 +1082,9 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
                 else None
             ),
             "plan": plan_data,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "ttl": int(expires_at.timestamp()),
         }
         db_client.create_plan(plan)
         logger.info(f"Successfully created plan {plan['plan_id']} for port {port_name}")
