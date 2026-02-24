@@ -29,6 +29,7 @@ export interface Trip {
   ports: Port[];
   created_at: string;
   updated_at: string;
+  expires_at?: string;
 }
 
 export interface Activity {
@@ -114,6 +115,7 @@ export function buildTrip(overrides: Partial<Trip> = {}): Trip {
     ports: [],
     created_at: '2026-01-15T10:00:00Z',
     updated_at: '2026-01-15T10:00:00Z',
+    expires_at: '2026-02-12T10:00:00Z',
     ...overrides,
   };
 }

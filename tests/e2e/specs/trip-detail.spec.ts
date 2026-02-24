@@ -53,6 +53,12 @@ test.describe('Trip Detail Page', () => {
   test('shows "Ports of Call" section heading with count', async ({ page }) => {
     await expect(page.getByText(/ports of call \(1\)/i)).toBeVisible();
   });
+
+  test('shows trip expiry banner with date', async ({ page }) => {
+    await expect(page.getByTestId('trip-expiry-banner')).toBeVisible();
+    await expect(page.getByTestId('trip-expiry-banner')).toContainText('automatically removed on');
+    await expect(page.getByTestId('trip-expiry-banner')).toContainText('12 Feb 2026');
+  });
 });
 
 test.describe('Trip Detail — Trip Not Found', () => {
