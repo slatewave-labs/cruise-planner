@@ -4,7 +4,7 @@ Trip/plan CRUD is now handled client-side via localStorage.
 These tests verify the AI plan generation endpoint accepts port details directly.
 """
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 import sys
 import os
