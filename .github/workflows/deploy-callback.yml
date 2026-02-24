@@ -1,4 +1,4 @@
-name: Deployment Cleanup & Smoke Test
+name: Deployment Callback
 
 on:
   repository_dispatch:
@@ -9,9 +9,12 @@ permissions:
   deployments: write
   actions: write
 
+env:
+  PROJECT_NAME: shoreexplorer
+
 jobs:
   gate-approval:
-    name: Approve Deployment Gate
+    name: "Deployment to ${{ github.event.client_payload.environment }} successful"
     runs-on: ubuntu-latest
     if: github.event.action == 'codedeploy_deploy_success'
 
@@ -26,7 +29,6 @@ jobs:
       - name: Check if backend CodeDeploy deployment succeeded
         id: stability
         env:
-          PROJECT_NAME: shoreexplorer
           ENVIRONMENT: ${{ github.event.client_payload.environment }}
         run: |
           # Only backend uses CodeDeploy (frontend is deployed to S3/CloudFront).
@@ -99,8 +101,71 @@ jobs:
 
             console.log(`ℹ️  No waiting runs found for environment '${gateName}'.`);
 
+      - name: Get deployment URL
+        id: url
+        env:
+          ENVIRONMENT: ${{ github.event.client_payload.environment }}
+        run: |
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+
+          # Get CloudFront URL for frontend
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].DomainName | [0]" \
+            --output text 2>/dev/null || echo "")
+
+          # Determine the public URL (custom domain from secrets not available here, use CloudFront)
+          if [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
+            URL="https://${CF_DOMAIN}"
+          else
+            URL=""
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Run smoke tests
+        if: steps.stability.outputs.all_succeeded == 'true' && steps.url.outputs.url != ''
+        env:
+          ENVIRONMENT: ${{ github.event.client_payload.environment }}
+        run: |
+          URL="${{ steps.url.outputs.url }}"
+          echo "🧪 Running smoke tests against ${URL} (${ENVIRONMENT})"
+          sleep 15
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${URL}/api/health" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${URL}/" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Frontend check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Deployment success summary
+        if: always()
+        env:
+          ENVIRONMENT: ${{ github.event.client_payload.environment }}
+        run: |
+          echo "## Deployment to ${ENVIRONMENT} Successful" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${ENVIRONMENT}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | ✅ CodeDeploy succeeded |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.url.outputs.url }}" != "" ]]; then
+            echo "| App URL | ${{ steps.url.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| API Health | ${{ steps.url.outputs.url }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   handle-failure:
-    name: Handle Deployment Failure
+    name: "Deployment to ${{ github.event.client_payload.environment }} failed"
     runs-on: ubuntu-latest
     if: github.event.action == 'codedeploy_deploy_failed'
 
@@ -148,8 +213,18 @@ jobs:
 
             console.log(`ℹ️  No waiting runs found for environment '${gateName}'.`);
 
-      - name: Notify failure
+      - name: Deployment failure summary
+        env:
+          ENVIRONMENT: ${{ github.event.client_payload.environment }}
         run: |
-          echo "❌ CodeDeploy deployment for ${{ github.event.client_payload.environment }} failed."
+          echo "## Deployment to ${ENVIRONMENT} Failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${ENVIRONMENT}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | ❌ CodeDeploy failed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deployment Group | \`${{ github.event.client_payload.deployment_group || 'unknown' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "❌ CodeDeploy deployment for ${ENVIRONMENT} failed."
           echo "   Deployment group: ${{ github.event.client_payload.deployment_group || 'unknown' }}"
           exit 1
