@@ -1264,18 +1264,23 @@ jobs:
 
           echo "⏳ Waiting for ECS service ${SERVICE} to stabilize..."
           for i in $(seq 1 30); do
-            STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-              --query "services[0].deployments[?status=='PRIMARY'].rolloutState | [0]" \
-              --output text --region "$AWS_REGION" 2>/dev/null || echo "UNKNOWN")
+            # Use runningCount/desiredCount (works with both ECS and CODE_DEPLOY controllers)
+            RESULT=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+              --query "services[0].[runningCount, desiredCount, status]" \
+              --output text --region "$AWS_REGION" 2>/dev/null || echo "0 0 UNKNOWN")
 
-            if [[ "$STATUS" == "COMPLETED" ]]; then
-              echo "✅ ECS service is stable (attempt ${i}/30)"
+            RUNNING=$(echo "$RESULT" | awk '{print $1}')
+            DESIRED=$(echo "$RESULT" | awk '{print $2}')
+            SVC_STATUS=$(echo "$RESULT" | awk '{print $3}')
+
+            if [[ "$SVC_STATUS" == "ACTIVE" && "$DESIRED" -gt 0 && "$RUNNING" -ge "$DESIRED" ]]; then
+              echo "✅ ECS service is stable — ${RUNNING}/${DESIRED} tasks running (attempt ${i}/30)"
               exit 0
             fi
-            echo "  Attempt ${i}/30: status=${STATUS} — waiting 20s..."
+            echo "  Attempt ${i}/30: ${RUNNING}/${DESIRED} tasks running (status=${SVC_STATUS}) — waiting 20s..."
             sleep 20
           done
-          echo "⚠️  Timed out waiting for ECS service to stabilize (last status: ${STATUS})"
+          echo "⚠️  Timed out waiting for ECS service to stabilize (last: ${RUNNING}/${DESIRED} tasks, status=${SVC_STATUS})"
           echo "  Continuing with smoke tests anyway..."
 
       - name: Get deployment URL
