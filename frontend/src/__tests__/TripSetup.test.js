@@ -263,11 +263,11 @@ describe('TripSetup — datetime constraints', () => {
 
     fireEvent.change(arrivalInput, { target: { value: arrivalStr } });
 
-    // Departure min should be arrival + 1 minute (or current time if greater)
-    const expectedMin = new Date(futureArrival.getTime() + 60000);
+    // Departure min should be arrival + 5 minutes (or current time if greater)
+    const expectedMin = new Date(futureArrival.getTime() + 300000);
     const depMinAttr = departureInput.getAttribute('min');
     const depMinDate = new Date(depMinAttr);
-    // Should be approx arrival + 1 minute
+    // Should be approx arrival + 5 minutes
     const diffMs = Math.abs(depMinDate.getTime() - expectedMin.getTime());
     expect(diffMs).toBeLessThan(2 * 60 * 1000);
   });

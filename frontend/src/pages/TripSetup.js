@@ -75,11 +75,11 @@ function getMinArrival() {
   return formatDateTimeLocal(new Date(Date.now() - 24 * 60 * 60 * 1000));
 }
 
-/** Earliest allowed departure: after both now and arrival + 1 min */
+/** Earliest allowed departure: after both now and arrival + 5 min */
 function getMinDeparture(arrivalValue) {
   if (arrivalValue) {
     return formatDateTimeLocal(
-      new Date(Math.max(Date.now(), new Date(arrivalValue).getTime() + 60000))
+      new Date(Math.max(Date.now(), new Date(arrivalValue).getTime() + 300000))
     );
   }
   return formatDateTimeLocal(new Date());
