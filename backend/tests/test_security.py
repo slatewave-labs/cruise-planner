@@ -1,5 +1,5 @@
 """
-Security hardening tests – input validation, headers, rate limiting, prompt sanitization.
+Security hardening tests: input validation, headers, rate limiting, prompt sanitization.
 """
 
 import os
@@ -186,7 +186,7 @@ class TestInputValidation:
         assert r.status_code == 422
 
     def test_valid_currency_accepted(self):
-        """Valid currency code should pass Pydantic validation (may fail later in DB)."""
+        """Valid currency passes Pydantic validation (may fail later at DB layer)."""
         # We only need 422 NOT to be returned for valid input
         r = client.post(
             "/api/plans/generate",

@@ -107,6 +107,8 @@ async def add_security_headers(request: Request, call_next):
         "default-src 'none'; frame-ancestors 'none'"
     )
     return response
+
+
 table_name = os.environ.get("DYNAMODB_TABLE_NAME", "shoreexplorer")
 region_name = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 endpoint_url = os.environ.get("DYNAMODB_ENDPOINT_URL")  # For local development
@@ -130,11 +132,13 @@ except (BotoCoreError, ClientError) as e:
 # --- Pydantic Models ---
 
 _VALID_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]")
+_CONTROL_CHAR_RE = re.compile(
+    r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]"
+)
 
 
 def _sanitize(value: str) -> str:
-    """Strip control and invisible characters from a string to prevent prompt injection."""
+    """Strip control and invisible characters to prevent prompt injection."""
     return _CONTROL_CHAR_RE.sub("", value).strip()
 
 
@@ -164,9 +168,9 @@ class PlanPreferences(BaseModel):
     activity_level: Literal["light", "moderate", "active", "intensive"] = Field(
         description="light, moderate, active, intensive"
     )
-    transport_mode: Literal[
-        "walking", "public_transport", "taxi", "mixed"
-    ] = Field(description="walking, public_transport, taxi, mixed")
+    transport_mode: Literal["walking", "public_transport", "taxi", "mixed"] = Field(
+        description="walking, public_transport, taxi, mixed"
+    )
     budget: Literal["free", "low", "medium", "high"] = Field(
         description="free, low, medium, high"
     )
