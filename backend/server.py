@@ -1,17 +1,21 @@
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from affiliate_config import process_plan_activities
 from dynamodb_client import DynamoDBClient
@@ -37,7 +41,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="ShoreExplorer API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Read allowed origins from env var (comma-separated); default to localhost for dev
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
@@ -48,7 +55,7 @@ app.add_middleware(
     allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "X-Device-Id", "X-Request-ID"],
 )
 
 
@@ -89,7 +96,19 @@ async def add_request_id(request: Request, call_next):
     return response
 
 
-# DynamoDB connection with error handling
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; frame-ancestors 'none'"
+    )
+    return response
+
+
 table_name = os.environ.get("DYNAMODB_TABLE_NAME", "shoreexplorer")
 region_name = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 endpoint_url = os.environ.get("DYNAMODB_ENDPOINT_URL")  # For local development
@@ -112,37 +131,64 @@ except (BotoCoreError, ClientError) as e:
 
 # --- Pydantic Models ---
 
+_VALID_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
+_CONTROL_CHAR_RE = re.compile(
+    r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]"
+)
+
+
+def _sanitize(value: str) -> str:
+    """Strip control and invisible characters to prevent prompt injection."""
+    return _CONTROL_CHAR_RE.sub("", value).strip()
+
 
 class PortInput(BaseModel):
-    name: str
-    country: str
-    latitude: float
-    longitude: float
-    arrival: str
-    departure: str
+    name: str = Field(min_length=1, max_length=100)
+    country: str = Field(min_length=1, max_length=100)
+    latitude: float = Field(ge=-90.0, le=90.0)
+    longitude: float = Field(ge=-180.0, le=180.0)
+    arrival: str = Field(min_length=1, max_length=50)
+    departure: str = Field(min_length=1, max_length=50)
 
 
 class TripInput(BaseModel):
-    ship_name: str
-    cruise_line: Optional[str] = ""
+    ship_name: str = Field(min_length=1, max_length=200)
+    cruise_line: Optional[str] = Field(default="", max_length=200)
 
 
 class TripUpdate(BaseModel):
-    ship_name: Optional[str] = None
-    cruise_line: Optional[str] = None
+    ship_name: Optional[str] = Field(default=None, max_length=200)
+    cruise_line: Optional[str] = Field(default=None, max_length=200)
 
 
 class PlanPreferences(BaseModel):
-    party_type: str = Field(description="solo, couple, or family")
-    activity_level: str = Field(description="light, moderate, active, intensive")
-    transport_mode: str = Field(description="walking, public_transport, taxi, mixed")
-    budget: str = Field(description="free, low, medium, high")
-    currency: str = Field(default="GBP", description="Currency code e.g. GBP, USD, EUR")
+    party_type: Literal["solo", "couple", "family"] = Field(
+        description="solo, couple, or family"
+    )
+    activity_level: Literal["light", "moderate", "active", "intensive"] = Field(
+        description="light, moderate, active, intensive"
+    )
+    transport_mode: Literal["walking", "public_transport", "taxi", "mixed"] = Field(
+        description="walking, public_transport, taxi, mixed"
+    )
+    budget: Literal["free", "low", "medium", "high"] = Field(
+        description="free, low, medium, high"
+    )
+    currency: str = Field(default="GBP", min_length=3, max_length=3)
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, v: str) -> str:
+        if not _VALID_CURRENCY_RE.match(v):
+            raise ValueError(
+                "currency must be exactly 3 uppercase letters (e.g. GBP, USD, EUR)"
+            )
+        return v
 
 
 class GeneratePlanInput(BaseModel):
-    trip_id: str
-    port_id: str
+    trip_id: str = Field(min_length=1, max_length=100)
+    port_id: str = Field(min_length=1, max_length=100)
     preferences: PlanPreferences
 
 
@@ -281,7 +327,11 @@ def create_trip(data: TripInput, x_device_id: str = Header()):
 
 
 @app.get("/api/trips")
-def list_trips(x_device_id: str = Header(), skip: int = 0, limit: int = 100):
+def list_trips(
+    x_device_id: str = Header(max_length=200),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+):
     """List all trips for a device."""
     check_db_connection()
     try:
@@ -649,7 +699,11 @@ def delete_port(trip_id: str, port_id: str, x_device_id: str = Header()):
 
 
 @app.get("/api/weather")
-async def get_weather(latitude: float, longitude: float, date: Optional[str] = None):
+async def get_weather(
+    latitude: float = Query(ge=-90.0, le=90.0),
+    longitude: float = Query(ge=-180.0, le=180.0),
+    date: Optional[str] = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+):
     """Fetch weather forecast from Open-Meteo API."""
     logger.info("Fetching weather forecast")
     params: dict[str, Any] = {
@@ -728,7 +782,10 @@ async def get_weather(latitude: float, longitude: float, date: Optional[str] = N
 
 
 @app.post("/api/plans/generate")
-async def generate_plan(data: GeneratePlanInput, x_device_id: str = Header()):
+@limiter.limit("10/minute")
+async def generate_plan(
+    request: Request, data: GeneratePlanInput, x_device_id: str = Header(max_length=200)
+):
     """Generate an AI-powered day plan for a cruise port visit."""
     check_db_connection()
 
@@ -817,15 +874,19 @@ async def generate_plan(data: GeneratePlanInput, x_device_id: str = Header()):
 
     prefs = data.preferences
     currency = prefs.currency or "GBP"
-    port_name = port["name"]
-    port_country = port["country"]
+    # Sanitize all user-controlled strings before inserting into LLM prompt
+    port_name = _sanitize(port["name"])
+    port_country = _sanitize(port["country"])
+    ship_name = _sanitize(trip["ship_name"])
+    port_arrival = _sanitize(port["arrival"])
+    port_departure = _sanitize(port["departure"])
     prompt = f"""You are a cruise port day planner. Create a detailed day plan \
 for a cruise passenger visiting {port_name}, {port_country}.
 
 CRUISE DETAILS:
-- Ship: {trip['ship_name']}
-- Port arrival: {port['arrival']}
-- Port departure: {port['departure']}
+- Ship: {ship_name}
+- Port arrival: {port_arrival}
+- Port departure: {port_departure}
 - Weather forecast: {weather_summary}
 
 TRAVELER PREFERENCES:
@@ -1070,11 +1131,11 @@ def get_plan(plan_id: str, x_device_id: str = Header()):
 
 @app.get("/api/plans")
 def list_plans(
-    x_device_id: str = Header(),
+    x_device_id: str = Header(max_length=200),
     trip_id: Optional[str] = None,
     port_id: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
 ):
     """List all generated plans for a device, optionally filtered by trip or port."""
     check_db_connection()
