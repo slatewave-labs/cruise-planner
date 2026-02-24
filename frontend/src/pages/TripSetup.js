@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { Ship, Plus, Trash2, MapPin, Calendar, Clock, ArrowRight, Loader2, Search, Globe } from 'lucide-react';
 import api from '../api';
-import { cacheTrip, getErrorMessage } from '../utils';
+import { getErrorMessage } from '../utils';
+import { createTrip, getTrip, updateTrip, addPort, updatePort } from '../storage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const DROPDOWN_CLOSE_DELAY_MS = 250;
@@ -137,14 +138,15 @@ export default function TripSetup() {
   useEffect(() => {
     if (isEdit) {
       setLoading(true);
-      api.get(`${API}/api/trips/${tripId}`)
-        .then(res => {
-          setShipName(res.data.ship_name);
-          setCruiseLine(res.data.cruise_line || '');
-          setPorts(res.data.ports || []);
-        })
-        .catch(err => alert('Failed to load trip: ' + getErrorMessage(err)))
-        .finally(() => setLoading(false));
+      const trip = getTrip(tripId);
+      if (trip) {
+        setShipName(trip.ship_name);
+        setCruiseLine(trip.cruise_line || '');
+        setPorts(trip.ports || []);
+      } else {
+        alert('Trip not found');
+      }
+      setLoading(false);
     }
   }, [tripId, isEdit]);
 
@@ -198,10 +200,10 @@ export default function TripSetup() {
     try {
       let savedTripId = tripId;
       if (isEdit) {
-        await api.put(`${API}/api/trips/${tripId}`, { ship_name: shipName, cruise_line: cruiseLine });
+        updateTrip(tripId, { ship_name: shipName, cruise_line: cruiseLine });
       } else {
-        const res = await api.post(`${API}/api/trips`, { ship_name: shipName, cruise_line: cruiseLine });
-        savedTripId = res.data.trip_id;
+        const trip = createTrip({ ship_name: shipName, cruise_line: cruiseLine });
+        savedTripId = trip.trip_id;
       }
 
       // Save ports
@@ -215,21 +217,15 @@ export default function TripSetup() {
           departure: port.departure,
         };
         if (port.port_id && !port.port_id.startsWith('temp-')) {
-          await api.put(`${API}/api/trips/${savedTripId}/ports/${port.port_id}`, portData);
+          updatePort(savedTripId, port.port_id, portData);
         } else {
-          await api.post(`${API}/api/trips/${savedTripId}/ports`, portData);
+          addPort(savedTripId, portData);
         }
       }
 
-      // Fetch the complete saved trip and cache it locally
-      try {
-        const savedTrip = await api.get(`${API}/api/trips/${savedTripId}`);
-        cacheTrip(savedTrip.data);
-      } catch { /* cache miss is non-critical */ }
-
       navigate(`/trips/${savedTripId}`);
     } catch (err) {
-      alert('Failed to save trip: ' + getErrorMessage(err));
+      alert('Failed to save trip: ' + (err.message || 'Unknown error'));
     } finally {
       setSaving(false);
     }

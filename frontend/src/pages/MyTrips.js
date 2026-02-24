@@ -1,53 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Ship, MapPin, Calendar, Plus, Loader2, Anchor, HardDrive, FileText, Wifi, WifiOff, Timer } from 'lucide-react';
-import api from '../api';
+import { Ship, MapPin, Calendar, Plus, Anchor, HardDrive, FileText, Timer } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getAllCachedTrips, cacheTrip, getCachedPlanCountForTrip, formatExpiryDate } from '../utils';
-
-const API = process.env.REACT_APP_BACKEND_URL;
+import { listTrips, getPlanCountForTrip } from '../storage';
+import { formatExpiryDate } from '../utils';
 
 export default function MyTrips() {
   const [trips, setTrips] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [serverOnline, setServerOnline] = useState(true);
 
   useEffect(() => {
-    const cachedTrips = getAllCachedTrips();
-
-    api.get(`${API}/api/trips`)
-      .then(res => {
-        const serverTrips = res.data;
-        setServerOnline(true);
-
-        // Cache all server trips locally
-        serverTrips.forEach(t => cacheTrip(t));
-
-        // Merge: server trips + any cached-only trips (not on server)
-        const serverIds = new Set(serverTrips.map(t => t.trip_id));
-        const cachedOnly = cachedTrips.filter(t => !serverIds.has(t.trip_id));
-
-        const merged = [
-          ...serverTrips.map(t => ({ ...t, _source: 'server' })),
-          ...cachedOnly.map(t => ({ ...t, _source: 'cache_only' })),
-        ];
-        setTrips(merged);
-      })
-      .catch(() => {
-        // Server unreachable — show cached trips
-        setServerOnline(false);
-        setTrips(cachedTrips.map(t => ({ ...t, _source: 'cache_only' })));
-      })
-      .finally(() => setLoading(false));
+    setTrips(listTrips());
   }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-accent" />
-      </div>
-    );
-  }
 
   return (
     <div className="px-4 md:px-8 py-8 max-w-4xl mx-auto" data-testid="my-trips-page">
@@ -65,14 +28,6 @@ export default function MyTrips() {
           New Trip
         </Link>
       </div>
-
-      {/* Connection status */}
-      {!serverOnline && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-6 flex items-center gap-2 text-sm text-amber-700" data-testid="offline-banner">
-          <WifiOff className="w-4 h-4 shrink-0" />
-          <span><strong>Offline mode</strong> — showing your saved trips. Some features may be limited until you reconnect.</span>
-        </div>
-      )}
 
       {trips.length === 0 ? (
         <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center shadow-sm">
@@ -93,7 +48,7 @@ export default function MyTrips() {
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
           {trips.map((trip, i) => {
-            const planCount = getCachedPlanCountForTrip(trip.trip_id);
+            const planCount = getPlanCountForTrip(trip.trip_id);
             return (
               <motion.div
                 key={trip.trip_id}
@@ -143,17 +98,10 @@ export default function MyTrips() {
                   </div>
                   {/* Source badge */}
                   <div className="mt-3 flex items-center gap-2">
-                    {trip._source === 'server' ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-success bg-success/10 rounded-full px-2 py-0.5" data-testid={`trip-synced-badge-${i}`}>
-                        <Wifi className="w-2.5 h-2.5" />
-                        Up to date
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-blue-600 bg-blue-50 rounded-full px-2 py-0.5" data-testid={`trip-cached-badge-${i}`}>
-                        <HardDrive className="w-2.5 h-2.5" />
-                        Saved on device
-                      </span>
-                    )}
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-blue-600 bg-blue-50 rounded-full px-2 py-0.5" data-testid={`trip-device-badge-${i}`}>
+                      <HardDrive className="w-2.5 h-2.5" />
+                      Saved on device
+                    </span>
                     {planCount > 0 && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-primary bg-sand-100 rounded-full px-2 py-0.5">
                         <FileText className="w-2.5 h-2.5" />

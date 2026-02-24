@@ -1,43 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Clock, Backpack, ShieldCheck, Share2, Loader2, MapPin, Coins } from 'lucide-react';
-import api from '../api';
+import { ArrowLeft, Clock, Backpack, ShieldCheck, Share2, MapPin, Coins } from 'lucide-react';
 import MapView from '../components/MapView';
 import WeatherCard from '../components/WeatherCard';
 import ActivityCard from '../components/ActivityCard';
-import { getCurrencySymbol, cachePlan, getCachedPlan, getErrorMessage } from '../utils';
-
-const API = process.env.REACT_APP_BACKEND_URL;
+import { getCurrencySymbol } from '../utils';
+import { getPlan } from '../storage';
 
 export default function DayPlanView() {
   const { planId } = useParams();
   const [plan, setPlan] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [fromCache, setFromCache] = useState(false);
 
   useEffect(() => {
-    // Try cache first
-    const cached = getCachedPlan(planId);
-    if (cached) {
-      setPlan(cached);
-      setFromCache(true);
-      setLoading(false);
-      // Still fetch fresh in background to sync
-      api.get(`${API}/api/plans/${planId}`)
-        .then(res => {
-          setPlan(res.data);
-          cachePlan(res.data);
-        })
-        .catch(() => { /* cached version is fine */ });
-    } else {
-      api.get(`${API}/api/plans/${planId}`)
-        .then(res => {
-          setPlan(res.data);
-          cachePlan(res.data);
-        })
-        .catch(err => alert('Failed to load plan: ' + getErrorMessage(err)))
-        .finally(() => setLoading(false));
-    }
+    const stored = getPlan(planId);
+    setPlan(stored);
   }, [planId]);
 
   const handleExportMap = () => {
@@ -50,14 +26,6 @@ export default function DayPlanView() {
     const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&waypoints=${waypoints}&travelmode=walking`;
     window.open(url, '_blank');
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-accent" />
-      </div>
-    );
-  }
 
   if (!plan || !plan.plan) {
     return (
@@ -84,13 +52,6 @@ export default function DayPlanView() {
         <ArrowLeft className="w-4 h-4" />
         Back to Trip
       </Link>
-
-      {fromCache && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-blue-700 flex items-center gap-2" data-testid="cached-plan-badge">
-          <span className="font-semibold">Loaded instantly from your saved plans</span>
-          <span className="text-blue-400">— ready to go, even offline</span>
-        </div>
-      )}
 
       {hasParseError ? (
         <div className="bg-warning/10 border border-warning/30 rounded-2xl p-6 mb-6">

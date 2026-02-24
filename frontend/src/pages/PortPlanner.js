@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Users, Activity, Car, DollarSign, Sparkles, Loader2, ArrowLeft, MapPin, AlertTriangle, Coins, History, Clock } from 'lucide-react';
 import api from '../api';
-import CURRENCIES, { cachePlan, getCachedPlansForPort, getCurrencySymbol, getErrorMessage } from '../utils';
+import CURRENCIES, { getCurrencySymbol, getErrorMessage } from '../utils';
+import { getTrip, savePlan, getPlansForPort } from '../storage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -82,16 +83,15 @@ export default function PortPlanner() {
   const [cachedPlans, setCachedPlans] = useState([]);
 
   useEffect(() => {
-    api.get(`${API}/api/trips/${tripId}`)
-      .then(res => {
-        const p = res.data.ports?.find(p => p.port_id === portId);
-        setPort(p);
-      })
-      .catch(err => alert('Failed to load trip: ' + getErrorMessage(err)))
-      .finally(() => setLoading(false));
-    // Load any previously cached plans for this port
-    const cached = getCachedPlansForPort(tripId, portId);
-    setCachedPlans(cached);
+    const trip = getTrip(tripId);
+    if (trip) {
+      const p = trip.ports?.find(p => p.port_id === portId);
+      setPort(p || null);
+    }
+    setLoading(false);
+    // Load any previously saved plans for this port
+    const saved = getPlansForPort(tripId, portId);
+    setCachedPlans(saved);
   }, [tripId, portId]);
 
   const updatePref = (name, value) => {
@@ -102,13 +102,21 @@ export default function PortPlanner() {
     setGenerating(true);
     setError(null);
     try {
+      const trip = getTrip(tripId);
       const res = await api.post(`${API}/api/plans/generate`, {
         trip_id: tripId,
         port_id: portId,
+        port_name: port.name,
+        port_country: port.country,
+        latitude: port.latitude,
+        longitude: port.longitude,
+        arrival: port.arrival,
+        departure: port.departure,
+        ship_name: trip?.ship_name || '',
         preferences: prefs,
       });
-      // Cache the plan locally
-      cachePlan(res.data);
+      // Save the plan locally
+      savePlan(res.data);
       navigate(`/plans/${res.data.plan_id}`);
     } catch (err) {
       setError(getErrorMessage(err));

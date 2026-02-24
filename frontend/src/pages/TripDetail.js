@@ -1,57 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Ship, MapPin, Calendar, Clock, Compass, Edit, Trash2, Loader2, ArrowRight, HardDrive, FileText, Timer } from 'lucide-react';
-import api from '../api';
-import { cacheTrip, getCachedTrip, removeCachedTrip, getCachedPlansForTrip, getCurrencySymbol, formatExpiryDate } from '../utils';
-
-const API = process.env.REACT_APP_BACKEND_URL;
+import { Ship, MapPin, Calendar, Clock, Compass, Edit, Trash2, ArrowRight, HardDrive, FileText, Timer } from 'lucide-react';
+import { getTrip as getLocalTrip, deleteTrip, getPlansForTrip, getPlanCountForTrip } from '../storage';
+import { getCurrencySymbol, formatExpiryDate } from '../utils';
 
 export default function TripDetail() {
   const { tripId } = useParams();
   const navigate = useNavigate();
   const [trip, setTrip] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [fromCache, setFromCache] = useState(false);
   const [cachedPlans, setCachedPlans] = useState([]);
 
   useEffect(() => {
-    // Load cached plans for this trip
-    const plans = getCachedPlansForTrip(tripId);
+    const plans = getPlansForTrip(tripId);
     setCachedPlans(plans);
 
-    // Try cache first for instant load
-    const cached = getCachedTrip(tripId);
-    if (cached) {
-      setTrip(cached);
-      setFromCache(true);
-      setLoading(false);
-    }
-
-    // Fetch from server (either to replace cache or as primary)
-    api.get(`${API}/api/trips/${tripId}`)
-      .then(res => {
-        setTrip(res.data);
-        setFromCache(false);
-        cacheTrip(res.data);
-      })
-      .catch(() => {
-        if (!cached) {
-          // No cache and no server — nothing to show
-          setLoading(false);
-        }
-      })
-      .finally(() => setLoading(false));
+    const localTrip = getLocalTrip(tripId);
+    setTrip(localTrip);
   }, [tripId]);
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!window.confirm('Delete this trip and all associated plans?')) return;
-    try {
-      await api.delete(`${API}/api/trips/${tripId}`);
-      removeCachedTrip(tripId);
-      navigate('/trips');
-    } catch {
-      alert('Failed to delete trip');
-    }
+    deleteTrip(tripId);
+    navigate('/trips');
   };
 
   const formatDate = (dateStr) => {
@@ -69,14 +39,6 @@ export default function TripDetail() {
   const getPortPlans = (portId) => {
     return cachedPlans.filter(p => p.port_id === portId);
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-accent" />
-      </div>
-    );
-  }
 
   if (!trip) {
     return (
@@ -121,14 +83,6 @@ export default function TripDetail() {
           </button>
         </div>
       </div>
-
-      {/* Cache status badge */}
-      {fromCache && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-6 text-sm text-blue-700 flex items-center gap-2" data-testid="trip-cache-badge">
-          <HardDrive className="w-4 h-4 shrink-0" />
-          <span><strong>Available offline</strong> — your trip details are saved on this device</span>
-        </div>
-      )}
 
       {/* Expiry notice */}
       {trip.expires_at && (
