@@ -12,7 +12,6 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 with patch("boto3.resource") as mock_boto_resource:
     mock_boto_resource.return_value = MagicMock()
-    import server
     from server import _sanitize, app
 
 client = TestClient(app, raise_server_exceptions=False)
