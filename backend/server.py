@@ -661,37 +661,3 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
     }
     logger.info(f"Successfully generated plan {plan['plan_id']} for port {port_name}")
     return plan
-
-
-@app.delete("/api/plans/{plan_id}")
-def delete_plan(plan_id: str, x_device_id: str = Header()):
-    """Delete a generated plan."""
-    check_db_connection()
-    try:
-        deleted = db_client.delete_plan(plan_id, x_device_id)
-        if not deleted:
-            logger.warning(f"Plan {plan_id} not found for deletion")
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": "plan_not_found",
-                    "message": (
-                        f"Plan with ID '{plan_id}' not found or you don't "
-                        "have permission to delete it."
-                    ),
-                    "plan_id": plan_id,
-                },
-            )
-        logger.info(f"Deleted plan {plan_id}")
-        return {"message": "Plan deleted"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to delete plan {plan_id}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "plan_deletion_failed",
-                "message": "Failed to delete plan. Please try again.",
-            },
-        )

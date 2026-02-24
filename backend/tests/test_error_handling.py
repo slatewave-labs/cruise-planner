@@ -63,18 +63,6 @@ class TestHealthCheck:
         assert data["checks"]["ai_service"] == "not_configured"
 
 
-class TestDatabaseErrors:
-    """Test database connection error handling."""
-
-    pass  # Trip CRUD moved to client-side localStorage
-
-
-class TestNotFoundErrors:
-    """Test 404 error responses with detailed messages."""
-
-    pass  # Trip/plan retrieval moved to client-side localStorage
-
-
 class TestWeatherAPIErrors:
     """Test weather API error handling."""
 
