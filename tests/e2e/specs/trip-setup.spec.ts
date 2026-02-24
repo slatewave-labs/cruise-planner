@@ -37,10 +37,86 @@ test.describe('Trip Setup — Create New Trip', () => {
     await expect(page.getByTestId('port-entry-0')).toBeVisible();
     await expect(page.getByTestId('port-name-0')).toBeVisible();
     await expect(page.getByTestId('port-country-0')).toBeVisible();
-    await expect(page.getByTestId('port-lat-0')).toBeVisible();
-    await expect(page.getByTestId('port-lng-0')).toBeVisible();
+    // lat/lng fields are hidden from the UI (populated internally via port search)
+    await expect(page.getByTestId('port-lat-0')).not.toBeVisible();
+    await expect(page.getByTestId('port-lng-0')).not.toBeVisible();
     await expect(page.getByTestId('port-arrival-0')).toBeVisible();
     await expect(page.getByTestId('port-departure-0')).toBeVisible();
+  });
+
+  test('lat/lng fields are not present in the port entry UI', async ({ page }) => {
+    await page.getByTestId('add-port-btn').click();
+    await expect(page.getByTestId('port-lat-0')).not.toBeAttached();
+    await expect(page.getByTestId('port-lng-0')).not.toBeAttached();
+  });
+
+  test('arrival datetime input has 5-minute step and a min attribute', async ({ page }) => {
+    await page.getByTestId('add-port-btn').click();
+    const arrivalInput = page.getByTestId('port-arrival-0');
+    await expect(arrivalInput).toHaveAttribute('step', '300');
+    const minAttr = await arrivalInput.getAttribute('min');
+    expect(minAttr).toBeTruthy();
+    // min should be a valid datetime-local value (YYYY-MM-DDTHH:mm)
+    expect(minAttr).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  });
+
+  test('departure datetime input has 5-minute step and a min attribute', async ({ page }) => {
+    await page.getByTestId('add-port-btn').click();
+    const departureInput = page.getByTestId('port-departure-0');
+    await expect(departureInput).toHaveAttribute('step', '300');
+    const minAttr = await departureInput.getAttribute('min');
+    expect(minAttr).toBeTruthy();
+    expect(minAttr).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  });
+
+  test('ship name input shows autocomplete dropdown on focus', async ({ page }) => {
+    const shipInput = page.getByTestId('ship-name-input');
+    await shipInput.click();
+    await expect(page.getByTestId('ship-suggestions')).toBeVisible();
+    // Should contain known ship names
+    await expect(page.getByTestId('ship-suggestion-0')).toBeVisible();
+  });
+
+  test('ship name autocomplete filters by typed text', async ({ page }) => {
+    const shipInput = page.getByTestId('ship-name-input');
+    await shipInput.fill('Symphony');
+    await expect(page.getByTestId('ship-suggestions')).toBeVisible();
+    await expect(page.getByText('Symphony of the Seas')).toBeVisible();
+  });
+
+  test('selecting a ship name suggestion populates the field', async ({ page }) => {
+    const shipInput = page.getByTestId('ship-name-input');
+    await shipInput.fill('Symphony');
+    await page.getByText('Symphony of the Seas').click();
+    await expect(shipInput).toHaveValue('Symphony of the Seas');
+  });
+
+  test('cruise line input shows autocomplete dropdown on focus', async ({ page }) => {
+    const cruiseLineInput = page.getByTestId('cruise-line-input');
+    await cruiseLineInput.click();
+    await expect(page.getByTestId('cruise-line-suggestions')).toBeVisible();
+    await expect(page.getByTestId('cruise-line-suggestion-0')).toBeVisible();
+  });
+
+  test('cruise line autocomplete filters by typed text', async ({ page }) => {
+    const cruiseLineInput = page.getByTestId('cruise-line-input');
+    await cruiseLineInput.fill('Royal');
+    await expect(page.getByTestId('cruise-line-suggestions')).toBeVisible();
+    await expect(page.getByText('Royal Caribbean International')).toBeVisible();
+  });
+
+  test('selecting a cruise line suggestion populates the field', async ({ page }) => {
+    const cruiseLineInput = page.getByTestId('cruise-line-input');
+    await cruiseLineInput.fill('Royal');
+    await page.getByText('Royal Caribbean International').click();
+    await expect(cruiseLineInput).toHaveValue('Royal Caribbean International');
+  });
+
+  test('ship name dropdown hides when input is cleared and no match', async ({ page }) => {
+    const shipInput = page.getByTestId('ship-name-input');
+    await shipInput.fill('ZZZNOMATCH');
+    // No suggestions match this
+    await expect(page.getByTestId('ship-suggestions')).not.toBeVisible();
   });
 
   test('can add multiple ports and remove one', async ({ page }) => {

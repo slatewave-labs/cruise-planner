@@ -1,10 +1,89 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Ship, Plus, Trash2, MapPin, Calendar, Clock, ArrowRight, Loader2, Search, Globe } from 'lucide-react';
 import api from '../api';
 import { cacheTrip, getErrorMessage } from '../utils';
 
 const API = process.env.REACT_APP_BACKEND_URL;
+const DROPDOWN_CLOSE_DELAY_MS = 250;
+
+const CRUISE_SHIPS = [
+  'Adventure of the Seas', 'AIDAcosma', 'AIDAnova', 'Allure of the Seas',
+  'Anthem of the Seas', 'Azamara Quest', 'Azamara Pursuit', 'Azamara Journey',
+  'Bolette', 'Borealis', 'Brilliance of the Seas',
+  'Carnival Breeze', 'Carnival Celebration', 'Carnival Dream', 'Carnival Horizon',
+  'Carnival Jubilee', 'Carnival Magic', 'Carnival Panorama', 'Carnival Vista',
+  'Celebrity Apex', 'Celebrity Ascent', 'Celebrity Beyond', 'Celebrity Constellation',
+  'Celebrity Edge', 'Celebrity Equinox', 'Celebrity Infinity', 'Celebrity Millennium',
+  'Celebrity Reflection', 'Celebrity Silhouette', 'Celebrity Solstice',
+  'Costa Diadema', 'Costa Firenze', 'Costa Smeralda', 'Costa Toscana',
+  'Crown Princess', 'Diamond Princess',
+  'Discovery Princess', 'Disney Dream', 'Disney Fantasy', 'Disney Magic',
+  'Disney Wish', 'Disney Wonder',
+  'Enchanted Princess', 'Enchantment of the Seas', 'Explorer of the Seas',
+  'Freedom of the Seas', 'Grandeur of the Seas', 'Harmony of the Seas',
+  'Icon of the Seas', 'Independence of the Seas',
+  'Jewel of the Seas', 'Koningsdam',
+  'Liberty of the Seas', 'Majestic Princess', 'Mariner of the Seas',
+  'Mardi Gras', 'MSC Bellissima', 'MSC Grandiosa', 'MSC Magnifica',
+  'MSC Meraviglia', 'MSC Musica', 'MSC Seashore', 'MSC Seascape',
+  'MSC Splendida', 'MSC Virtuosa', 'MSC World Europa',
+  'Navigator of the Seas', 'Nieuw Amsterdam', 'Nieuw Statendam',
+  'Norwegian Bliss', 'Norwegian Breakaway', 'Norwegian Encore', 'Norwegian Escape',
+  'Norwegian Getaway', 'Norwegian Joy', 'Norwegian Prima', 'Norwegian Viva',
+  'Oasis of the Seas', 'Ovation of the Seas',
+  'P&O Iona', 'P&O Arvia', 'P&O Britannia', 'P&O Aurora', 'P&O Arcadia',
+  'Queen Elizabeth', 'Queen Mary 2', 'Queen Victoria', 'Queen Anne',
+  'Quantum of the Seas', 'Rotterdam', 'Ruby Princess',
+  'Sapphire Princess', 'Seabourn Encore', 'Seabourn Odyssey', 'Seabourn Ovation',
+  'Seabourn Quest', 'Seabourn Sojourn',
+  'Serenade of the Seas', 'Seven Seas Explorer', 'Seven Seas Grandeur',
+  'Seven Seas Mariner', 'Seven Seas Navigator', 'Seven Seas Splendor',
+  'Seven Seas Voyager', 'Silver Dawn', 'Silver Moon', 'Silver Muse',
+  'Silver Nova', 'Silver Origin', 'Sky Princess',
+  'Spectrum of the Seas', 'Spirit of Discovery', 'Spirit of Adventure',
+  'Symphony of the Seas', 'Viking Jupiter', 'Viking Mars', 'Viking Neptune',
+  'Viking Orion', 'Viking Saturn', 'Viking Star', 'Viking Venus',
+  'Vision of the Seas', 'Volendam', 'Westerdam',
+  'Wonder of the Seas', 'Zaandam', 'Zuiderdam',
+];
+
+const CRUISE_LINES = [
+  'AIDA Cruises', 'Azamara', 'Carnival Cruise Line', 'Celebrity Cruises',
+  'Costa Cruises', 'Crystal Cruises', 'Cunard', 'Disney Cruise Line',
+  'Fred. Olsen Cruise Lines', 'Holland America Line', 'Hurtigruten',
+  'Marella Cruises', 'MSC Cruises', 'Norwegian Cruise Line',
+  'Oceania Cruises', 'P&O Cruises', 'Ponant', 'Princess Cruises',
+  'Regent Seven Seas Cruises', 'Royal Caribbean International',
+  'Saga Cruises', 'Seabourn Cruise Line', 'Silversea Cruises',
+  'TUI Cruises', 'Viking Ocean Cruises', 'Virgin Voyages',
+  'Windstar Cruises',
+];
+
+/** Format a Date object to YYYY-MM-DDTHH:mm for use in datetime-local min attributes */
+function formatDateTimeLocal(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+/** Earliest allowed arrival: current time minus 24 hours */
+function getMinArrival() {
+  return formatDateTimeLocal(new Date(Date.now() - 24 * 60 * 60 * 1000));
+}
+
+/** Earliest allowed departure: after both now and arrival + 1 min */
+function getMinDeparture(arrivalValue) {
+  if (arrivalValue) {
+    return formatDateTimeLocal(
+      new Date(Math.max(Date.now(), new Date(arrivalValue).getTime() + 60000))
+    );
+  }
+  return formatDateTimeLocal(new Date());
+}
 
 export default function TripSetup() {
   const navigate = useNavigate();
@@ -22,7 +101,21 @@ export default function TripSetup() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [regions, setRegions] = useState([]);
   const [selectedRegion, setSelectedRegion] = useState('');
+  const [showShipSuggestions, setShowShipSuggestions] = useState(false);
+  const [showCruiseLineSuggestions, setShowCruiseLineSuggestions] = useState(false);
   const debounceRef = useRef(null);
+
+  const filteredShips = useMemo(() =>
+    CRUISE_SHIPS.filter(s =>
+      s.toLowerCase().includes(shipName.toLowerCase())
+    ).slice(0, 8),
+  [shipName]);
+
+  const filteredCruiseLines = useMemo(() =>
+    CRUISE_LINES.filter(l =>
+      l.toLowerCase().includes(cruiseLine.toLowerCase())
+    ).slice(0, 8),
+  [cruiseLine]);
 
   useEffect(() => {
     api.get(`${API}/api/ports/regions`).then(res => setRegions(res.data)).catch(() => {});
@@ -61,6 +154,16 @@ export default function TripSetup() {
       name: '', country: '', latitude: '', longitude: '',
       arrival: '', departure: '',
     }]);
+  };
+
+  const selectShip = (ship) => {
+    setShipName(ship);
+    setShowShipSuggestions(false);
+  };
+
+  const selectCruiseLine = (line) => {
+    setCruiseLine(line);
+    setShowCruiseLineSuggestions(false);
   };
 
   const updatePort = (index, field, value) => {
@@ -159,28 +262,79 @@ export default function TripSetup() {
             <h2 className="font-heading text-xl font-bold text-primary">Ship Details</h2>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
+            {/* Ship Name with autocomplete */}
             <div>
               <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2 block">Ship Name</label>
-              <input
-                type="text"
-                value={shipName}
-                onChange={(e) => setShipName(e.target.value)}
-                placeholder="e.g. Symphony of the Seas"
-                className="w-full h-14 rounded-xl bg-stone-50 border border-stone-200 px-4 text-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
-                data-testid="ship-name-input"
-                required
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={shipName}
+                  onChange={(e) => setShipName(e.target.value)}
+                  onFocus={() => setShowShipSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowShipSuggestions(false), DROPDOWN_CLOSE_DELAY_MS)}
+                  placeholder="e.g. Symphony of the Seas"
+                  className="w-full h-14 rounded-xl bg-stone-50 border border-stone-200 px-4 text-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
+                  data-testid="ship-name-input"
+                  required
+                  autoComplete="off"
+                />
+                {showShipSuggestions && filteredShips.length > 0 && (
+                  <div
+                    className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-xl border border-stone-200 shadow-lg max-h-48 overflow-y-auto"
+                    data-testid="ship-suggestions"
+                  >
+                    {filteredShips.map((ship, i) => (
+                      <button
+                        key={ship}
+                        type="button"
+                        onMouseDown={() => selectShip(ship)}
+                        className="w-full text-left px-4 py-3 hover:bg-stone-50 text-sm flex items-center gap-2 transition border-b border-stone-50 last:border-0"
+                        data-testid={`ship-suggestion-${i}`}
+                      >
+                        <Ship className="w-3.5 h-3.5 text-primary shrink-0" aria-hidden="true" />
+                        {ship}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Cruise Line with autocomplete */}
             <div>
               <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2 block">Cruise Line (optional)</label>
-              <input
-                type="text"
-                value={cruiseLine}
-                onChange={(e) => setCruiseLine(e.target.value)}
-                placeholder="e.g. Royal Caribbean"
-                className="w-full h-14 rounded-xl bg-stone-50 border border-stone-200 px-4 text-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
-                data-testid="cruise-line-input"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={cruiseLine}
+                  onChange={(e) => setCruiseLine(e.target.value)}
+                  onFocus={() => setShowCruiseLineSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowCruiseLineSuggestions(false), DROPDOWN_CLOSE_DELAY_MS)}
+                  placeholder="e.g. Royal Caribbean"
+                  className="w-full h-14 rounded-xl bg-stone-50 border border-stone-200 px-4 text-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
+                  data-testid="cruise-line-input"
+                  autoComplete="off"
+                />
+                {showCruiseLineSuggestions && filteredCruiseLines.length > 0 && (
+                  <div
+                    className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-xl border border-stone-200 shadow-lg max-h-48 overflow-y-auto"
+                    data-testid="cruise-line-suggestions"
+                  >
+                    {filteredCruiseLines.map((line, i) => (
+                      <button
+                        key={line}
+                        type="button"
+                        onMouseDown={() => selectCruiseLine(line)}
+                        className="w-full text-left px-4 py-3 hover:bg-stone-50 text-sm flex items-center gap-2 transition border-b border-stone-50 last:border-0"
+                        data-testid={`cruise-line-suggestion-${i}`}
+                      >
+                        <Globe className="w-3.5 h-3.5 text-primary shrink-0" aria-hidden="true" />
+                        {line}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -250,7 +404,7 @@ export default function TripSetup() {
                         setPortSearch(port.name);
                         searchPorts(port.name || '', selectedRegion);
                       }}
-                      onBlur={() => setTimeout(() => setShowPortSuggestions(null), 250)}
+                      onBlur={() => setTimeout(() => setShowPortSuggestions(null), DROPDOWN_CLOSE_DELAY_MS)}
                       placeholder="Type to search 350+ cruise ports worldwide..."
                       className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 pr-10 text-base focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
                       data-testid={`port-name-${index}`}
@@ -316,36 +470,14 @@ export default function TripSetup() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Latitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={port.latitude}
-                      onChange={(e) => updatePort(index, 'latitude', e.target.value)}
-                      placeholder="41.3784"
-                      className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 text-base font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
-                      data-testid={`port-lat-${index}`}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 block">Longitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={port.longitude}
-                      onChange={(e) => updatePort(index, 'longitude', e.target.value)}
-                      placeholder="2.1925"
-                      className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 text-base font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
-                      data-testid={`port-lng-${index}`}
-                    />
-                  </div>
-                  <div>
                     <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 block flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" /> Arrival
                     </label>
                     <input
                       type="datetime-local"
                       value={port.arrival}
+                      min={getMinArrival()}
+                      step="300"
                       onChange={(e) => updatePort(index, 'arrival', e.target.value)}
                       className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 text-base focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
                       data-testid={`port-arrival-${index}`}
@@ -358,6 +490,8 @@ export default function TripSetup() {
                     <input
                       type="datetime-local"
                       value={port.departure}
+                      min={getMinDeparture(port.arrival)}
+                      step="300"
                       onChange={(e) => updatePort(index, 'departure', e.target.value)}
                       className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 text-base focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
                       data-testid={`port-departure-${index}`}
