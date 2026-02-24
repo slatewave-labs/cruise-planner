@@ -27,10 +27,8 @@ test.describe('Full Journey — Create Trip and Generate Plan', () => {
     await page.getByTestId('add-port-btn').click();
     await expect(page.getByTestId('port-entry-0')).toBeVisible();
 
-    // 5. Fill port details manually
+    // 5. Fill user-facing port details
     await page.getByTestId('port-country-0').fill('Spain');
-    await page.getByTestId('port-lat-0').fill('41.3784');
-    await page.getByTestId('port-lng-0').fill('2.1925');
 
     // 6. Save the trip
     await page.getByTestId('save-trip-btn').click();
