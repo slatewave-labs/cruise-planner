@@ -257,19 +257,17 @@ jobs:
 
           # Upload prod-specific robots.txt: allow search engines on homepage only.
           # This overwrites the default (block-all) version built into the static bundle.
-          cat > /tmp/robots-prod.txt << 'ROBOTS'
-# ShoreExplorer — production robots.txt
-# Search engines may index the homepage only. All deeper paths are excluded.
-
-User-agent: *
-Allow: /$
-Disallow: /
-
-Sitemap: $SITE_URL/sitemap.xml
-ROBOTS
-          # Substitute the actual site URL into the Sitemap directive
           SITE_URL="${{ steps.alb.outputs.backend_url }}"
-          sed -i "s|\$SITE_URL|${SITE_URL}|g" /tmp/robots-prod.txt
+          {
+            echo '# ShoreExplorer — production robots.txt'
+            echo '# Search engines may index the homepage only. All deeper paths are excluded.'
+            echo ''
+            echo 'User-agent: *'
+            echo 'Allow: /$'
+            echo 'Disallow: /'
+            echo ''
+            echo "Sitemap: ${SITE_URL}/sitemap.xml"
+          } > /tmp/robots-prod.txt
 
           aws s3 cp /tmp/robots-prod.txt "s3://${S3_BUCKET}/robots.txt" \
             --cache-control "no-cache, no-store, must-revalidate" \
