@@ -127,8 +127,8 @@ class ShoreExplorerAPITester:
             "port_country": "Spain",
             "latitude": 41.3784,
             "longitude": 2.1925,
-            "arrival": "2024-06-15T08:00:00",
-            "departure": "2024-06-15T18:00:00",
+            "arrival": "2099-06-15T08:00:00",
+            "departure": "2099-06-15T18:00:00",
             "ship_name": "Test Ship",
             "preferences": {
                 "party_type": "couple",
@@ -167,8 +167,8 @@ class ShoreExplorerAPITester:
             "port_country": "Spain",
             "latitude": 41.3784,
             "longitude": 2.1925,
-            "arrival": "2024-06-15T08:00:00",
-            "departure": "2024-06-15T18:00:00",
+            "arrival": "2099-06-15T08:00:00",
+            "departure": "2099-06-15T18:00:00",
             "ship_name": "Test Ship",
             "preferences": {
                 "party_type": "couple",
@@ -307,8 +307,8 @@ class ShoreExplorerAPITester:
             "port_country": "C",
             "latitude": 0.0,
             "longitude": 0.0,
-            "arrival": "2024-01-01T08:00:00",
-            "departure": "2024-01-01T18:00:00",
+            "arrival": "2099-01-01T08:00:00",
+            "departure": "2099-01-01T18:00:00",
             "preferences": {
                 "party_type": "solo",
                 "activity_level": "light",
