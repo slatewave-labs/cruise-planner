@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Ship, Plus, Trash2, MapPin, Calendar, Clock, ArrowRight, Loader2, Search, Globe } from 'lucide-react';
 import api from '../api';
 import { createTrip, getTrip, updateTrip, addPort as addPortToStorage, updatePort as updatePortInStorage } from '../storage';
+import DateTimePicker from '../components/DateTimePicker';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const DROPDOWN_CLOSE_DELAY_MS = 250;
@@ -75,13 +76,9 @@ function getMinArrival() {
   return formatDateTimeLocal(new Date(Date.now() - 24 * 60 * 60 * 1000));
 }
 
-/** Earliest allowed departure: after both now and arrival + 5 min */
+/** Earliest allowed departure: after arrival (or current time if no arrival set) */
 function getMinDeparture(arrivalValue) {
-  if (arrivalValue) {
-    return formatDateTimeLocal(
-      new Date(Math.max(Date.now(), new Date(arrivalValue).getTime() + 300000))
-    );
-  }
+  if (arrivalValue) return arrivalValue;
   return formatDateTimeLocal(new Date());
 }
 
@@ -468,28 +465,24 @@ export default function TripSetup() {
                     <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 block flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" /> Arrival
                     </label>
-                    <input
-                      type="datetime-local"
+                    <DateTimePicker
                       value={port.arrival}
-                      min={getMinArrival()}
-                      step="300"
-                      onChange={(e) => updatePort(index, 'arrival', e.target.value)}
-                      className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 text-base focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
+                      minValue={getMinArrival()}
+                      onChange={(v) => updatePort(index, 'arrival', v)}
                       data-testid={`port-arrival-${index}`}
+                      className="w-full"
                     />
                   </div>
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 block flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" /> Departure
                     </label>
-                    <input
-                      type="datetime-local"
+                    <DateTimePicker
                       value={port.departure}
-                      min={getMinDeparture(port.arrival)}
-                      step="300"
-                      onChange={(e) => updatePort(index, 'departure', e.target.value)}
-                      className="w-full h-12 rounded-xl bg-white border border-stone-200 px-3 text-base focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition"
+                      minValue={getMinDeparture(port.arrival)}
+                      onChange={(v) => updatePort(index, 'departure', v)}
                       data-testid={`port-departure-${index}`}
+                      className="w-full"
                     />
                   </div>
                 </div>
