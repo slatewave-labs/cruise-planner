@@ -5,9 +5,11 @@
  * links have the correct target attributes.
  */
 import { test, expect } from '@playwright/test';
+import { dismissCookieBanner } from './fixtures';
 
 test.describe('Terms & Conditions Page', () => {
   test.beforeEach(async ({ page }) => {
+    await dismissCookieBanner(page);
     await page.goto('/terms');
   });
 
@@ -16,15 +18,17 @@ test.describe('Terms & Conditions Page', () => {
     await expect(page.getByRole('heading', { name: /terms & conditions/i })).toBeVisible();
   });
 
-  test('renders all five T&C sections', async ({ page }) => {
-    for (let i = 0; i < 5; i++) {
+  test('renders all sixteen T&C sections', async ({ page }) => {
+    for (let i = 0; i < 16; i++) {
       await expect(page.getByTestId(`terms-section-${i}`)).toBeVisible();
     }
   });
 
-  test('each section with an external link has the correct attributes', async ({ page }) => {
-    // Sections 0-3 have external links; section 4 (ShoreExplorer App) does not
-    for (let i = 0; i < 4; i++) {
+  test('sections with external links have the correct attributes', async ({ page }) => {
+    // Sections with external links (by array index): 2 (Open-Meteo), 3 (Groq),
+    // 4 (OpenStreetMap), 5 (Google Maps), 7 (Google Analytics), 8 (AWS)
+    const sectionsWithLinks = [2, 3, 4, 5, 7, 8];
+    for (const i of sectionsWithLinks) {
       const link = page.getByTestId(`terms-link-${i}`);
       await expect(link).toBeVisible();
       await expect(link).toHaveAttribute('target', '_blank');
@@ -32,15 +36,21 @@ test.describe('Terms & Conditions Page', () => {
     }
   });
 
-  test('ShoreExplorer App section does not have an external link', async ({ page }) => {
-    await expect(page.getByTestId('terms-link-4')).not.toBeVisible();
+  test('sections without external links do not show link elements', async ({ page }) => {
+    // Sections without external links (by array index): 0, 1, 6, 9-15
+    const sectionsWithoutLinks = [0, 1, 6, 9, 10, 11, 12, 13, 14, 15];
+    for (const i of sectionsWithoutLinks) {
+      await expect(page.getByTestId(`terms-link-${i}`)).not.toBeVisible();
+    }
   });
 
   test('displays section titles for all third-party services', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Open-Meteo Weather API' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Google Gemini/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Open-Meteo Weather API/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Groq AI/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: /OpenStreetMap/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Google Maps \(Route Export\)/ })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'ShoreExplorer App' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Affiliate Partners/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Google Analytics/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /AWS Cloud Infrastructure/ })).toBeVisible();
   });
 });

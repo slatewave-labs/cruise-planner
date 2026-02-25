@@ -252,6 +252,28 @@ export function buildRegions(): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Cookie consent helper — dismiss GDPR banner for tests that skip mockAllApiRoutes
+// ---------------------------------------------------------------------------
+
+/**
+ * Seeds cookie consent in localStorage so the GDPR cookie banner
+ * does not appear and block E2E interactions. Use this in specs
+ * that go directly to a page without calling mockAllApiRoutes.
+ */
+export async function dismissCookieBanner(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    if (!window.localStorage.getItem('shoreexplorer_cookie_consent')) {
+      window.localStorage.setItem('shoreexplorer_cookie_consent', JSON.stringify({
+        essential: true,
+        analytics: false,
+        thirdParty: false,
+        timestamp: new Date().toISOString(),
+      }));
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // API mock helper — intercepts fetch/XHR to simulate the backend
 // ---------------------------------------------------------------------------
 
@@ -284,6 +306,16 @@ export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): P
 
       window.localStorage.removeItem('shoreexplorer_trips');
       window.localStorage.removeItem('shoreexplorer_plans');
+
+      // Always dismiss the GDPR cookie banner so it doesn't block E2E interactions
+      if (!window.localStorage.getItem('shoreexplorer_cookie_consent')) {
+        window.localStorage.setItem('shoreexplorer_cookie_consent', JSON.stringify({
+          essential: true,
+          analytics: false,
+          thirdParty: false,
+          timestamp: new Date().toISOString(),
+        }));
+      }
 
       if (seed.seedTrips) {
         const tripStore = Object.fromEntries(seed.trips.map((trip) => [trip.trip_id, trip]));
