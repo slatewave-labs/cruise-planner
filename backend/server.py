@@ -145,14 +145,10 @@ def _validate_arrival_departure(values: dict) -> dict:
 
     earliest_allowed = datetime.now() - timedelta(hours=24)
     if arrival_dt < earliest_allowed:
-        raise ValueError(
-            "arrival must not be more than 24 hours in the past"
-        )
+        raise ValueError("arrival must not be more than 24 hours in the past")
 
     if departure_dt < arrival_dt:
-        raise ValueError(
-            "departure must not be before arrival"
-        )
+        raise ValueError("departure must not be before arrival")
 
     return values
 
