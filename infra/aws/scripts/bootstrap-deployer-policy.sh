@@ -77,11 +77,11 @@ echo ""
 
 # Get currently attached policies once (avoid repeated API calls)
 ATTACHED=$(aws iam list-attached-user-policies --user-name "$USERNAME" \
-    --no-cli-pager --query "AttachedPolicies[].PolicyArn" --output text 2>/dev/null || echo "")
+    --no-cli-pager --query "AttachedPolicies[].PolicyArn" --output text || echo "")
 
 for POLICY_ARN in "${MANAGED_POLICIES[@]}"; do
     POLICY_NAME="${POLICY_ARN##*/}"
-    if echo "$ATTACHED" | grep -q "$POLICY_ARN" 2>/dev/null; then
+    if echo "$ATTACHED" | grep -qF "$POLICY_ARN"; then
         echo "  ⏭️  $POLICY_NAME (already attached)"
     else
         aws iam attach-user-policy \
