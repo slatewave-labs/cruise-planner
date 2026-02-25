@@ -5,11 +5,67 @@
  * simulating realistic user interactions.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, VALID_PLAN_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort } from './fixtures';
 
 test.describe('Full Journey — Create Trip and Generate Plan', () => {
   test('user can create a trip, add a port, save, and generate a day plan', async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, { trips: [], plans: [] });
+
+    let generatedPlanId = '';
+    let generatedTripId = '';
+    let generatedPortId = '';
+    await page.route('**/api/plans/generate', async (route) => {
+      const payload = route.request().postDataJSON();
+      generatedPlanId = 'plan-e2e-dynamic-001';
+      generatedTripId = payload.trip_id;
+      generatedPortId = payload.port_id;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          plan_id: generatedPlanId,
+          trip_id: generatedTripId,
+          port_id: generatedPortId,
+          port_name: payload.port_name,
+          port_country: payload.port_country,
+          generated_at: '2026-01-16T12:00:00Z',
+          preferences: payload.preferences,
+          weather: {
+            temperature: 22,
+            description: 'Partly cloudy',
+            wind_speed: 12,
+            precipitation: 0,
+            weather_code: 2,
+          },
+          plan: {
+            plan_title: 'Barcelona Highlights',
+            summary: 'A wonderful day exploring the Gothic Quarter and waterfront.',
+            return_by: '17:00',
+            total_estimated_cost: '£45',
+            activities: [
+              {
+                order: 1,
+                name: 'La Rambla Walk',
+                description: 'Stroll down the famous La Rambla boulevard.',
+                location: 'La Rambla, Barcelona',
+                latitude: 41.3797,
+                longitude: 2.1746,
+                start_time: '09:00',
+                end_time: '09:45',
+                duration_minutes: 45,
+                cost_estimate: 'Free',
+                booking_url: null,
+                transport_to_next: 'Walk',
+                travel_time_to_next: '5 mins',
+                tips: 'Start early to avoid crowds.',
+              },
+            ],
+            packing_suggestions: ['Sunscreen', 'Comfortable walking shoes', 'Water bottle'],
+            safety_tips: ['Watch for pickpockets on La Rambla', 'Stay hydrated'],
+          },
+        }),
+      });
+    });
 
     // 1. Start on landing page
     await page.goto('/');
@@ -33,6 +89,9 @@ test.describe('Full Journey — Create Trip and Generate Plan', () => {
     // 6. Save the trip
     await page.getByTestId('save-trip-btn').click();
     await expect(page).toHaveURL(/\/trips\/[0-9a-f-]+$/);
+    const tripMatch = page.url().match(/\/trips\/([0-9a-f-]+)$/);
+    expect(tripMatch).not.toBeNull();
+    const createdTripId = tripMatch![1];
 
     // 7. Verify trip detail page loaded
     await expect(page.getByTestId('trip-detail-page')).toBeVisible();
@@ -40,7 +99,10 @@ test.describe('Full Journey — Create Trip and Generate Plan', () => {
 
     // 8. Click "Plan Day" for the first port
     await page.getByTestId('plan-port-btn-0').click();
-    await expect(page).toHaveURL(/\/plan$/);
+    await expect(page).toHaveURL(new RegExp(`/trips/${createdTripId}/ports/[0-9a-f-]+/plan$`));
+    const portMatch = page.url().match(/\/ports\/([0-9a-f-]+)\/plan$/);
+    expect(portMatch).not.toBeNull();
+    const createdPortId = portMatch![1];
 
     // 9. Select preferences
     await page.getByTestId('option-party_type-family').click();
@@ -50,7 +112,9 @@ test.describe('Full Journey — Create Trip and Generate Plan', () => {
 
     // 10. Generate plan
     await page.getByTestId('generate-plan-btn').click();
-    await expect(page).toHaveURL(new RegExp(`/plans/${VALID_PLAN_ID}`));
+    await expect(page).toHaveURL(new RegExp(`/plans/${generatedPlanId}`));
+    expect(generatedTripId).toBe(createdTripId);
+    expect(generatedPortId).toBe(createdPortId);
 
     // 11. Verify plan content
     await expect(page.getByTestId('plan-title')).toHaveText('Barcelona Highlights');
@@ -60,7 +124,9 @@ test.describe('Full Journey — Create Trip and Generate Plan', () => {
 
 test.describe('Full Journey — View Trips and Navigate', () => {
   test('user can view trip list, open a trip, and navigate back', async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+    });
 
     // 1. Go to My Trips
     await page.goto('/trips');
@@ -84,7 +150,9 @@ test.describe('Full Journey — View Trips and Navigate', () => {
 
 test.describe('Full Journey — Delete Trip', () => {
   test('user can delete a trip from the detail page', async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+    });
 
     await page.goto(`/trips/${VALID_TRIP_ID}`);
     await expect(page.getByTestId('trip-detail-page')).toBeVisible();

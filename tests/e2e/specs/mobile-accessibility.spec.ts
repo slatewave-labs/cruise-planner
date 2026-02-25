@@ -5,7 +5,7 @@
  * and that touch targets meet the 48px minimum accessibility requirement.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, buildTrip, buildPort } from './fixtures';
 
 const MOBILE_VIEWPORT = { width: 375, height: 667 };
 
@@ -13,7 +13,9 @@ test.describe('Mobile Responsiveness', () => {
   test.use({ viewport: MOBILE_VIEWPORT });
 
   test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+    });
   });
 
   test('landing page is usable at 375px width', async ({ page }) => {
@@ -100,7 +102,9 @@ test.describe('Accessibility — Touch Targets', () => {
   });
 
   test('generate plan button meets 48px minimum height', async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}/ports/${VALID_PORT_ID}/plan`);
 
     const genBtn = page.getByTestId('generate-plan-btn');

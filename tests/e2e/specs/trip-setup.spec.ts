@@ -5,7 +5,7 @@
  * removing ports, form validation, and the save flow.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort } from './fixtures';
 
 test.describe('Trip Setup — Create New Trip', () => {
   test.beforeEach(async ({ page }) => {
@@ -161,7 +161,9 @@ test.describe('Trip Setup — Create New Trip', () => {
 
 test.describe('Trip Setup — Edit Existing Trip', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}/edit`);
   });
 

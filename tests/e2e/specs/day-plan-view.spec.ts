@@ -5,11 +5,14 @@
  * activities timeline, map, weather, stats, and action buttons.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_PLAN_ID, VALID_TRIP_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_PLAN_ID, buildPlan, buildTrip, buildPort } from './fixtures';
 
 test.describe('Day Plan View', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      plans: [buildPlan()],
+    });
     await page.goto(`/plans/${VALID_PLAN_ID}`);
   });
 
@@ -53,8 +56,14 @@ test.describe('Day Plan View', () => {
   });
 
   test('"Back to Trip" link navigates to trip detail', async ({ page }) => {
+    const customTripId = 'trip-e2e-custom-back-link';
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ trip_id: customTripId, ports: [buildPort()] })],
+      plans: [buildPlan({ trip_id: customTripId })],
+    });
+    await page.goto(`/plans/${VALID_PLAN_ID}`);
     await page.getByTestId('back-to-trip-link').click();
-    await expect(page).toHaveURL(new RegExp(`/trips/${VALID_TRIP_ID}`));
+    await expect(page).toHaveURL(new RegExp(`/trips/${customTripId}`));
   });
 });
 

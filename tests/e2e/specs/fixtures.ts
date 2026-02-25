@@ -92,6 +92,7 @@ export interface PortSuggestion {
 export interface MockOptions {
   trips?: Trip[];
   plans?: Plan[];
+  seedDefaults?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,8 +262,9 @@ export function buildRegions(): string[] {
 export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): Promise<void> {
   const tripWithPort = buildTrip({ ports: [buildPort()] });
   const plan = buildPlan();
-  const trips = options.trips ?? [tripWithPort];
-  const plans = options.plans ?? [plan];
+  const shouldSeedDefaults = options.seedDefaults ?? false;
+  const trips = options.trips ?? (shouldSeedDefaults ? [tripWithPort] : []);
+  const plans = options.plans ?? (shouldSeedDefaults ? [plan] : []);
 
   // Seed localStorage for local-only trip/plan persistence.
   await page.addInitScript((seed) => {
@@ -288,9 +290,32 @@ export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): P
   );
 
   // Generate plan
-  await page.route('**/api/plans/generate', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(plan) })
-  );
+  await page.route('**/api/plans/generate', async (route) => {
+    let payload: Partial<Plan> = {};
+    try {
+      payload = route.request().postDataJSON();
+    } catch {
+      payload = {};
+    }
+
+    const generatedPlan = buildPlan({
+      plan_id: `plan-e2e-${Math.random().toString(16).slice(2, 10)}`,
+      trip_id: typeof payload.trip_id === 'string' ? payload.trip_id : plan.trip_id,
+      port_id: typeof payload.port_id === 'string' ? payload.port_id : plan.port_id,
+      port_name: typeof payload.port_name === 'string' ? payload.port_name : plan.port_name,
+      port_country: typeof payload.port_country === 'string' ? payload.port_country : plan.port_country,
+      preferences: {
+        ...plan.preferences,
+        ...(payload.preferences || {}),
+      },
+    });
+
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(generatedPlan),
+    });
+  });
 
   // Weather
   await page.route('**/api/weather*', (route) =>

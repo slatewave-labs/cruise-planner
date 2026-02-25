@@ -5,11 +5,13 @@
  * and navigation to the port planner.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort } from './fixtures';
 
 test.describe('Trip Detail Page', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}`);
   });
 
@@ -48,6 +50,10 @@ test.describe('Trip Detail Page', () => {
 
     // After acceptance, we should navigate to /trips
     await expect(page).toHaveURL(/\/trips$/);
+
+    const tripStoreJson = await page.evaluate(() => window.localStorage.getItem('shoreexplorer_trips'));
+    const tripStore = JSON.parse(tripStoreJson || '{}');
+    expect(tripStore[VALID_TRIP_ID]).toBeUndefined();
   });
 
   test('shows "Ports of Call" section heading with count', async ({ page }) => {

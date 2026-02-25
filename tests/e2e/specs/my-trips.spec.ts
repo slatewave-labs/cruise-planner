@@ -37,7 +37,7 @@ test.describe('My Trips Page', () => {
   });
 
   test('"New Trip" button navigates to /trips/new', async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })] });
     await page.goto('/trips');
 
     await page.getByTestId('new-trip-btn').click();
@@ -45,7 +45,7 @@ test.describe('My Trips Page', () => {
   });
 
   test('clicking a trip card navigates to the trip detail page', async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })] });
     await page.goto('/trips');
 
     await page.getByTestId('trip-card-0').click();
@@ -53,7 +53,7 @@ test.describe('My Trips Page', () => {
   });
 
   test('each trip card shows ship name and port count', async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })] });
     await page.goto('/trips');
 
     await expect(page.getByTestId('trip-card-0')).toContainText('Symphony of the Seas');
