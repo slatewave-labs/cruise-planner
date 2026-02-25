@@ -59,14 +59,8 @@ test.describe('Day Plan View', () => {
 });
 
 test.describe('Day Plan View — Plan Not Found', () => {
-  test('shows "Plan not found" when API returns 404', async ({ page }) => {
-    await page.route(/\/api\/plans\/[^/]+$/, (route) => {
-      if (route.request().method() === 'GET') {
-        return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'Not found' }) });
-      }
-      return route.continue();
-    });
-
+  test('shows "Plan not found" when plan is missing in local storage', async ({ page }) => {
+    await mockAllApiRoutes(page, { plans: [] });
     await page.goto('/plans/nonexistent-plan-id');
     await expect(page.getByText(/plan not found/i)).toBeVisible();
   });

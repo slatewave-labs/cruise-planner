@@ -54,26 +54,14 @@ test.describe('Trip Detail Page', () => {
     await expect(page.getByText(/ports of call \(1\)/i)).toBeVisible();
   });
 
-  test('shows trip expiry banner with date', async ({ page }) => {
-    await expect(page.getByTestId('trip-expiry-banner')).toBeVisible();
-    await expect(page.getByTestId('trip-expiry-banner')).toContainText('automatically removed on');
-    await expect(page.getByTestId('trip-expiry-banner')).toContainText('12 Feb 2026');
+  test('does not show expiry banner', async ({ page }) => {
+    await expect(page.getByTestId('trip-expiry-banner')).not.toBeAttached();
   });
 });
 
 test.describe('Trip Detail — Trip Not Found', () => {
-  test('displays "Trip not found" when API returns 404', async ({ page }) => {
-    // Override the trip GET to return 404
-    await page.route(/\/api\/trips\/[^/]+$/, (route) => {
-      if (route.request().method() === 'GET') {
-        return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'Trip not found' }) });
-      }
-      return route.continue();
-    });
-    await page.route('**/api/ports/regions', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
-    );
-
+  test('displays "Trip not found" when trip is missing in local storage', async ({ page }) => {
+    await mockAllApiRoutes(page, { trips: [] });
     await page.goto('/trips/nonexistent-trip-id');
     await expect(page.getByText(/trip not found/i)).toBeVisible();
   });

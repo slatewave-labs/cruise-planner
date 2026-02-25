@@ -32,11 +32,11 @@ test.describe('Full Journey — Create Trip and Generate Plan', () => {
 
     // 6. Save the trip
     await page.getByTestId('save-trip-btn').click();
-    await expect(page).toHaveURL(new RegExp(`/trips/${VALID_TRIP_ID}`));
+    await expect(page).toHaveURL(/\/trips\/[0-9a-f-]+$/);
 
     // 7. Verify trip detail page loaded
     await expect(page.getByTestId('trip-detail-page')).toBeVisible();
-    await expect(page.getByTestId('trip-ship-name')).toHaveText('Symphony of the Seas');
+    await expect(page.getByTestId('trip-ship-name')).toHaveText('Explorer of the Seas');
 
     // 8. Click "Plan Day" for the first port
     await page.getByTestId('plan-port-btn-0').click();

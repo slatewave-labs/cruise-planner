@@ -58,7 +58,6 @@ test.describe('My Trips Page', () => {
 
     await expect(page.getByTestId('trip-card-0')).toContainText('Symphony of the Seas');
     await expect(page.getByTestId('trip-card-0')).toContainText('1 ports');
-    await expect(page.getByTestId('trip-expiry-0')).toContainText('Expires');
-    await expect(page.getByTestId('trip-expiry-0')).toContainText('12 Feb 2026');
+    await expect(page.getByTestId('trip-expiry-0')).not.toBeAttached();
   });
 });

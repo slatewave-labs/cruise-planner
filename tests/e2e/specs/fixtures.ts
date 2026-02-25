@@ -91,6 +91,7 @@ export interface PortSuggestion {
 
 export interface MockOptions {
   trips?: Trip[];
+  plans?: Plan[];
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +262,15 @@ export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): P
   const tripWithPort = buildTrip({ ports: [buildPort()] });
   const plan = buildPlan();
   const trips = options.trips ?? [tripWithPort];
+  const plans = options.plans ?? [plan];
+
+  // Seed localStorage for local-only trip/plan persistence.
+  await page.addInitScript((seed) => {
+    const tripStore = Object.fromEntries(seed.trips.map((trip) => [trip.trip_id, trip]));
+    const planStore = Object.fromEntries(seed.plans.map((p) => [p.plan_id, p]));
+    window.localStorage.setItem('shoreexplorer_trips', JSON.stringify(tripStore));
+    window.localStorage.setItem('shoreexplorer_plans', JSON.stringify(planStore));
+  }, { trips, plans });
 
   // Health
   await page.route('**/api/health', (route) =>
@@ -277,63 +287,10 @@ export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): P
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildRegions()) })
   );
 
-  // List trips
-  await page.route('**/api/trips', (route) => {
-    if (route.request().method() === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(trips) });
-    }
-    // POST — create trip
-    return route.fulfill({
-      status: 201,
-      contentType: 'application/json',
-      body: JSON.stringify({ trip_id: VALID_TRIP_ID, message: 'Trip created' }),
-    });
-  });
-
-  // Single trip (GET / PUT / DELETE)
-  await page.route(/\/api\/trips\/[^/]+$/, (route) => {
-    const method = route.request().method();
-    if (method === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(tripWithPort) });
-    }
-    if (method === 'PUT') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'Trip updated' }) });
-    }
-    if (method === 'DELETE') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'Trip deleted' }) });
-    }
-    return route.continue();
-  });
-
-  // Add port to trip
-  await page.route(/\/api\/trips\/[^/]+\/ports$/, (route) => {
-    if (route.request().method() === 'POST') {
-      return route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify({ port_id: VALID_PORT_ID, message: 'Port added' }),
-      });
-    }
-    return route.continue();
-  });
-
-  // Update / delete port
-  await page.route(/\/api\/trips\/[^/]+\/ports\/[^/]+$/, (route) => {
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'ok' }) });
-  });
-
   // Generate plan
   await page.route('**/api/plans/generate', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(plan) })
   );
-
-  // Get plan (must NOT match /api/plans/generate)
-  await page.route(/\/api\/plans\/(?!generate)[^/]+$/, (route) => {
-    if (route.request().method() === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(plan) });
-    }
-    return route.continue();
-  });
 
   // Weather
   await page.route('**/api/weather*', (route) =>
