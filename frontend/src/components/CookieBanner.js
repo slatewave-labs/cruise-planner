@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Cookie, Shield, X, Check } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 
 const CONSENT_KEY = 'shoreexplorer_cookie_consent';
 
@@ -90,20 +89,6 @@ function PreferenceRow({ label, description, checked, onChange, disabled = false
   );
 }
 
-const bannerVariants = {
-  hidden: { y: '100%', opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: { type: 'spring', damping: 25, stiffness: 250 },
-  },
-  exit: {
-    y: '100%',
-    opacity: 0,
-    transition: { duration: 0.25, ease: 'easeIn' },
-  },
-};
-
 export default function CookieBanner() {
   const [visible, setVisible] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -136,20 +121,16 @@ export default function CookieBanner() {
     setShowPreferences((prev) => !prev);
   }, []);
 
+  if (!visible) return null;
+
   return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          data-testid="cookie-banner"
-          variants={bannerVariants}
-          initial="hidden"
-          animate="visible"
-          exit="exit"
-          className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-stone-200 shadow-lg"
-          role="dialog"
-          aria-label="Cookie consent"
-          aria-modal="false"
-        >
+    <div
+      data-testid="cookie-banner"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-stone-200 shadow-lg animate-slide-up"
+      role="dialog"
+      aria-label="Cookie consent"
+      aria-modal="false"
+    >
           <div className="max-w-5xl mx-auto px-5 py-5 md:px-8 md:py-6">
 
             {!showPreferences && (
@@ -293,8 +274,6 @@ export default function CookieBanner() {
             )}
 
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </div>
   );
 }
