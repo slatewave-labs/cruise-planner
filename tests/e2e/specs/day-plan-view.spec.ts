@@ -5,13 +5,22 @@
  * activities timeline, map, weather, stats, and action buttons.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_PLAN_ID, buildPlan, buildTrip, buildPort } from './fixtures';
+import {
+  mockAllApiRoutes,
+  VALID_PLAN_ID,
+  VALID_TRIP_ID,
+  buildPlan,
+  buildTrip,
+  buildPort,
+} from './fixtures';
 
 test.describe('Day Plan View', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
       plans: [buildPlan()],
+      seedTrips: true,
+      seedPlans: true,
     });
     await page.goto(`/plans/${VALID_PLAN_ID}`);
   });
@@ -56,20 +65,35 @@ test.describe('Day Plan View', () => {
   });
 
   test('"Back to Trip" link navigates to trip detail', async ({ page }) => {
-    const customTripId = 'trip-e2e-custom-back-link';
-    await mockAllApiRoutes(page, {
-      trips: [buildTrip({ trip_id: customTripId, ports: [buildPort()] })],
-      plans: [buildPlan({ trip_id: customTripId })],
-    });
-    await page.goto(`/plans/${VALID_PLAN_ID}`);
     await page.getByTestId('back-to-trip-link').click();
-    await expect(page).toHaveURL(new RegExp(`/trips/${customTripId}`));
+    await expect(page).toHaveURL(new RegExp(`/trips/${VALID_TRIP_ID}`));
+  });
+});
+
+test.describe('Day Plan View — Back Link Hardening', () => {
+  test('back link uses trip id from the loaded plan (not stale seed)', async ({ page }) => {
+    const customTripId = 'trip-e2e-custom-123';
+    const customPlanId = 'plan-e2e-custom-123';
+    await mockAllApiRoutes(page, {
+      seedPlans: true,
+      plans: [buildPlan({ plan_id: customPlanId, trip_id: customTripId })],
+    });
+
+    await page.goto(`/plans/${customPlanId}`);
+    await expect(page.getByTestId('back-to-trip-link')).toHaveAttribute(
+      'href',
+      `/trips/${customTripId}`
+    );
+    await expect(page.getByTestId('back-to-trip-link')).not.toHaveAttribute(
+      'href',
+      `/trips/${VALID_TRIP_ID}`
+    );
   });
 });
 
 test.describe('Day Plan View — Plan Not Found', () => {
   test('shows "Plan not found" when plan is missing in local storage', async ({ page }) => {
-    await mockAllApiRoutes(page, { plans: [] });
+    await mockAllApiRoutes(page, { plans: [], seedPlans: true });
     await page.goto('/plans/nonexistent-plan-id');
     await expect(page.getByText(/plan not found/i)).toBeVisible();
   });

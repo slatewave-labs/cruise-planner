@@ -11,6 +11,7 @@ test.describe('Port Planner Page', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
     });
     await page.goto(`/trips/${VALID_TRIP_ID}/ports/${VALID_PORT_ID}/plan`);
   });
@@ -71,6 +72,7 @@ test.describe('Port Planner — Error Handling', () => {
     // Mock everything except plan generation
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
     });
 
     // Override plan generation to return an error

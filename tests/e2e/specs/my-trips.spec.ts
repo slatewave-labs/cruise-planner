@@ -19,7 +19,7 @@ test.describe('My Trips Page', () => {
         created_at: '2026-02-01T08:00:00Z',
       }),
     ];
-    await mockAllApiRoutes(page, { trips });
+    await mockAllApiRoutes(page, { trips, seedTrips: true });
     await page.goto('/trips');
 
     await expect(page.getByTestId('my-trips-page')).toBeVisible();
@@ -29,7 +29,7 @@ test.describe('My Trips Page', () => {
   });
 
   test('shows empty state with "Create Your First Trip" button when no trips', async ({ page }) => {
-    await mockAllApiRoutes(page, { trips: [] });
+    await mockAllApiRoutes(page, { trips: [], seedTrips: true });
     await page.goto('/trips');
 
     await expect(page.getByTestId('create-first-trip-btn')).toBeVisible();
@@ -37,7 +37,7 @@ test.describe('My Trips Page', () => {
   });
 
   test('"New Trip" button navigates to /trips/new', async ({ page }) => {
-    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })] });
+    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })], seedTrips: true });
     await page.goto('/trips');
 
     await page.getByTestId('new-trip-btn').click();
@@ -45,7 +45,7 @@ test.describe('My Trips Page', () => {
   });
 
   test('clicking a trip card navigates to the trip detail page', async ({ page }) => {
-    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })] });
+    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })], seedTrips: true });
     await page.goto('/trips');
 
     await page.getByTestId('trip-card-0').click();
@@ -53,7 +53,7 @@ test.describe('My Trips Page', () => {
   });
 
   test('each trip card shows ship name and port count', async ({ page }) => {
-    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })] });
+    await mockAllApiRoutes(page, { trips: [buildTrip({ ports: [buildPort()] })], seedTrips: true });
     await page.goto('/trips');
 
     await expect(page.getByTestId('trip-card-0')).toContainText('Symphony of the Seas');

@@ -163,6 +163,7 @@ test.describe('Trip Setup — Edit Existing Trip', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
     });
     await page.goto(`/trips/${VALID_TRIP_ID}/edit`);
   });

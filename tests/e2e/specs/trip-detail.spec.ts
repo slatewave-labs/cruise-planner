@@ -5,12 +5,15 @@
  * and navigation to the port planner.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort, buildPlan } from './fixtures';
 
 test.describe('Trip Detail Page', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
+      plans: [buildPlan()],
+      seedTrips: true,
+      seedPlans: true,
     });
     await page.goto(`/trips/${VALID_TRIP_ID}`);
   });
@@ -51,9 +54,15 @@ test.describe('Trip Detail Page', () => {
     // After acceptance, we should navigate to /trips
     await expect(page).toHaveURL(/\/trips$/);
 
-    const tripStoreJson = await page.evaluate(() => window.localStorage.getItem('shoreexplorer_trips'));
-    const tripStore = JSON.parse(tripStoreJson || '{}');
-    expect(tripStore[VALID_TRIP_ID]).toBeUndefined();
+    const storesAfterDelete = await page.evaluate(() => ({
+      trips: JSON.parse(localStorage.getItem('shoreexplorer_trips') || '{}'),
+      plans: JSON.parse(localStorage.getItem('shoreexplorer_plans') || '{}'),
+    }));
+    expect(storesAfterDelete.trips[VALID_TRIP_ID]).toBeUndefined();
+    const orphanedPlans = Object.values(storesAfterDelete.plans).filter(
+      (plan: any) => plan.trip_id === VALID_TRIP_ID
+    );
+    expect(orphanedPlans).toHaveLength(0);
   });
 
   test('shows "Ports of Call" section heading with count', async ({ page }) => {
@@ -67,7 +76,7 @@ test.describe('Trip Detail Page', () => {
 
 test.describe('Trip Detail — Trip Not Found', () => {
   test('displays "Trip not found" when trip is missing in local storage', async ({ page }) => {
-    await mockAllApiRoutes(page, { trips: [] });
+    await mockAllApiRoutes(page, { trips: [], seedTrips: true });
     await page.goto('/trips/nonexistent-trip-id');
     await expect(page.getByText(/trip not found/i)).toBeVisible();
   });

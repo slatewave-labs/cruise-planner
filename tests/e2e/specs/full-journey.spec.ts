@@ -5,11 +5,16 @@
  * simulating realistic user interactions.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort, buildPlan } from './fixtures';
 
 test.describe('Full Journey — Create Trip and Generate Plan', () => {
   test('user can create a trip, add a port, save, and generate a day plan', async ({ page }) => {
-    await mockAllApiRoutes(page, { trips: [], plans: [] });
+    await mockAllApiRoutes(page, {
+      trips: [],
+      plans: [],
+      seedTrips: false,
+      seedPlans: false,
+    });
 
     let generatedPlanId = '';
     let generatedTripId = '';
@@ -119,6 +124,29 @@ test.describe('Full Journey — Create Trip and Generate Plan', () => {
     // 11. Verify plan content
     await expect(page.getByTestId('plan-title')).toHaveText('Barcelona Highlights');
     await expect(page.getByText('La Rambla Walk')).toBeVisible();
+
+    // 12. Verify localStorage relationship integrity
+    const persisted = await page.evaluate(
+      ({ tripId, planId }) => {
+        const trips = JSON.parse(localStorage.getItem('shoreexplorer_trips') || '{}');
+        const plans = JSON.parse(localStorage.getItem('shoreexplorer_plans') || '{}');
+        const trip = trips[tripId];
+        const plan = plans[planId];
+        const firstPortId = trip?.ports?.[0]?.port_id;
+        return {
+          tripExists: !!trip,
+          planExists: !!plan,
+          planTripId: plan?.trip_id,
+          planPortId: plan?.port_id,
+          firstPortId,
+        };
+      },
+      { tripId: createdTripId, planId: generatedPlanId }
+    );
+    expect(persisted.tripExists).toBe(true);
+    expect(persisted.planExists).toBe(true);
+    expect(persisted.planTripId).toBe(createdTripId);
+    expect(persisted.planPortId).toBe(persisted.firstPortId);
   });
 });
 
@@ -126,6 +154,7 @@ test.describe('Full Journey — View Trips and Navigate', () => {
   test('user can view trip list, open a trip, and navigate back', async ({ page }) => {
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
     });
 
     // 1. Go to My Trips
@@ -152,6 +181,9 @@ test.describe('Full Journey — Delete Trip', () => {
   test('user can delete a trip from the detail page', async ({ page }) => {
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
+      plans: [buildPlan()],
+      seedTrips: true,
+      seedPlans: true,
     });
 
     await page.goto(`/trips/${VALID_TRIP_ID}`);
@@ -162,5 +194,15 @@ test.describe('Full Journey — Delete Trip', () => {
 
     await page.getByTestId('delete-trip-btn').click();
     await expect(page).toHaveURL(/\/trips$/);
+
+    const storesAfterDelete = await page.evaluate(() => ({
+      trips: JSON.parse(localStorage.getItem('shoreexplorer_trips') || '{}'),
+      plans: JSON.parse(localStorage.getItem('shoreexplorer_plans') || '{}'),
+    }));
+    expect(storesAfterDelete.trips[VALID_TRIP_ID]).toBeUndefined();
+    const orphanedPlans = Object.values(storesAfterDelete.plans).filter(
+      (plan: any) => plan.trip_id === VALID_TRIP_ID
+    );
+    expect(orphanedPlans).toHaveLength(0);
   });
 });

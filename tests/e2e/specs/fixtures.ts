@@ -92,7 +92,8 @@ export interface PortSuggestion {
 export interface MockOptions {
   trips?: Trip[];
   plans?: Plan[];
-  seedDefaults?: boolean;
+  seedTrips?: boolean;
+  seedPlans?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,18 +262,47 @@ export function buildRegions(): string[] {
  */
 export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): Promise<void> {
   const tripWithPort = buildTrip({ ports: [buildPort()] });
-  const plan = buildPlan();
-  const shouldSeedDefaults = options.seedDefaults ?? false;
-  const trips = options.trips ?? (shouldSeedDefaults ? [tripWithPort] : []);
-  const plans = options.plans ?? (shouldSeedDefaults ? [plan] : []);
+  const defaultPlan = buildPlan();
+  const trips = options.trips ?? [tripWithPort];
+  const plans = options.plans ?? [defaultPlan];
+  const seedTrips = options.seedTrips ?? false;
+  const seedPlans = options.seedPlans ?? false;
+  const seedSignature = JSON.stringify({ seedTrips, seedPlans, trips, plans });
 
-  // Seed localStorage for local-only trip/plan persistence.
-  await page.addInitScript((seed) => {
-    const tripStore = Object.fromEntries(seed.trips.map((trip) => [trip.trip_id, trip]));
-    const planStore = Object.fromEntries(seed.plans.map((p) => [p.plan_id, p]));
-    window.localStorage.setItem('shoreexplorer_trips', JSON.stringify(tripStore));
-    window.localStorage.setItem('shoreexplorer_plans', JSON.stringify(planStore));
-  }, { trips, plans });
+  // Seed localStorage for local-only trip/plan persistence (opt-in).
+  // Install once per page to avoid accumulating init scripts.
+  const asAnyPage = page as unknown as {
+    __seedInstalled?: boolean;
+    __seedSignature?: string;
+  };
+  if (!asAnyPage.__seedInstalled) {
+    await page.addInitScript((seed) => {
+      if (window.sessionStorage.getItem('__shoreexplorer_e2e_seeded__')) {
+        return;
+      }
+      window.sessionStorage.setItem('__shoreexplorer_e2e_seeded__', '1');
+
+      window.localStorage.removeItem('shoreexplorer_trips');
+      window.localStorage.removeItem('shoreexplorer_plans');
+
+      if (seed.seedTrips) {
+        const tripStore = Object.fromEntries(seed.trips.map((trip) => [trip.trip_id, trip]));
+        window.localStorage.setItem('shoreexplorer_trips', JSON.stringify(tripStore));
+      }
+
+      if (seed.seedPlans) {
+        const planStore = Object.fromEntries(seed.plans.map((p) => [p.plan_id, p]));
+        window.localStorage.setItem('shoreexplorer_plans', JSON.stringify(planStore));
+      }
+    }, { trips, plans, seedTrips, seedPlans });
+    asAnyPage.__seedInstalled = true;
+    asAnyPage.__seedSignature = seedSignature;
+  } else if (asAnyPage.__seedSignature !== seedSignature) {
+    throw new Error(
+      'mockAllApiRoutes called with different seed options on the same page. ' +
+      'Use one seed setup per test page to avoid flaky localStorage initialization.'
+    );
+  }
 
   // Health
   await page.route('**/api/health', (route) =>
@@ -291,21 +321,32 @@ export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): P
 
   // Generate plan
   await page.route('**/api/plans/generate', async (route) => {
-    let payload: Partial<Plan> = {};
+    let payload: Partial<Plan> & { preferences?: Plan['preferences'] } = {};
     try {
       payload = route.request().postDataJSON();
     } catch {
       payload = {};
     }
 
+    if (!payload.trip_id || !payload.port_id) {
+      return route.fulfill({
+        status: 422,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Missing trip_id or port_id in generate-plan payload' }),
+      });
+    }
+
     const generatedPlan = buildPlan({
       plan_id: `plan-e2e-${Math.random().toString(16).slice(2, 10)}`,
-      trip_id: typeof payload.trip_id === 'string' ? payload.trip_id : plan.trip_id,
-      port_id: typeof payload.port_id === 'string' ? payload.port_id : plan.port_id,
-      port_name: typeof payload.port_name === 'string' ? payload.port_name : plan.port_name,
-      port_country: typeof payload.port_country === 'string' ? payload.port_country : plan.port_country,
+      trip_id: payload.trip_id,
+      port_id: payload.port_id,
+      port_name: typeof payload.port_name === 'string' ? payload.port_name : defaultPlan.port_name,
+      port_country:
+        typeof payload.port_country === 'string'
+          ? payload.port_country
+          : defaultPlan.port_country,
       preferences: {
-        ...plan.preferences,
+        ...defaultPlan.preferences,
         ...(payload.preferences || {}),
       },
     });

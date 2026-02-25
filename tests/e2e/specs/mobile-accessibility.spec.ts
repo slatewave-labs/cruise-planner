@@ -12,13 +12,8 @@ const MOBILE_VIEWPORT = { width: 375, height: 667 };
 test.describe('Mobile Responsiveness', () => {
   test.use({ viewport: MOBILE_VIEWPORT });
 
-  test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page, {
-      trips: [buildTrip({ ports: [buildPort()] })],
-    });
-  });
-
   test('landing page is usable at 375px width', async ({ page }) => {
+    await mockAllApiRoutes(page);
     await page.goto('/');
     await expect(page.getByTestId('landing-page')).toBeVisible();
     await expect(page.getByTestId('get-started-btn')).toBeVisible();
@@ -29,6 +24,7 @@ test.describe('Mobile Responsiveness', () => {
   });
 
   test('trip setup page is usable at 375px width', async ({ page }) => {
+    await mockAllApiRoutes(page);
     await page.goto('/trips/new');
     await expect(page.getByTestId('trip-setup-page')).toBeVisible();
     await expect(page.getByTestId('ship-name-input')).toBeVisible();
@@ -36,12 +32,20 @@ test.describe('Mobile Responsiveness', () => {
   });
 
   test('my trips page is usable at 375px width', async ({ page }) => {
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
+    });
     await page.goto('/trips');
     await expect(page.getByTestId('my-trips-page')).toBeVisible();
     await expect(page.getByTestId('new-trip-btn')).toBeVisible();
   });
 
   test('trip detail page is usable at 375px width', async ({ page }) => {
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}`);
     await expect(page.getByTestId('trip-detail-page')).toBeVisible();
     await expect(page.getByTestId('edit-trip-btn')).toBeVisible();
@@ -49,12 +53,17 @@ test.describe('Mobile Responsiveness', () => {
   });
 
   test('port planner page is usable at 375px width', async ({ page }) => {
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}/ports/${VALID_PORT_ID}/plan`);
     await expect(page.getByTestId('port-planner-page')).toBeVisible();
     await expect(page.getByTestId('generate-plan-btn')).toBeVisible();
   });
 
   test('terms page is usable at 375px width', async ({ page }) => {
+    await mockAllApiRoutes(page);
     await page.goto('/terms');
     await expect(page.getByTestId('terms-page')).toBeVisible();
     await expect(page.getByTestId('terms-section-0')).toBeVisible();
@@ -104,6 +113,7 @@ test.describe('Accessibility — Touch Targets', () => {
   test('generate plan button meets 48px minimum height', async ({ page }) => {
     await mockAllApiRoutes(page, {
       trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
     });
     await page.goto(`/trips/${VALID_TRIP_ID}/ports/${VALID_PORT_ID}/plan`);
 
