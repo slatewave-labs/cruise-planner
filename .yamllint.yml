@@ -1,0 +1,13 @@
+---
+extends: default
+
+rules:
+  # GitHub Actions workflow files routinely exceed 80 chars; disable the limit
+  line-length: disable
+  # GitHub Actions uses bare `on:` as a key, which is technically truthy
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off', 'yes', 'no']
+  # document-start (---) is optional in this project
+  document-start: disable
+  # Pre-existing trailing spaces in workflow files; not enforced here
+  trailing-spaces: disable
