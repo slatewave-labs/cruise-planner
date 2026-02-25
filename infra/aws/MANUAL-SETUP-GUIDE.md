@@ -114,11 +114,17 @@ You'll need this number later:
    - `AmazonVPCFullAccess`
    - `SecretsManagerReadWrite`
    - `CloudWatchFullAccess`
-   - `IAMFullAccess`  *(this grants broad permissions, including the EventBridge/IAM actions used by the async callback routine; if you instead build a custom least‑privilege policy make sure it allows **events:CreateConnection, events:CreateApiDestination, events:PutRule, events:PutTargets, iam:CreateRole, iam:PutRolePolicy**)*
+   - `IAMFullAccess`  *(this grants broad permissions, including the EventBridge/IAM actions used by the async callback routine; if you instead build a custom least‑privilege policy make sure it allows **events:CreateConnection, events:CreateApiDestination, events:PutRule, events:PutTargets, iam:CreateRole, iam:TagRole, iam:PutRolePolicy**)*
    - `AWSCodeDeployFullAccess`  *(required for Blue/Green deployments via CodeDeploy)*
    - `AmazonDynamoDBFullAccess`
 8. Click **"Next"**
 9. Click **"Create user"**
+
+> **Automated alternative:** Instead of manually attaching policies, you can run the bootstrap script after creating the user and access keys:
+> ```bash
+> ./infra/aws/scripts/bootstrap-deployer-policy.sh shoreexplorer-deployer
+> ```
+> This attaches all 9 managed policies above plus a supplementary inline policy for S3, CloudFront, Route 53, and ACM.
 
 ### 3b. Create Access Keys for the User
 
