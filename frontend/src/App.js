@@ -8,6 +8,7 @@ import PortPlanner from './pages/PortPlanner';
 import DayPlanView from './pages/DayPlanView';
 import MyTrips from './pages/MyTrips';
 import TermsConditions from './pages/TermsConditions';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="/trips/:tripId/ports/:portId/plan" element={<PortPlanner />} />
           <Route path="/plans/:planId" element={<DayPlanView />} />
           <Route path="/terms" element={<TermsConditions />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
         </Routes>
       </Layout>
     </Router>

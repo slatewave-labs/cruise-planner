@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Ship, Compass, FileText, Home } from 'lucide-react';
+import CookieBanner from './CookieBanner';
 
 function AnchorLogo({ className = 'w-10 h-10' }) {
   return (
@@ -88,6 +89,9 @@ export default function Layout({ children }) {
           })}
         </div>
       </nav>
+
+      {/* GDPR Cookie Consent Banner — renders above mobile nav (z-50) */}
+      <CookieBanner />
     </div>
   );
 }
