@@ -43,6 +43,7 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
 | `setup-all.sh` | Complete infrastructure setup | First-time setup or full rebuild |
+| `bootstrap-deployer-policy.sh` | Set ALL IAM permissions for deployer user | First-time setup (before setup-all) |
 | `01-create-ecr.sh` | Create ECR repositories | Rarely needed (included in setup-all) |
 | `02-create-networking.sh` | Create VPC, subnets, security groups | Rarely needed (included in setup-all) |
 | `03-create-iam-roles.sh` | Create IAM roles for ECS tasks | Rarely needed (included in setup-all) |
@@ -87,12 +88,17 @@ This directory contains automated scripts for deploying ShoreExplorer to AWS ECS
    - Docker installed
    - Groq API key obtained (free at https://console.groq.com/keys)
 
-2. **Run setup:**
+2. **Bootstrap deployer permissions (one-time):**
+   ```bash
+   ./bootstrap-deployer-policy.sh shoreexplorer-deployer
+   ```
+
+3. **Run setup:**
    ```bash
    ./setup-all.sh test
    ```
 
-3. **Build and deploy:**
+4. **Build and deploy:**
    ```bash
    ./build-and-deploy.sh test
    ```
