@@ -3,7 +3,7 @@
  * Tests GDPR-compliant cookie consent banner functionality
  */
 import React from 'react';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import CookieBanner, { getCookieConsent } from '../components/CookieBanner';
