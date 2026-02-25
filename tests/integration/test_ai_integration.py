@@ -24,8 +24,8 @@ PLAN_PAYLOAD = {
     "port_country": "Spain",
     "latitude": 41.38,
     "longitude": 2.19,
-    "arrival": "2023-10-01T08:00:00",
-    "departure": "2023-10-01T18:00:00",
+    "arrival": "2099-10-01T08:00:00",
+    "departure": "2099-10-01T18:00:00",
     "ship_name": "Test Ship",
     "preferences": {
         "party_type": "couple",
@@ -103,8 +103,8 @@ def test_generate_plan_missing_api_key():
             "port_country": "C",
             "latitude": 0.0,
             "longitude": 0.0,
-            "arrival": "2023-10-01T08:00:00",
-            "departure": "2023-10-01T18:00:00",
+            "arrival": "2099-10-01T08:00:00",
+            "departure": "2099-10-01T18:00:00",
             "ship_name": "Test Ship",
             "preferences": {
                 "party_type": "solo",

@@ -122,8 +122,8 @@ class TestAffiliateLinksInPlanGeneration:
                 "port_country": "Spain",
                 "latitude": 41.3874,
                 "longitude": 2.1686,
-                "arrival": "2023-10-01T08:00:00",
-                "departure": "2023-10-01T18:00:00",
+                "arrival": "2099-10-01T08:00:00",
+                "departure": "2099-10-01T18:00:00",
                 "ship_name": "Test Ship",
                 "preferences": {
                     "party_type": "couple",
