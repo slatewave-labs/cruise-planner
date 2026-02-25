@@ -1,22 +1,19 @@
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Deploy to Production — S3 + CloudFront                                    ║
+# ║  Triggered by version tags (v*) or manual dispatch                         ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
 name: Deploy to Production
 
 on:
-  # Deploy when a version tag is pushed (e.g., v1.0.0)
   push:
     tags:
       - "v*"
 
-  # Allow manual deployment
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Image tag to deploy (leave empty for latest)"
-        required: false
-        type: string
+  workflow_dispatch: {}
 
-# Cancel in-progress runs for the same environment/branch
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  group: deploy-prod-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -26,63 +23,56 @@ permissions:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
   ENVIRONMENT: prod
-  PROJECT_NAME: shoreexplorer
-  BACKEND_ECR_REPO: shoreexplorer-backend
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'static-site' }}
 
 jobs:
-  # ─────────────────────────────────────────────────
-  # Run CI first to make sure everything passes
-  # ─────────────────────────────────────────────────
+  # ── CI Validation ───────────────────────────────────────────────
   ci-check:
     name: CI Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: Install backend dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx black flake8 isort
-
-      - name: Backend lint
-        run: cd backend && black --check . && isort --check-only . && flake8 .
-
-      - name: Backend tests
-        run: |
-          cd backend
-          pytest tests/ -v --tb=short
-        env:
-          GROQ_API_KEY: test-key-not-real
-
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: yarn
+          cache: "yarn"
           cache-dependency-path: frontend/yarn.lock
 
-      - name: Frontend tests
+      - name: Install dependencies
         run: |
           cd frontend
           yarn install --frozen-lockfile
+
+      - name: Lint
+        run: cd frontend && yarn lint
+
+      - name: Test
+        run: |
+          cd frontend
           yarn test --watchAll=false --ci
         env:
           CI: true
 
-  # ─────────────────────────────────────────────────
-  # Check if production environment is deployed
-  # ─────────────────────────────────────────────────
+      - name: Build
+        run: |
+          cd frontend
+          yarn build
+        env:
+          CI: true
+
+  # ── Check Infrastructure ────────────────────────────────────────
   check-env:
-    name: Check Production Environment is Deployed
+    name: Check Infrastructure
     runs-on: ubuntu-latest
     environment: production
     outputs:
       deployed: ${{ steps.check.outputs.deployed }}
+      site_url: ${{ steps.check.outputs.site_url }}
+      s3_bucket: ${{ steps.check.outputs.s3_bucket }}
+      cf_dist_id: ${{ steps.check.outputs.cf_dist_id }}
 
     steps:
       - name: Configure AWS credentials
@@ -92,31 +82,46 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Check if production environment is deployed
+      - name: Check S3 bucket and CloudFront
         id: check
+        env:
+          CUSTOM_DOMAIN: ${{ secrets.PROD_DOMAIN || '' }}
         run: |
-          CLUSTER_STATUS=$(aws ecs describe-clusters \
-            --clusters "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-            --query "clusters[0].status || 'NOT_FOUND'" \
-            --output text --region "$AWS_REGION" 2>/dev/null || echo "NOT_FOUND")
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          S3_BUCKET="${APP_NAME}-frontend"
 
-          if [[ "$CLUSTER_STATUS" == "ACTIVE" ]]; then
-            echo "✅ Production environment is deployed (cluster is ACTIVE)"
-            echo "deployed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "⏭️  Production environment is not deployed (cluster status: ${CLUSTER_STATUS}). Skipping deployment."
+          if ! aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
+            echo "⏭️  S3 bucket not found. Run setup-prod first."
             echo "deployed=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-  # ─────────────────────────────────────────────────
-  # Deploy to production (requires approval)
-  # ─────────────────────────────────────────────────
-  deploy-prod:
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=${S3_BUCKET}" >> "$GITHUB_OUTPUT"
+
+          CF_DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}'].Id | [0]" \
+            --output text 2>/dev/null || echo "")
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}'].DomainName | [0]" \
+            --output text 2>/dev/null || echo "")
+
+          echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$CUSTOM_DOMAIN" ]]; then
+            echo "site_url=https://${CUSTOM_DOMAIN}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
+            echo "site_url=https://${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
+          else
+            echo "site_url=" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Deploy ──────────────────────────────────────────────────────
+  deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: [ci-check, check-env]
-    environment: production  # Requires manual approval if configured
-
+    environment: production
     if: needs.check-env.outputs.deployed == 'true'
 
     steps:
@@ -130,119 +135,38 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set image variables
-        id: vars
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          GIT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
-
-          # Use provided tag or generate one
-          if [[ -n "$INPUT_IMAGE_TAG" ]]; then
-            IMAGE_TAG="$INPUT_IMAGE_TAG"
-          else
-            IMAGE_TAG="${ENVIRONMENT}-${GIT_SHA}"
-          fi
-
-          echo "account_id=${ACCOUNT_ID}" >> "$GITHUB_OUTPUT"
-          echo "ecr_base=${ECR_BASE}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "backend_image=${ECR_BASE}/${BACKEND_ECR_REPO}" >> "$GITHUB_OUTPUT"
-
-      # ── Get infrastructure URLs ──────────────────────────────
-      - name: Get ALB DNS and CloudFront info
-        id: alb
-        env:
-          CUSTOM_DOMAIN: ${{ secrets.PROD_DOMAIN || '' }}
-        run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          S3_BUCKET="${APP_NAME}-frontend"
-
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "${APP_NAME}-alb" \
-            --query "LoadBalancers[0].DNSName" \
-            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          # Get CloudFront distribution ID
-          CF_DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].Id | [0]" \
-            --output text 2>/dev/null || echo "")
-          CF_DOMAIN=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].DomainName | [0]" \
-            --output text 2>/dev/null || echo "")
-
-          # Determine the public URL (custom domain → CloudFront → fallback)
-          if [[ -n "$CUSTOM_DOMAIN" ]]; then
-            BACKEND_URL="https://${CUSTOM_DOMAIN}"
-            echo "Using custom domain: ${CUSTOM_DOMAIN}"
-          elif [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
-            BACKEND_URL="https://${CF_DOMAIN}"
-            echo "Using CloudFront domain: ${CF_DOMAIN}"
-          else
-            BACKEND_URL="http://localhost:8001"
-            echo "Using localhost fallback"
-          fi
-
-          echo "dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
-          echo "backend_url=${BACKEND_URL}" >> "$GITHUB_OUTPUT"
-          echo "s3_bucket=${S3_BUCKET}" >> "$GITHUB_OUTPUT"
-          echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
-          echo "cf_domain=${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
-
-      # ── Build and push backend image (optimized with caching) ──
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push backend image
-        id: build-backend
-        uses: docker/build-push-action@v5
-        with:
-          context: backend
-          push: true
-          tags: |
-            ${{ steps.vars.outputs.backend_image }}:${{ steps.vars.outputs.image_tag }}
-            ${{ steps.vars.outputs.backend_image }}:${{ env.ENVIRONMENT }}-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # ── Build and deploy frontend to S3 ─────────────────────────
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'yarn'
+          node-version: "20"
+          cache: "yarn"
           cache-dependency-path: frontend/yarn.lock
 
-      - name: Build frontend static bundle
+      - name: Build
         run: |
           cd frontend
           yarn install --frozen-lockfile
           yarn build
         env:
-          REACT_APP_BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
-          REACT_APP_SITE_URL: ${{ steps.alb.outputs.backend_url }}
+          REACT_APP_SITE_URL: ${{ needs.check-env.outputs.site_url }}
           CI: true
 
-      - name: Deploy frontend to S3
+      - name: Deploy to S3
+        env:
+          S3_BUCKET: ${{ needs.check-env.outputs.s3_bucket }}
         run: |
-          S3_BUCKET="${{ steps.alb.outputs.s3_bucket }}"
-          echo "📦 Syncing frontend build to s3://${S3_BUCKET}/"
+          echo "📦 Deploying to s3://${S3_BUCKET}/"
 
-          # Sync with cache headers: immutable for hashed assets, short cache for index.html
+          # Hashed assets — immutable, long cache
           aws s3 sync frontend/build/ "s3://${S3_BUCKET}/" \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
-            --exclude "index.html" --exclude "asset-manifest.json" --exclude "service-worker.js" \
+            --exclude "index.html" \
+            --exclude "asset-manifest.json" \
+            --exclude "service-worker.js" \
             --region "$AWS_REGION"
 
-          # Upload index.html and manifest with no-cache (so CloudFront always fetches latest)
+          # index.html — never cached
           aws s3 cp frontend/build/index.html "s3://${S3_BUCKET}/index.html" \
             --cache-control "no-cache, no-store, must-revalidate" \
             --content-type "text/html" \
@@ -255,18 +179,15 @@ jobs:
               --region "$AWS_REGION"
           fi
 
-          # Upload prod-specific robots.txt: allow search engines on homepage only.
-          # This overwrites the default (block-all) version built into the static bundle.
-          SITE_URL="${{ steps.alb.outputs.backend_url }}"
+          # Production robots.txt
+          SITE_URL="${{ needs.check-env.outputs.site_url }}"
           {
-            echo '# ShoreExplorer — production robots.txt'
-            echo '# Search engines may index the homepage only. All deeper paths are excluded.'
-            echo ''
-            echo 'User-agent: *'
-            echo 'Allow: /$'
-            echo 'Disallow: /'
-            echo ''
-            echo "Sitemap: ${SITE_URL}/sitemap.xml"
+            echo "User-agent: *"
+            echo "Allow: /"
+            if [[ -n "$SITE_URL" ]]; then
+              echo ""
+              echo "Sitemap: ${SITE_URL}/sitemap.xml"
+            fi
           } > /tmp/robots-prod.txt
 
           aws s3 cp /tmp/robots-prod.txt "s3://${S3_BUCKET}/robots.txt" \
@@ -274,261 +195,51 @@ jobs:
             --content-type "text/plain" \
             --region "$AWS_REGION"
 
-          echo "✅ Frontend deployed to S3"
+          echo "✅ Deployed to S3"
 
-      - name: Invalidate CloudFront cache
+      - name: Invalidate CloudFront
+        env:
+          CF_DIST_ID: ${{ needs.check-env.outputs.cf_dist_id }}
         run: |
-          CF_DIST_ID="${{ steps.alb.outputs.cf_dist_id }}"
           if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
             INVALIDATION_ID=$(aws cloudfront create-invalidation \
               --distribution-id "$CF_DIST_ID" \
               --paths "/index.html" "/asset-manifest.json" "/service-worker.js" "/robots.txt" \
-              --query 'Invalidation.Id' --output text)
-            echo "🔄 CloudFront invalidation created: ${INVALIDATION_ID}"
+              --query "Invalidation.Id" --output text)
+            echo "🔄 CloudFront invalidation: ${INVALIDATION_ID}"
           else
-            echo "⏭️  No CloudFront distribution found — skipping invalidation"
+            echo "⏭️  No CloudFront distribution — skipping invalidation"
           fi
 
-      # ── Deploy to ECS (rolling deployment) ─────────────────────
-      # First, register updated task definitions with correct env vars
-      - name: Get secrets ARN
-        id: secrets
-        run: |
-          SECRET_ARN=$(aws secretsmanager describe-secret \
-            --secret-id "${PROJECT_NAME}-${ENVIRONMENT}-secrets" \
-            --query 'ARN' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          
-          if [[ -z "$SECRET_ARN" ]]; then
-            echo "Warning: Could not find secrets ARN, skipping task definition update"
-            echo "secret_arn=" >> "$GITHUB_OUTPUT"
-          else
-            echo "secret_arn=${SECRET_ARN}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Register backend task definition
-        if: steps.secrets.outputs.secret_arn != ''
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          SECRET_ARN="${{ steps.secrets.outputs.secret_arn }}"
-          
-          # Get IAM role ARNs
-          EXECUTION_ROLE_ARN=$(aws iam get-role \
-            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" \
-            --query 'Role.Arn' --output text --region "$AWS_REGION")
-          TASK_ROLE_ARN=$(aws iam get-role \
-            --role-name "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role" \
-            --query 'Role.Arn' --output text --region "$AWS_REGION")
-          
-          # Register backend task definition with GROQ_API_KEY
-          aws ecs register-task-definition \
-            --family "${PROJECT_NAME}-${ENVIRONMENT}-backend-task" \
-            --network-mode awsvpc \
-            --requires-compatibilities FARGATE \
-            --cpu 256 \
-            --memory 512 \
-            --execution-role-arn "$EXECUTION_ROLE_ARN" \
-            --task-role-arn "$TASK_ROLE_ARN" \
-            --container-definitions "[{
-              \"name\": \"backend\",
-              \"image\": \"${ECR_BASE}/${BACKEND_ECR_REPO}:${ENVIRONMENT}-latest\",
-              \"essential\": true,
-              \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
-              \"secrets\": [
-                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}
-              ],
-              \"environment\": [
-                {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"${PROJECT_NAME}-${ENVIRONMENT}\"},
-                {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"${AWS_REGION}\"},
-                {\"name\": \"ENVIRONMENT\", \"value\": \"${ENVIRONMENT}\"},
-                {\"name\": \"ENABLE_CLOUDWATCH_METRICS\", \"value\": \"true\"}
-              ],
-              \"logConfiguration\": {
-                \"logDriver\": \"awslogs\",
-                \"options\": {
-                  \"awslogs-group\": \"/ecs/${PROJECT_NAME}-${ENVIRONMENT}-backend\",
-                  \"awslogs-region\": \"${AWS_REGION}\",
-                  \"awslogs-stream-prefix\": \"ecs\"
-                }
-              },
-              \"healthCheck\": {
-                \"command\": [\"CMD-SHELL\", \"python -c \\\"import urllib.request; exit(0 if urllib.request.urlopen('http://localhost:8001/api/health').status == 200 else 1)\\\"\"],
-                \"interval\": 30,
-                \"timeout\": 10,
-                \"retries\": 3,
-                \"startPeriod\": 60
-              }
-            }]" \
-            --tags "key=Project,value=${PROJECT_NAME}" "key=Environment,value=${ENVIRONMENT}" \
-            --region "$AWS_REGION"
-
-      # ── Deploy backend via CodeDeploy Blue/Green ─────────────────
-      - name: Deploy backend via CodeDeploy
-        id: deploy-backend
-        run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
-
-          # Get the latest backend task definition ARN
-          TASK_DEF_ARN=$(aws ecs describe-task-definition \
-            --task-definition "${APP_NAME}-backend-task" \
-            --query 'taskDefinition.taskDefinitionArn' --output text \
-            --region "$AWS_REGION")
-
-          # Create AppSpec inline for backend
-          APPSPEC=$(cat <<EOF
-          {
-            "version": 0.0,
-            "Resources": [{
-              "TargetService": {
-                "Type": "AWS::ECS::Service",
-                "Properties": {
-                  "TaskDefinition": "${TASK_DEF_ARN}",
-                  "LoadBalancerInfo": {
-                    "ContainerName": "backend",
-                    "ContainerPort": 8001
-                  }
-                }
-              }
-            }]
-          }
-          EOF
-          )
-
-          DEPLOY_ID=$(aws deploy create-deployment \
-            --application-name "$CODEDEPLOY_APP" \
-            --deployment-group-name "${APP_NAME}-backend-dg" \
-            --revision "revisionType=AppSpecContent,appSpecContent={content='$(echo "$APPSPEC" | jq -c .)'}" \
-            --description "Backend deploy: ${{ steps.vars.outputs.image_tag }}" \
-            --query 'deploymentId' --output text \
-            --region "$AWS_REGION")
-          echo "🚀 Backend CodeDeploy deployment started: ${DEPLOY_ID}"
-          echo "deployment_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
-
-      # ── Async Deployment Callback ────────────────────────────────
-      # EventBridge rules listen for CodeDeploy state changes.
-      # The callback approves the production-post-deploy environment gate once
-      # the backend deployment succeeds.
-
-      - name: Provision EventBridge callback helper (best-effort)
-        run: |
-          echo "🚀 Provisioning EventBridge-to-GitHub callback helper..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-
-          # best-effort self-grant of EventBridge/IAM permissions (deploy runs with
-          # the credentials used for deployments)
-          if aws iam get-user &>/dev/null 2>&1; then
-            USERNAME=$(aws iam get-user --query 'User.UserName' --output text)
-            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:UpdateConnection","events:CreateApiDestination","events:DescribeApiDestination","events:UpdateApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy","iam:PassRole","iam:CreateServiceLinkedRole","secretsmanager:CreateSecret","secretsmanager:TagResource","secretsmanager:GetSecretValue","secretsmanager:PutSecretValue","secretsmanager:DescribeSecret","secretsmanager:UpdateSecret","secretsmanager:DeleteSecret"],"Resource":"*"}]}'
-            aws iam put-user-policy --user-name "$USERNAME" --policy-name "ShoreExplorerCallbackHelper" --policy-document "$CALLBACK_POLICY" >/dev/null 2>&1 || true
-            # Wait for IAM inline-policy propagation before proceeding
-            sleep 15
-          fi
-
-          # helper for permission errors
-          fail() {
-            echo "❌ $1"
-            echo "   Error Details: ${2:-No additional info}"
-            echo "   Deployment will continue, but the async callback won't be configured."
-            # We exit 0 because if callback infrastructure fails, we don't want to break the whole deployment.
-            exit 0
-          }
-
-          # 1. Connection (Auth for GitHub)
-          CONN_ARN=$(aws events describe-connection --name "${APP_NAME}-gh-conn" \
-            --query 'ConnectionArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          
-          if [[ -z "$CONN_ARN" || "$CONN_ARN" == "None" ]]; then
-            if ! CONN_OUTPUT=$(aws events create-connection --name "${APP_NAME}-gh-conn" \
-              --authorization-type API_KEY \
-              --auth-parameters "{\"ApiKeyAuthParameters\": {\"ApiKeyName\": \"Authorization\", \"ApiKeyValue\": \"Bearer ${GH_TOKEN}\"}}" \
-              --region "$AWS_REGION" 2>&1); then
-              fail "Unable to create EventBridge Connection. Ensure deployment role has events:CreateConnection and related Secrets Manager actions." "$CONN_OUTPUT"
-            fi
-            CONN_ARN=$(echo "$CONN_OUTPUT" | grep -o 'arn:aws:events:[^\"]*')
-            echo "  ✅ Created EventBridge Connection"
-          else
-            echo "  ⏭️  Connection exists"
-          fi
-
-
-      # ── Monitoring & Alerting ───────────────────────────────────
-      - name: Setup monitoring (dashboard + alarms)
+      - name: Smoke test
         env:
-          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL || '' }}
-          CHECK_EXISTING: "true"
+          SITE_URL: ${{ needs.check-env.outputs.site_url }}
         run: |
-          chmod +x infra/aws/scripts/10-setup-monitoring.sh
-          bash infra/aws/scripts/10-setup-monitoring.sh "${ENVIRONMENT}" --check-existing
-        continue-on-error: true  # Monitoring setup should not block deployment
+          if [[ -z "$SITE_URL" ]]; then
+            echo "⏭️  No public URL — skipping smoke test"
+            exit 0
+          fi
+          sleep 10
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${SITE_URL}/" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
+          if [[ "$HTTP_CODE" =~ ^(200|301|302)$ ]]; then
+            echo "✅ Site is live (HTTP ${HTTP_CODE})"
+          else
+            echo "⚠️  Unexpected HTTP ${HTTP_CODE} — CloudFront may still be propagating"
+          fi
 
       - name: Deployment summary
         if: always()
         env:
-          BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
+          SITE_URL: ${{ needs.check-env.outputs.site_url }}
         run: |
           echo "## Production Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Environment | \`production\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image Tag | \`${{ steps.vars.outputs.image_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Tag | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${BACKEND_URL}" != "http://localhost:8001" ]]; then
-            echo "| App URL | ${BACKEND_URL} |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| API Health | ${BACKEND_URL}/api/health |" >> "$GITHUB_STEP_SUMMARY"
-            DASHBOARD_URL="https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards:name=${PROJECT_NAME}-${ENVIRONMENT}-dashboard"
-            echo "| Dashboard | [CloudWatch](${DASHBOARD_URL}) |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$SITE_URL" ]]; then
+            echo "| Site URL | ${SITE_URL} |" >> "$GITHUB_STEP_SUMMARY"
           fi
-
-  # ─────────────────────────────────────────────────
-  # Rollback job (manual trigger only)
-  # ─────────────────────────────────────────────────
-  rollback:
-    name: Rollback Production
-    runs-on: ubuntu-latest
-    if: failure() && needs.deploy-prod.result == 'failure'
-    needs: deploy-prod
-    environment: production
-
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Rollback via CodeDeploy
-        run: |
-          echo "⚠️  Deployment failed. Rolling back backend via CodeDeploy..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
-
-          DG="${APP_NAME}-backend-dg"
-          # Get the most recent deployment for this deployment group
-          DEPLOY_ID=$(aws deploy list-deployments \
-            --application-name "$CODEDEPLOY_APP" \
-            --deployment-group-name "$DG" \
-            --query "deployments[0]" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          if [[ -n "$DEPLOY_ID" && "$DEPLOY_ID" != "None" ]]; then
-            STATUS=$(aws deploy get-deployment --deployment-id "$DEPLOY_ID" \
-              --query "deploymentInfo.status" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "")
-
-            if [[ "$STATUS" == "InProgress" || "$STATUS" == "Created" || "$STATUS" == "Queued" || "$STATUS" == "Ready" ]]; then
-              aws deploy stop-deployment --deployment-id "$DEPLOY_ID" \
-                --auto-rollback-enabled \
-                --region "$AWS_REGION" 2>/dev/null || true
-              echo "  ⚠️  Stopped deployment ${DEPLOY_ID} for ${DG} (auto-rollback triggered)"
-            else
-              echo "  ℹ️  Deployment ${DEPLOY_ID} for ${DG} is in state: ${STATUS} — cannot stop"
-            fi
-          else
-            echo "  ℹ️  No deployments found for ${DG}"
-          fi
-          echo "Rollback initiated. CodeDeploy will handle the blue/green swap back."
-          echo "Note: Frontend on S3/CloudFront does not require rollback (content-hashed assets)."

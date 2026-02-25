@@ -1,15 +1,16 @@
-name: Setup & Deploy Test Environment
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Setup Test Environment — S3 + CloudFront + OAC                            ║
+# ║  Provisions infrastructure from scratch. Self-healing: skips existing.     ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
 
-# Provisions all AWS infrastructure from scratch and deploys the application.
-# Self-healing: skips resources that already exist.
+name: Setup Test Environment
 
 on:
   workflow_dispatch: {}
 
-# Prevent parallel setup runs on the same environment
 concurrency:
-  group: setup-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: setup-test
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -18,12 +19,11 @@ permissions:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
   ENVIRONMENT: test
-  PROJECT_NAME: shoreexplorer
-  BACKEND_ECR_REPO: shoreexplorer-backend
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'static-site' }}
 
 jobs:
-  setup-and-deploy-test:
-    name: Setup & Deploy Test
+  setup:
+    name: Provision Test Infrastructure
     runs-on: ubuntu-latest
     environment: test
 
@@ -41,489 +41,20 @@ jobs:
       - name: Set variables
         id: vars
         run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          GIT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          IMAGE_TAG="${ENVIRONMENT}-${GIT_SHA}"
-
-          echo "account_id=${ACCOUNT_ID}" >> "$GITHUB_OUTPUT"
-          echo "ecr_base=${ECR_BASE}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-
-      # ══════════════════════════════════════════════════════════════
-      #  INFRASTRUCTURE PROVISIONING
-      # ══════════════════════════════════════════════════════════════
-
-      # ── 1. ECR Repositories (shared) ────────────────────────────
-      - name: Create ECR repositories
-        run: |
-          echo "📦 Ensuring ECR repositories exist..."
-          for REPO in "$BACKEND_ECR_REPO"; do
-            if aws ecr describe-repositories --repository-names "$REPO" --region "$AWS_REGION" &>/dev/null; then
-              echo "  ⏭️  ECR repo exists: $REPO"
-            else
-              aws ecr create-repository --repository-name "$REPO" --region "$AWS_REGION" \
-                --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE \
-                --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value=shared \
-                --no-cli-pager
-              echo "  ✅ Created ECR repo: $REPO"
-            fi
-
-            # Set lifecycle policy
-            aws ecr put-lifecycle-policy --repository-name "$REPO" --region "$AWS_REGION" \
-              --lifecycle-policy-text '{"rules":[{"rulePriority":1,"description":"Keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}' \
-              --no-cli-pager >/dev/null 2>&1 || true
-          done
-
-      # ── 2. VPC & Networking ─────────────────────────────────────
-      - name: Create networking
-        id: networking
-        run: |
-          echo "🌐 Provisioning networking..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          VPC_CIDR="10.0.0.0/16"
-          AZ1="${AWS_REGION}a"
-          AZ2="${AWS_REGION}b"
-
-          # VPC
-          VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=${APP_NAME}-vpc" \
-            --query "Vpcs[0].VpcId" --output text --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
-            VPC_ID=$(aws ec2 create-vpc --cidr-block "$VPC_CIDR" \
-              --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${APP_NAME}-vpc},{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
-              --query "Vpc.VpcId" --output text --region "$AWS_REGION")
-            aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-hostnames '{"Value":true}' --region "$AWS_REGION"
-            aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-support '{"Value":true}' --region "$AWS_REGION"
-            echo "  ✅ Created VPC: $VPC_ID"
-          else
-            echo "  ⏭️  VPC exists: $VPC_ID"
-          fi
-
-          # Internet Gateway
-          IGW_ID=$(aws ec2 describe-internet-gateways \
-            --filters "Name=tag:Name,Values=${APP_NAME}-igw" \
-            --query "InternetGateways[0].InternetGatewayId" --output text --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$IGW_ID" == "None" || -z "$IGW_ID" ]]; then
-            IGW_ID=$(aws ec2 create-internet-gateway \
-              --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${APP_NAME}-igw},{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
-              --query "InternetGateway.InternetGatewayId" --output text --region "$AWS_REGION")
-            aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" --region "$AWS_REGION"
-            echo "  ✅ Created IGW: $IGW_ID"
-          else
-            echo "  ⏭️  IGW exists: $IGW_ID"
-          fi
-
-          # Helper function for subnet creation
-          create_subnet() {
-            local NAME="$1" CIDR="$2" AZ="$3" MAP_PUBLIC="$4"
-            local SID
-            SID=$(aws ec2 describe-subnets \
-              --filters "Name=tag:Name,Values=$NAME" "Name=vpc-id,Values=$VPC_ID" \
-              --query "Subnets[0].SubnetId" --output text --region "$AWS_REGION" 2>/dev/null || echo "None")
-            if [[ "$SID" == "None" || -z "$SID" ]]; then
-              SID=$(aws ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block "$CIDR" --availability-zone "$AZ" \
-                --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=$NAME},{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
-                --query "Subnet.SubnetId" --output text --region "$AWS_REGION")
-              if [[ "$MAP_PUBLIC" == "true" ]]; then
-                aws ec2 modify-subnet-attribute --subnet-id "$SID" --map-public-ip-on-launch --region "$AWS_REGION"
-              fi
-              echo "  ✅ Created subnet: $NAME ($SID)" >&2
-            else
-              echo "  ⏭️  Subnet exists: $NAME ($SID)" >&2
-            fi
-            echo "$SID"
-          }
-
-          PUB1=$(create_subnet "${APP_NAME}-public-1" "10.0.1.0/24" "$AZ1" "true")
-          PUB2=$(create_subnet "${APP_NAME}-public-2" "10.0.2.0/24" "$AZ2" "true")
-          create_subnet "${APP_NAME}-private-1" "10.0.3.0/24" "$AZ1" "false" >/dev/null
-          create_subnet "${APP_NAME}-private-2" "10.0.4.0/24" "$AZ2" "false" >/dev/null
-
-          # Route Table
-          RT_ID=$(aws ec2 describe-route-tables \
-            --filters "Name=tag:Name,Values=${APP_NAME}-public-rt" "Name=vpc-id,Values=$VPC_ID" \
-            --query "RouteTables[0].RouteTableId" --output text --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$RT_ID" == "None" || -z "$RT_ID" ]]; then
-            RT_ID=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
-              --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${APP_NAME}-public-rt},{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
-              --query "RouteTable.RouteTableId" --output text --region "$AWS_REGION")
-            aws ec2 create-route --route-table-id "$RT_ID" --destination-cidr-block "0.0.0.0/0" --gateway-id "$IGW_ID" --region "$AWS_REGION" >/dev/null
-            echo "  ✅ Created route table: $RT_ID"
-          else
-            echo "  ⏭️  Route table exists: $RT_ID"
-          fi
-
-          # Associate subnets
-          for SID in "$PUB1" "$PUB2"; do
-            ASSOC=$(aws ec2 describe-route-tables \
-              --filters "Name=association.subnet-id,Values=$SID" "Name=route-table-id,Values=$RT_ID" \
-              --query "RouteTables[0].RouteTableId" --output text --region "$AWS_REGION" 2>/dev/null || echo "None")
-            if [[ "$ASSOC" == "None" || -z "$ASSOC" ]]; then
-              aws ec2 associate-route-table --subnet-id "$SID" --route-table-id "$RT_ID" --region "$AWS_REGION" >/dev/null
-            fi
-          done
-
-          # Security Groups
-          create_sg() {
-            local SG_NAME="$1" DESC="$2"
-            local SGID
-            SGID=$(aws ec2 describe-security-groups \
-              --filters "Name=group-name,Values=$SG_NAME" "Name=vpc-id,Values=$VPC_ID" \
-              --query "SecurityGroups[0].GroupId" --output text --region "$AWS_REGION" 2>/dev/null || echo "None")
-            if [[ "$SGID" == "None" || -z "$SGID" ]]; then
-              SGID=$(aws ec2 create-security-group --group-name "$SG_NAME" --description "$DESC" --vpc-id "$VPC_ID" \
-                --tag-specifications "ResourceType=security-group,Tags=[{Key=Name,Value=$SG_NAME},{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
-                --query "GroupId" --output text --region "$AWS_REGION")
-              echo "  ✅ Created SG: $SG_NAME ($SGID)" >&2
-            else
-              echo "  ⏭️  SG exists: $SG_NAME ($SGID)" >&2
-            fi
-            echo "$SGID"
-          }
-
-          ALB_SG_ID=$(create_sg "${APP_NAME}-alb-sg" "ALB security group")
-          ECS_SG_ID=$(create_sg "${APP_NAME}-ecs-sg" "ECS tasks security group")
-
-          # SG rules (idempotent)
-          for PORT in 80 443; do
-            aws ec2 authorize-security-group-ingress --group-id "$ALB_SG_ID" \
-              --protocol tcp --port "$PORT" --cidr "0.0.0.0/0" --region "$AWS_REGION" 2>/dev/null || true
-          done
-          aws ec2 authorize-security-group-ingress --group-id "$ECS_SG_ID" \
-            --protocol tcp --port 8001 --source-group "$ALB_SG_ID" --region "$AWS_REGION" 2>/dev/null || true
-          aws ec2 authorize-security-group-ingress --group-id "$ECS_SG_ID" \
-            --protocol tcp --port 8080 --source-group "$ALB_SG_ID" --region "$AWS_REGION" 2>/dev/null || true
-
-          # Outputs
-          echo "vpc_id=${VPC_ID}" >> "$GITHUB_OUTPUT"
-          echo "pub_subnet_1=${PUB1}" >> "$GITHUB_OUTPUT"
-          echo "pub_subnet_2=${PUB2}" >> "$GITHUB_OUTPUT"
-          echo "alb_sg_id=${ALB_SG_ID}" >> "$GITHUB_OUTPUT"
-          echo "ecs_sg_id=${ECS_SG_ID}" >> "$GITHUB_OUTPUT"
-
-      # ── 3. Secrets Manager ──────────────────────────────────────
-      - name: Create secrets
-        id: secrets
-        env:
-          GROQ_API_KEY: ${{ secrets.TEST_GROQ_API_KEY }}
-        run: |
-          echo "🔐 Ensuring secrets exist..."
-          SECRET_NAME="${PROJECT_NAME}-${ENVIRONMENT}-secrets"
-
-          if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$AWS_REGION" &>/dev/null; then
-            echo "  ⏭️  Secret exists: $SECRET_NAME"
-            # Update if GROQ_API_KEY is provided
-            if [[ -n "${GROQ_API_KEY:-}" ]]; then
-              aws secretsmanager update-secret --secret-id "$SECRET_NAME" \
-                --secret-string "{\"GROQ_API_KEY\":\"${GROQ_API_KEY}\"}" \
-                --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-            fi
-          else
-            aws secretsmanager create-secret --name "$SECRET_NAME" \
-              --description "ShoreExplorer ${ENVIRONMENT} environment secrets" \
-              --secret-string "{\"GROQ_API_KEY\":\"${GROQ_API_KEY:-placeholder}\"}" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "  ✅ Created secret: $SECRET_NAME"
-          fi
-
-          SECRET_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" \
-            --query "ARN" --output text --region "$AWS_REGION")
-          echo "secret_arn=${SECRET_ARN}" >> "$GITHUB_OUTPUT"
-
-      # ── 4. IAM Roles ────────────────────────────────────────────
-      - name: Create IAM roles
-        run: |
-          echo "🔑 Ensuring IAM roles exist..."
-          ACCOUNT_ID="${{ steps.vars.outputs.account_id }}"
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          SECRET_ARN="${{ steps.secrets.outputs.secret_arn }}"
-
-          TRUST_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-
-          # Execution role
-          EXEC_ROLE="${APP_NAME}-ecs-task-execution-role"
-          if aws iam get-role --role-name "$EXEC_ROLE" &>/dev/null; then
-            echo "  ⏭️  Role exists: $EXEC_ROLE"
-          else
-            aws iam create-role --role-name "$EXEC_ROLE" --assume-role-policy-document "$TRUST_POLICY" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" --no-cli-pager >/dev/null
-            aws iam attach-role-policy --role-name "$EXEC_ROLE" \
-              --policy-arn "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-            echo "  ✅ Created role: $EXEC_ROLE"
-          fi
-
-          # Execution role inline policies (idempotent put)
-          cat > /tmp/exec-policy.json <<POLICY
-          {"Version":"2012-10-17","Statement":[
-            {"Effect":"Allow","Action":["secretsmanager:GetSecretValue"],"Resource":["arn:aws:secretsmanager:${AWS_REGION}:${ACCOUNT_ID}:secret:${APP_NAME}-secrets*"]},
-            {"Effect":"Allow","Action":["logs:CreateLogStream","logs:PutLogEvents","logs:CreateLogGroup"],"Resource":"arn:aws:logs:${AWS_REGION}:${ACCOUNT_ID}:*"}
-          ]}
-          POLICY
-          aws iam put-role-policy --role-name "$EXEC_ROLE" --policy-name "${APP_NAME}-secrets-and-logs" \
-            --policy-document file:///tmp/exec-policy.json 2>/dev/null || true
-
-          # Task role
-          TASK_ROLE="${APP_NAME}-ecs-task-role"
-          if aws iam get-role --role-name "$TASK_ROLE" &>/dev/null; then
-            echo "  ⏭️  Role exists: $TASK_ROLE"
-          else
-            aws iam create-role --role-name "$TASK_ROLE" --assume-role-policy-document "$TRUST_POLICY" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" --no-cli-pager >/dev/null
-            echo "  ✅ Created role: $TASK_ROLE"
-          fi
-
-          # Task role inline policies (idempotent put)
-          cat > /tmp/task-policy.json <<POLICY
-          {"Version":"2012-10-17","Statement":[
-            {"Sid":"CloudWatchMetrics","Effect":"Allow","Action":["cloudwatch:PutMetricData"],"Resource":"*","Condition":{"StringEquals":{"cloudwatch:namespace":"${PROJECT_NAME}/${ENVIRONMENT}"}}}
-          ]}
-          POLICY
-          aws iam put-role-policy --role-name "$TASK_ROLE" --policy-name "${APP_NAME}-task-policy" \
-            --policy-document file:///tmp/task-policy.json 2>/dev/null || true
-
-          # CodeDeploy service role (for Blue/Green ECS deployments)
-          CODEDEPLOY_ROLE="${APP_NAME}-codedeploy-role"
-          CODEDEPLOY_TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"codedeploy.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-          if aws iam get-role --role-name "$CODEDEPLOY_ROLE" &>/dev/null; then
-            echo "  ⏭️  Role exists: $CODEDEPLOY_ROLE"
-          else
-            aws iam create-role --role-name "$CODEDEPLOY_ROLE" --assume-role-policy-document "$CODEDEPLOY_TRUST" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" --no-cli-pager >/dev/null
-            aws iam attach-role-policy --role-name "$CODEDEPLOY_ROLE" \
-              --policy-arn "arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS"
-            echo "  ✅ Created role: $CODEDEPLOY_ROLE"
-          fi
-
-      # ── 5. ECS Cluster & Log Groups ─────────────────────────────
-      - name: Create ECS cluster and log groups
-        run: |
-          echo "🚀 Ensuring ECS cluster and log groups exist..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CLUSTER="${APP_NAME}-cluster"
-
-          # Log groups (backend only — frontend is on S3/CloudFront)
-          for LG in "/ecs/${APP_NAME}-backend"; do
-            if aws logs describe-log-groups --log-group-name-prefix "$LG" --region "$AWS_REGION" \
-              --query "logGroups[?logGroupName=='$LG']" --output text | grep -q "$LG"; then
-              echo "  ⏭️  Log group exists: $LG"
-            else
-              aws logs create-log-group --log-group-name "$LG" --region "$AWS_REGION" \
-                --tags Project="$PROJECT_NAME",Environment="$ENVIRONMENT"
-              echo "  ✅ Created log group: $LG"
-            fi
-            aws logs put-retention-policy --log-group-name "$LG" --retention-in-days 14 --region "$AWS_REGION" 2>/dev/null || true
-          done
-
-          # Cluster
-          CLUSTER_STATUS=$(aws ecs describe-clusters --clusters "$CLUSTER" --region "$AWS_REGION" \
-            --query "clusters[0].status" --output text 2>/dev/null || echo "MISSING")
-          if [[ "$CLUSTER_STATUS" == "ACTIVE" ]]; then
-            echo "  ⏭️  Cluster exists: $CLUSTER"
-          else
-            aws ecs create-cluster --cluster-name "$CLUSTER" \
-              --capacity-providers FARGATE \
-              --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1 \
-              --settings '[{"name":"containerInsights","value":"disabled"}]' \
-              --tags key=Project,value="$PROJECT_NAME" key=Environment,value="$ENVIRONMENT" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "  ✅ Created cluster: $CLUSTER"
-          fi
-
-      # ── 7. ALB & Target Groups ──────────────────────────────────
-      - name: Create ALB and target groups
-        id: alb
-        run: |
-          echo "⚖️  Ensuring ALB and target groups exist..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          ALB_NAME="${APP_NAME}-alb"
-          VPC_ID="${{ steps.networking.outputs.vpc_id }}"
-          PUB1="${{ steps.networking.outputs.pub_subnet_1 }}"
-          PUB2="${{ steps.networking.outputs.pub_subnet_2 }}"
-          ALB_SG="${{ steps.networking.outputs.alb_sg_id }}"
-
-          # ALB
-          ALB_ARN=$(aws elbv2 describe-load-balancers --names "$ALB_NAME" \
-            --query "LoadBalancers[0].LoadBalancerArn" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$ALB_ARN" == "None" || -z "$ALB_ARN" ]]; then
-            ALB_ARN=$(aws elbv2 create-load-balancer --name "$ALB_NAME" \
-              --subnets "$PUB1" "$PUB2" --security-groups "$ALB_SG" \
-              --scheme internet-facing --type application --ip-address-type ipv4 \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
-              --query "LoadBalancers[0].LoadBalancerArn" --output text --region "$AWS_REGION")
-            echo "  ✅ Created ALB: $ALB_NAME"
-          else
-            echo "  ⏭️  ALB exists: $ALB_NAME"
-          fi
-
-          ALB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" \
-            --query "LoadBalancers[0].DNSName" --output text --region "$AWS_REGION")
-
-          # Target Groups
-          create_tg() {
-            local TG_NAME="$1" PORT="$2" HEALTH="$3"
-            local TG_ARN
-            TG_ARN=$(aws elbv2 describe-target-groups --names "$TG_NAME" \
-              --query "TargetGroups[0].TargetGroupArn" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "None")
-            if [[ "$TG_ARN" == "None" || -z "$TG_ARN" ]]; then
-              TG_ARN=$(aws elbv2 create-target-group --name "$TG_NAME" \
-                --protocol HTTP --port "$PORT" --vpc-id "$VPC_ID" --target-type ip \
-                --health-check-protocol HTTP --health-check-path "$HEALTH" \
-                --health-check-interval-seconds 30 --health-check-timeout-seconds 10 \
-                --healthy-threshold-count 2 --unhealthy-threshold-count 3 --matcher HttpCode=200 \
-                --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
-                --query "TargetGroups[0].TargetGroupArn" --output text --region "$AWS_REGION")
-              echo "  ✅ Created TG: $TG_NAME" >&2
-            else
-              echo "  ⏭️  TG exists: $TG_NAME" >&2
-            fi
-            echo "$TG_ARN"
-          }
-
-          BACKEND_TG_ARN=$(create_tg "${APP_NAME}-backend-tg" 8001 "/api/health")
-
-          # Green target group for CodeDeploy Blue/Green backend deployments
-          BACKEND_GREEN_TG_ARN=$(create_tg "${APP_NAME}-be-green-tg" 8001 "/api/health")
-
-          # HTTP Listener (port 80) — ALB now only serves backend API traffic
-          # (frontend is on S3/CloudFront). Default action forwards to backend.
-          LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
-            --query "Listeners[?Port==\`80\`].ListenerArn" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          if [[ -z "$LISTENER_ARN" || "$LISTENER_ARN" == "None" ]]; then
-            LISTENER_ARN=$(aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" \
-              --protocol HTTP --port 80 \
-              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
-              --query "Listeners[0].ListenerArn" --output text --region "$AWS_REGION")
-            echo "  ✅ Created HTTP listener (default → backend)"
-          else
-            # Ensure default action points to backend (may have been frontend previously)
-            aws elbv2 modify-listener --listener-arn "$LISTENER_ARN" \
-              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-            echo "  ⏭️  HTTP listener exists (updated default → backend)"
-          fi
-
-          # Listener rule: /api/* → backend (keep for compatibility)
-          EXISTING_RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" \
-            --query "Rules[?Conditions[?Field=='path-pattern' && Values[0]=='/api/*']].RuleArn" \
-            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          if [[ -z "$EXISTING_RULES" || "$EXISTING_RULES" == "None" ]]; then
-            aws elbv2 create-rule --listener-arn "$LISTENER_ARN" --priority 10 \
-              --conditions Field=path-pattern,Values='/api/*' \
-              --actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "  ✅ Created /api/* listener rule"
-          else
-            echo "  ⏭️  /api/* rule exists"
-          fi
-
-          echo "alb_arn=${ALB_ARN}" >> "$GITHUB_OUTPUT"
-          echo "alb_dns=${ALB_DNS}" >> "$GITHUB_OUTPUT"
-          echo "backend_tg_arn=${BACKEND_TG_ARN}" >> "$GITHUB_OUTPUT"
-          echo "backend_green_tg_arn=${BACKEND_GREEN_TG_ARN}" >> "$GITHUB_OUTPUT"
-          echo "listener_arn=${LISTENER_ARN}" >> "$GITHUB_OUTPUT"
-
-      # ── 8. HTTPS Setup ──────────────────────────────────────────
-      - name: Setup HTTPS
-        id: https
-        env:
-          TEST_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
-        run: |
-          echo "🔒 Setting up HTTPS..."
-          ALB_ARN="${{ steps.alb.outputs.alb_arn }}"
-          BACKEND_TG_ARN="${{ steps.alb.outputs.backend_tg_arn }}"
-          LISTENER_ARN="${{ steps.alb.outputs.listener_arn }}"
-
-          if [[ -z "$TEST_DOMAIN" ]]; then
-            echo "  ⏭️  TEST_DOMAIN not set — skipping HTTPS"
-            echo "backend_url=http://${{ steps.alb.outputs.alb_dns }}" >> "$GITHUB_OUTPUT"
-            echo "prod_listener_arn=${LISTENER_ARN}" >> "$GITHUB_OUTPUT"
-            echo "cert_arn=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          FULL_DOMAIN="test.${TEST_DOMAIN}"
-
-          # Find existing wildcard certificate
-          CERT_ARN=$(aws acm list-certificates --region "$AWS_REGION" \
-            --query "CertificateSummaryList[?DomainName=='*.${TEST_DOMAIN}' && Status=='ISSUED'].CertificateArn" \
-            --output text 2>/dev/null || echo "")
-
-          if [[ -z "$CERT_ARN" || "$CERT_ARN" == "None" ]]; then
-            echo "  ⚠️  No issued wildcard certificate found for *.${TEST_DOMAIN}"
-            echo "  Using ALB DNS directly"
-            echo "backend_url=http://${{ steps.alb.outputs.alb_dns }}" >> "$GITHUB_OUTPUT"
-            echo "cert_arn=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "  ✅ Found certificate: $CERT_ARN"
-          echo "cert_arn=${CERT_ARN}" >> "$GITHUB_OUTPUT"
-
-          # HTTPS listener (port 443) — ALB serves backend API traffic only
-          HTTPS_LISTENER=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
-            --query "Listeners[?Port==\`443\`].ListenerArn" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          if [[ -z "$HTTPS_LISTENER" || "$HTTPS_LISTENER" == "None" ]]; then
-            HTTPS_LISTENER=$(aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" \
-              --protocol HTTPS --port 443 --certificates CertificateArn="$CERT_ARN" \
-              --ssl-policy ELBSecurityPolicy-TLS13-1-2-2021-06 \
-              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
-              --query "Listeners[0].ListenerArn" --output text --region "$AWS_REGION")
-            echo "  ✅ Created HTTPS listener (default → backend)"
-
-            # Add /api/* rule to HTTPS listener
-            aws elbv2 create-rule --listener-arn "$HTTPS_LISTENER" --priority 10 \
-              --conditions Field=path-pattern,Values='/api/*' \
-              --actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "  ✅ Created HTTPS /api/* rule"
-          else
-            echo "  ⏭️  HTTPS listener exists"
-            # Ensure correct certificate and default action → backend
-            aws elbv2 modify-listener --listener-arn "$HTTPS_LISTENER" \
-              --certificates CertificateArn="$CERT_ARN" \
-              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-          fi
-
-          # No HTTP→HTTPS redirect needed on ALB — CloudFront handles HTTPS termination
-          # ALB HTTP listener stays as-is (CloudFront connects to ALB over HTTP)
-
-          echo "backend_url=https://${FULL_DOMAIN}" >> "$GITHUB_OUTPUT"
-          echo "prod_listener_arn=${HTTPS_LISTENER}" >> "$GITHUB_OUTPUT"
-
-      # ── 9. DNS Setup ────────────────────────────────────────────
-      # DNS will be updated to point to CloudFront after the distribution is created
-      - name: Setup DNS (placeholder)
-        run: |
-          echo "🌐 DNS will be configured after CloudFront distribution is created"
-
-      # ── 9b. S3 Bucket for Frontend ──────────────────────────────
-      - name: Create S3 bucket for frontend
-        id: s3
-        run: |
-          echo "📦 Creating S3 bucket for frontend..."
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
           S3_BUCKET="${APP_NAME}-frontend"
+          echo "app_name=${APP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=${S3_BUCKET}" >> "$GITHUB_OUTPUT"
+
+      # ── 1. S3 Bucket ─────────────────────────────────────────────
+      - name: Create S3 bucket
+        env:
+          S3_BUCKET: ${{ steps.vars.outputs.s3_bucket }}
+        run: |
+          echo "📦 Creating S3 bucket: ${S3_BUCKET}"
 
           if aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
-            echo "  ⏭️  S3 bucket exists: $S3_BUCKET"
+            echo "  ⏭️  Bucket already exists"
           else
             if [[ "$AWS_REGION" == "us-east-1" ]]; then
               aws s3api create-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION"
@@ -531,168 +62,157 @@ jobs:
               aws s3api create-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" \
                 --create-bucket-configuration LocationConstraint="$AWS_REGION"
             fi
-            echo "  ✅ Created S3 bucket: $S3_BUCKET"
+            echo "  ✅ Created S3 bucket"
           fi
 
-          # Block public access (CloudFront OAC will be used)
+          # Block all public access (CloudFront OAC handles access)
           aws s3api put-public-access-block --bucket "$S3_BUCKET" \
-            --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" \
-            --region "$AWS_REGION"
+            --public-access-block-configuration \
+            "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+          # Enable versioning for rollback capability
+          aws s3api put-bucket-versioning --bucket "$S3_BUCKET" \
+            --versioning-configuration Status=Enabled
 
           # Tag the bucket
           aws s3api put-bucket-tagging --bucket "$S3_BUCKET" \
-            --tagging "TagSet=[{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
-            --region "$AWS_REGION"
+            --tagging "TagSet=[{Key=Project,Value=${PROJECT_NAME}},{Key=Environment,Value=${ENVIRONMENT}}]"
 
-          echo "s3_bucket=${S3_BUCKET}" >> "$GITHUB_OUTPUT"
+          # Configure default encryption
+          aws s3api put-bucket-encryption --bucket "$S3_BUCKET" \
+            --server-side-encryption-configuration \
+            '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
 
-      # ── 9c. CloudFront Distribution ─────────────────────────────
-      - name: Create CloudFront distribution
-        id: cloudfront
+          echo "  ✅ Bucket configured (private, versioned, encrypted)"
+
+      # ── 2. CloudFront OAC ────────────────────────────────────────
+      - name: Create CloudFront Origin Access Control
+        id: oac
         env:
-          TEST_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+          APP_NAME: ${{ steps.vars.outputs.app_name }}
         run: |
-          echo "🌐 Setting up CloudFront distribution..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          S3_BUCKET="${{ steps.s3.outputs.s3_bucket }}"
-          ALB_DNS="${{ steps.alb.outputs.alb_dns }}"
-          CERT_ARN="${{ steps.https.outputs.cert_arn }}"
-          ACCOUNT_ID="${{ steps.vars.outputs.account_id }}"
+          OAC_NAME="${APP_NAME}-oac"
+          OAC_ID=$(aws cloudfront list-origin-access-controls \
+            --query "OriginAccessControlList.Items[?Name=='${OAC_NAME}'].Id | [0]" \
+            --output text 2>/dev/null || echo "")
 
-          # Check if distribution already exists
+          if [[ -n "$OAC_ID" && "$OAC_ID" != "None" ]]; then
+            echo "  ⏭️  OAC already exists: ${OAC_ID}"
+          else
+            OAC_ID=$(aws cloudfront create-origin-access-control \
+              --origin-access-control-config \
+              "Name=${OAC_NAME},Description=OAC for ${APP_NAME},SigningProtocol=sigv4,SigningBehavior=always,OriginAccessControlOriginType=s3" \
+              --query "OriginAccessControl.Id" --output text)
+            echo "  ✅ Created OAC: ${OAC_ID}"
+          fi
+          echo "oac_id=${OAC_ID}" >> "$GITHUB_OUTPUT"
+
+      # ── 3. CloudFront Distribution ───────────────────────────────
+      - name: Create CloudFront distribution
+        id: cf
+        env:
+          S3_BUCKET: ${{ steps.vars.outputs.s3_bucket }}
+          APP_NAME: ${{ steps.vars.outputs.app_name }}
+          OAC_ID: ${{ steps.oac.outputs.oac_id }}
+          CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+          ACM_CERT_ARN: ${{ secrets.TEST_ACM_CERT_ARN || '' }}
+        run: |
           CF_DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].Id | [0]" \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}'].Id | [0]" \
             --output text 2>/dev/null || echo "")
 
           if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
-            echo "  ⏭️  CloudFront distribution exists: $CF_DIST_ID"
+            echo "  ⏭️  CloudFront distribution already exists: ${CF_DIST_ID}"
             CF_DOMAIN=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
-              --query 'Distribution.DomainName' --output text)
+              --query "Distribution.DomainName" --output text)
             echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
             echo "cf_domain=${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          S3_ORIGIN="${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com"
+
+          # Build aliases and viewer certificate
+          if [[ -n "$CUSTOM_DOMAIN" && -n "$ACM_CERT_ARN" ]]; then
+            ALIASES="{\"Quantity\":1,\"Items\":[\"test.${CUSTOM_DOMAIN}\"]}"
+            VIEWER_CERT="{\"ACMCertificateArn\":\"${ACM_CERT_ARN}\",\"SSLSupportMethod\":\"sni-only\",\"MinimumProtocolVersion\":\"TLSv1.2_2021\",\"CloudFrontDefaultCertificate\":false}"
           else
-            # Create Origin Access Control
-            OAC_ID=$(aws cloudfront list-origin-access-controls \
-              --query "OriginAccessControlList.Items[?Name=='${APP_NAME}-frontend-oac'].Id | [0]" \
-              --output text 2>/dev/null || echo "")
+            ALIASES="{\"Quantity\":0}"
+            VIEWER_CERT="{\"CloudFrontDefaultCertificate\":true}"
+          fi
 
-            if [[ -z "$OAC_ID" || "$OAC_ID" == "None" ]]; then
-              OAC_ID=$(aws cloudfront create-origin-access-control \
-                --origin-access-control-config "{
-                  \"Name\": \"${APP_NAME}-frontend-oac\",
-                  \"Description\": \"OAC for ${APP_NAME} frontend S3 bucket\",
-                  \"SigningProtocol\": \"sigv4\",
-                  \"SigningBehavior\": \"always\",
-                  \"OriginAccessControlOriginType\": \"s3\"
-                }" \
-                --query 'OriginAccessControl.Id' --output text)
-              echo "  ✅ Created OAC: $OAC_ID"
-            else
-              echo "  ⏭️  OAC exists: $OAC_ID"
-            fi
-
-            # Build CloudFront aliases and viewer certificate
-            if [[ -n "$TEST_DOMAIN" && -n "$CERT_ARN" && "$CERT_ARN" != "None" ]]; then
-              FULL_DOMAIN="test.${TEST_DOMAIN}"
-              ALIASES_CONFIG="\"Aliases\":{\"Quantity\":1,\"Items\":[\"${FULL_DOMAIN}\"]}"
-              VIEWER_CERT="\"ViewerCertificate\":{\"ACMCertificateArn\":\"${CERT_ARN}\",\"SSLSupportMethod\":\"sni-only\",\"MinimumProtocolVersion\":\"TLSv1.2_2021\"}"
-            else
-              ALIASES_CONFIG="\"Aliases\":{\"Quantity\":0}"
-              VIEWER_CERT="\"ViewerCertificate\":{\"CloudFrontDefaultCertificate\":true}"
-            fi
-
-            # Create CloudFront distribution with S3 + ALB origins
-            DIST_CONFIG=$(cat <<CFEOF
+          CF_CONFIG=$(cat <<CFEOF
           {
             "CallerReference": "${APP_NAME}-$(date +%s)",
-            "Comment": "${APP_NAME}-frontend",
-            ${ALIASES_CONFIG},
+            "Comment": "${APP_NAME}",
+            "Enabled": true,
             "DefaultRootObject": "index.html",
             "Origins": {
-              "Quantity": 2,
-              "Items": [
-                {
-                  "Id": "S3-${S3_BUCKET}",
-                  "DomainName": "${S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com",
-                  "OriginAccessControlId": "${OAC_ID}",
-                  "S3OriginConfig": {
-                    "OriginAccessIdentity": ""
-                  }
-                },
-                {
-                  "Id": "ALB-backend",
-                  "DomainName": "${ALB_DNS}",
-                  "CustomOriginConfig": {
-                    "HTTPPort": 80,
-                    "HTTPSPort": 443,
-                    "OriginProtocolPolicy": "http-only",
-                    "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]},
-                    "OriginReadTimeout": 60,
-                    "OriginKeepaliveTimeout": 5
-                  }
-                }
-              ]
+              "Quantity": 1,
+              "Items": [{
+                "Id": "S3-${S3_BUCKET}",
+                "DomainName": "${S3_ORIGIN}",
+                "OriginAccessControlId": "${OAC_ID}",
+                "S3OriginConfig": { "OriginAccessIdentity": "" }
+              }]
             },
             "DefaultCacheBehavior": {
               "TargetOriginId": "S3-${S3_BUCKET}",
               "ViewerProtocolPolicy": "redirect-to-https",
-              "AllowedMethods": {"Quantity": 2, "Items": ["HEAD", "GET"], "CachedMethods": {"Quantity": 2, "Items": ["HEAD", "GET"]}},
-              "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
-              "Compress": true
-            },
-            "CacheBehaviors": {
-              "Quantity": 1,
-              "Items": [
-                {
-                  "PathPattern": "/api/*",
-                  "TargetOriginId": "ALB-backend",
-                  "ViewerProtocolPolicy": "redirect-to-https",
-                  "AllowedMethods": {"Quantity": 7, "Items": ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"], "CachedMethods": {"Quantity": 2, "Items": ["HEAD", "GET"]}},
-                  "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
-                  "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3",
-                  "Compress": true
-                }
-              ]
+              "AllowedMethods": { "Quantity": 2, "Items": ["GET", "HEAD"] },
+              "CachedMethods": { "Quantity": 2, "Items": ["GET", "HEAD"] },
+              "Compress": true,
+              "ForwardedValues": {
+                "QueryString": false,
+                "Cookies": { "Forward": "none" }
+              },
+              "MinTTL": 0,
+              "DefaultTTL": 86400,
+              "MaxTTL": 31536000
             },
             "CustomErrorResponses": {
-              "Quantity": 2,
-              "Items": [
-                {"ErrorCode": 403, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 10},
-                {"ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200", "ErrorCachingMinTTL": 10}
-              ]
+              "Quantity": 1,
+              "Items": [{
+                "ErrorCode": 403,
+                "ResponseCode": "200",
+                "ResponsePagePath": "/index.html",
+                "ErrorCachingMinTTL": 10
+              }]
             },
-            ${VIEWER_CERT},
-            "Enabled": true,
+            "Aliases": ${ALIASES},
+            "ViewerCertificate": ${VIEWER_CERT},
             "PriceClass": "PriceClass_100",
             "HttpVersion": "http2and3"
           }
           CFEOF
           )
 
-            CF_DIST_ID=$(aws cloudfront create-distribution \
-              --distribution-config "$DIST_CONFIG" \
-              --query 'Distribution.Id' --output text)
-            CF_DOMAIN=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
-              --query 'Distribution.DomainName' --output text)
-            echo "  ✅ Created CloudFront distribution: $CF_DIST_ID ($CF_DOMAIN)"
+          CF_OUTPUT=$(aws cloudfront create-distribution \
+            --distribution-config "$CF_CONFIG" \
+            --output json)
 
-            # Tag CloudFront distribution
-            CF_ARN="arn:aws:cloudfront::${ACCOUNT_ID}:distribution/${CF_DIST_ID}"
-            aws cloudfront tag-resource --resource "$CF_ARN" \
-              --tags "Items=[{Key=Project,Value=$PROJECT_NAME},{Key=Environment,Value=$ENVIRONMENT}]" \
-              2>/dev/null || true
+          CF_DIST_ID=$(echo "$CF_OUTPUT" | jq -r '.Distribution.Id')
+          CF_DOMAIN=$(echo "$CF_OUTPUT" | jq -r '.Distribution.DomainName')
 
-            echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
-            echo "cf_domain=${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
+          echo "  ✅ Created CloudFront distribution: ${CF_DIST_ID}"
+          echo "  📡 Domain: ${CF_DOMAIN}"
+          echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
+          echo "cf_domain=${CF_DOMAIN}" >> "$GITHUB_OUTPUT"
 
-            # Update S3 bucket policy to allow CloudFront OAC access
-            BUCKET_POLICY=$(cat <<BPEOF
+      # ── 4. S3 Bucket Policy (allow CloudFront OAC) ──────────────
+      - name: Configure S3 bucket policy for CloudFront
+        env:
+          S3_BUCKET: ${{ steps.vars.outputs.s3_bucket }}
+          CF_DIST_ID: ${{ steps.cf.outputs.cf_dist_id }}
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_POLICY=$(cat <<BPEOF
           {
             "Version": "2012-10-17",
             "Statement": [{
-              "Sid": "AllowCloudFrontServicePrincipal",
+              "Sid": "AllowCloudFrontOAC",
               "Effect": "Allow",
-              "Principal": {"Service": "cloudfront.amazonaws.com"},
+              "Principal": { "Service": "cloudfront.amazonaws.com" },
               "Action": "s3:GetObject",
               "Resource": "arn:aws:s3:::${S3_BUCKET}/*",
               "Condition": {
@@ -705,46 +225,32 @@ jobs:
           BPEOF
           )
 
-            aws s3api put-bucket-policy --bucket "$S3_BUCKET" \
-              --policy "$BUCKET_POLICY" --region "$AWS_REGION"
-            echo "  ✅ Updated S3 bucket policy for CloudFront OAC"
-          fi
+          aws s3api put-bucket-policy --bucket "$S3_BUCKET" --policy "$BUCKET_POLICY"
+          echo "  ✅ S3 bucket policy configured for CloudFront OAC"
 
-      # ── 9d. DNS → CloudFront ────────────────────────────────────
-      - name: Setup DNS (point to CloudFront)
+      # ── 5. DNS Record (optional) ────────────────────────────────
+      - name: Configure DNS
         env:
-          TEST_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+          CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+          CF_DOMAIN: ${{ steps.cf.outputs.cf_domain }}
         run: |
-          echo "🌐 Setting up DNS..."
-
-          if [[ -z "$TEST_DOMAIN" ]]; then
-            echo "  ⏭️  TEST_DOMAIN not set — skipping DNS"
+          if [[ -z "$CUSTOM_DOMAIN" ]]; then
+            echo "  ⏭️  No TEST_DOMAIN secret — skipping DNS"
             exit 0
           fi
 
-          FULL_DOMAIN="test.${TEST_DOMAIN}"
-          CF_DOMAIN="${{ steps.cloudfront.outputs.cf_domain }}"
+          FULL_DOMAIN="test.${CUSTOM_DOMAIN}"
 
-          if [[ -z "$CF_DOMAIN" || "$CF_DOMAIN" == "None" ]]; then
-            echo "  ⚠️  No CloudFront domain available — skipping DNS"
-            exit 0
-          fi
-
-          # Find hosted zone
           ZONE_ID=$(aws route53 list-hosted-zones-by-name \
-            --query "HostedZones[?Name=='${TEST_DOMAIN}.'].Id" \
+            --query "HostedZones[?Name=='${CUSTOM_DOMAIN}.'].Id" \
             --output text 2>/dev/null | cut -d'/' -f3 || echo "")
 
           if [[ -z "$ZONE_ID" || "$ZONE_ID" == "None" ]]; then
-            echo "  ⚠️  No hosted zone found for ${TEST_DOMAIN} — skipping DNS"
+            echo "  ⚠️  No Route 53 hosted zone for ${CUSTOM_DOMAIN} — skipping DNS"
             exit 0
           fi
 
-          # CloudFront hosted zone ID is always Z2FDTNDATAQYW2
-          CF_ZONE_ID="Z2FDTNDATAQYW2"
-
-          # Upsert DNS record to point to CloudFront
-          CHANGE_BATCH=$(cat <<EOF
+          CHANGE_BATCH=$(cat <<DNSEOF
           {
             "Changes": [{
               "Action": "UPSERT",
@@ -752,568 +258,86 @@ jobs:
                 "Name": "${FULL_DOMAIN}",
                 "Type": "A",
                 "AliasTarget": {
-                  "HostedZoneId": "${CF_ZONE_ID}",
+                  "HostedZoneId": "Z2FDTNDATAQYW2",
                   "DNSName": "${CF_DOMAIN}",
                   "EvaluateTargetHealth": false
                 }
               }
             }]
           }
-          EOF
+          DNSEOF
           )
 
-          aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" \
-            --change-batch "$CHANGE_BATCH" --no-cli-pager >/dev/null
-          echo "  ✅ DNS record set: ${FULL_DOMAIN} → ${CF_DOMAIN} (CloudFront)"
+          aws route53 change-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" --change-batch "$CHANGE_BATCH"
+          echo "  ✅ DNS record created: ${FULL_DOMAIN} → ${CF_DOMAIN}"
 
-      # ══════════════════════════════════════════════════════════════
-      #  BUILD & DEPLOY APPLICATION
-      # ══════════════════════════════════════════════════════════════
-
-      # ── 10. Build & Push Images ─────────────────────────────────
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push backend image
+      # ── 6. Initial Deploy ────────────────────────────────────────
+      - name: Build and deploy site
+        env:
+          S3_BUCKET: ${{ steps.vars.outputs.s3_bucket }}
+          CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+          CF_DOMAIN: ${{ steps.cf.outputs.cf_domain }}
+          CF_DIST_ID: ${{ steps.cf.outputs.cf_dist_id }}
         run: |
-          ECR_BASE="${{ steps.vars.outputs.ecr_base }}"
-          IMAGE_TAG="${{ steps.vars.outputs.image_tag }}"
-          docker build \
-            -t "${ECR_BASE}/${BACKEND_ECR_REPO}:${IMAGE_TAG}" \
-            -t "${ECR_BASE}/${BACKEND_ECR_REPO}:${ENVIRONMENT}-latest" \
-            -t "${ECR_BASE}/${BACKEND_ECR_REPO}:latest" \
-            -f backend/Dockerfile backend/
-          docker push "${ECR_BASE}/${BACKEND_ECR_REPO}:${IMAGE_TAG}"
-          docker push "${ECR_BASE}/${BACKEND_ECR_REPO}:${ENVIRONMENT}-latest"
-          docker push "${ECR_BASE}/${BACKEND_ECR_REPO}:latest"
-
-      # ── 10b. Build & Deploy Frontend to S3 ──────────────────────
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
-
-      - name: Build frontend static bundle
-        run: |
-          BACKEND_URL="${{ steps.https.outputs.backend_url }}"
-          CF_DOMAIN="${{ steps.cloudfront.outputs.cf_domain }}"
-
-          # Determine the backend URL for the frontend to use
-          if [[ -z "$BACKEND_URL" || "$BACKEND_URL" == "None" ]]; then
-            if [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
-              BACKEND_URL="https://${CF_DOMAIN}"
-            else
-              BACKEND_URL="http://${{ steps.alb.outputs.alb_dns }}"
-            fi
+          # Determine site URL
+          if [[ -n "$CUSTOM_DOMAIN" ]]; then
+            SITE_URL="https://test.${CUSTOM_DOMAIN}"
+          elif [[ -n "$CF_DOMAIN" ]]; then
+            SITE_URL="https://${CF_DOMAIN}"
+          else
+            SITE_URL=""
           fi
 
+          # Build frontend
           cd frontend
           yarn install --frozen-lockfile
-          REACT_APP_BACKEND_URL="$BACKEND_URL" CI=true yarn build
+          REACT_APP_SITE_URL="$SITE_URL" CI=true yarn build
+          cd ..
 
-      - name: Deploy frontend to S3
-        run: |
-          S3_BUCKET="${{ steps.s3.outputs.s3_bucket }}"
-          echo "📦 Syncing frontend build to s3://${S3_BUCKET}/"
-
-          # Sync with cache headers: immutable for hashed assets, no-cache for index.html
+          # Deploy to S3
           aws s3 sync frontend/build/ "s3://${S3_BUCKET}/" \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
-            --exclude "index.html" --exclude "asset-manifest.json" --exclude "service-worker.js" \
+            --exclude "index.html" --exclude "asset-manifest.json" \
             --region "$AWS_REGION"
 
           aws s3 cp frontend/build/index.html "s3://${S3_BUCKET}/index.html" \
             --cache-control "no-cache, no-store, must-revalidate" \
-            --content-type "text/html" \
-            --region "$AWS_REGION"
+            --content-type "text/html" --region "$AWS_REGION"
 
-          if [[ -f frontend/build/asset-manifest.json ]]; then
-            aws s3 cp frontend/build/asset-manifest.json "s3://${S3_BUCKET}/asset-manifest.json" \
-              --cache-control "no-cache, no-store, must-revalidate" \
-              --content-type "application/json" \
-              --region "$AWS_REGION"
-          fi
-          echo "✅ Frontend deployed to S3"
+          echo "  ✅ Initial deployment complete"
 
-      - name: Invalidate CloudFront cache
-        run: |
-          CF_DIST_ID="${{ steps.cloudfront.outputs.cf_dist_id }}"
+          # Invalidate CloudFront
           if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
             aws cloudfront create-invalidation \
-              --distribution-id "$CF_DIST_ID" \
-              --paths "/index.html" "/asset-manifest.json" "/service-worker.js" \
-              --query 'Invalidation.Id' --output text
-            echo "🔄 CloudFront invalidation created"
+              --distribution-id "$CF_DIST_ID" --paths "/*" > /dev/null
+            echo "  🔄 CloudFront invalidation created"
           fi
 
-      # ── 11. Register Task Definitions ───────────────────────────
-      - name: Register backend task definition
-        run: |
-          ACCOUNT_ID="${{ steps.vars.outputs.account_id }}"
-          ECR_BASE="${{ steps.vars.outputs.ecr_base }}"
-          SECRET_ARN="${{ steps.secrets.outputs.secret_arn }}"
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-
-          EXEC_ROLE_ARN=$(aws iam get-role --role-name "${APP_NAME}-ecs-task-execution-role" \
-            --query 'Role.Arn' --output text)
-          TASK_ROLE_ARN=$(aws iam get-role --role-name "${APP_NAME}-ecs-task-role" \
-            --query 'Role.Arn' --output text)
-
-          aws ecs register-task-definition \
-            --family "${APP_NAME}-backend-task" \
-            --network-mode awsvpc --requires-compatibilities FARGATE \
-            --cpu 256 --memory 512 \
-            --execution-role-arn "$EXEC_ROLE_ARN" --task-role-arn "$TASK_ROLE_ARN" \
-            --container-definitions "[{
-              \"name\": \"backend\",
-              \"image\": \"${ECR_BASE}/${BACKEND_ECR_REPO}:${ENVIRONMENT}-latest\",
-              \"essential\": true,
-              \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
-              \"secrets\": [{\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}],
-              \"environment\": [
-                {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"${PROJECT_NAME}-${ENVIRONMENT}\"},
-                {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"${AWS_REGION}\"},
-                {\"name\": \"ENVIRONMENT\", \"value\": \"${ENVIRONMENT}\"},
-                {\"name\": \"ENABLE_CLOUDWATCH_METRICS\", \"value\": \"true\"}
-              ],
-              \"logConfiguration\": {
-                \"logDriver\": \"awslogs\",
-                \"options\": {
-                  \"awslogs-group\": \"/ecs/${APP_NAME}-backend\",
-                  \"awslogs-region\": \"${AWS_REGION}\",
-                  \"awslogs-stream-prefix\": \"ecs\"
-                }
-              },
-              \"healthCheck\": {
-                \"command\": [\"CMD-SHELL\", \"python -c \\\"import urllib.request; exit(0 if urllib.request.urlopen('http://localhost:8001/api/health').status == 200 else 1)\\\"\"],
-                \"interval\": 30, \"timeout\": 10, \"retries\": 3, \"startPeriod\": 60
-              }
-            }]" \
-            --tags "key=Project,value=$PROJECT_NAME" "key=Environment,value=$ENVIRONMENT" \
-            --region "$AWS_REGION" --no-cli-pager >/dev/null
-          echo "✅ Registered backend task definition"
-
-      # ── 12. Create/Update ECS Services (Blue/Green via CodeDeploy) ──
-      - name: Create or update ECS services
-        run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CLUSTER="${APP_NAME}-cluster"
-          ECS_SG="${{ steps.networking.outputs.ecs_sg_id }}"
-          PUB1="${{ steps.networking.outputs.pub_subnet_1 }}"
-          PUB2="${{ steps.networking.outputs.pub_subnet_2 }}"
-          BACKEND_TG="${{ steps.alb.outputs.backend_tg_arn }}"
-
-          # Helper: create or migrate an ECS service to CODE_DEPLOY controller
-          create_or_migrate_service() {
-            local SVC_NAME="$1" TASK_FAMILY="$2" TG_ARN="$3"
-            local CONTAINER_NAME="$4" CONTAINER_PORT="$5" GRACE="$6"
-
-            EXISTING=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SVC_NAME" \
-              --query "services[?status=='ACTIVE'].serviceName" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "")
-
-            if [[ -n "$EXISTING" && "$EXISTING" != "None" ]]; then
-              # Check if service already uses CODE_DEPLOY controller
-              CONTROLLER=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SVC_NAME" \
-                --query "services[0].deploymentController.type" --output text \
-                --region "$AWS_REGION" 2>/dev/null || echo "ECS")
-
-              if [[ "$CONTROLLER" == "CODE_DEPLOY" ]]; then
-                echo "  ⏭️  ${SVC_NAME} already uses CODE_DEPLOY controller"
-                return 0
-              fi
-
-              # Migrate from ECS rolling to CODE_DEPLOY (requires service recreation)
-              echo "  🔄 Migrating ${SVC_NAME} to CODE_DEPLOY controller..."
-              aws ecs update-service --cluster "$CLUSTER" --service "$SVC_NAME" \
-                --desired-count 0 --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-              aws ecs delete-service --cluster "$CLUSTER" --service "$SVC_NAME" \
-                --force --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-              # Brief wait for service deletion to propagate
-              sleep 15
-            fi
-
-            aws ecs create-service --cluster "$CLUSTER" --service-name "$SVC_NAME" \
-              --task-definition "$TASK_FAMILY" --desired-count 1 --launch-type FARGATE \
-              --deployment-controller type=CODE_DEPLOY \
-              --network-configuration "awsvpcConfiguration={subnets=[$PUB1,$PUB2],securityGroups=[$ECS_SG],assignPublicIp=ENABLED}" \
-              --load-balancers "targetGroupArn=${TG_ARN},containerName=${CONTAINER_NAME},containerPort=${CONTAINER_PORT}" \
-              --health-check-grace-period-seconds "$GRACE" \
-              --tags key=Project,value="$PROJECT_NAME" key=Environment,value="$ENVIRONMENT" \
-              --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "  ✅ Created ${SVC_NAME} with CODE_DEPLOY controller"
-          }
-
-          create_or_migrate_service "${APP_NAME}-backend"  "${APP_NAME}-backend-task"  "$BACKEND_TG"  "backend"  8001 120
-
-      # ── 12b. CodeDeploy Application & Deployment Groups ──────────
-      - name: Create CodeDeploy application and deployment groups
-        run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
-          CODEDEPLOY_ROLE_ARN=$(aws iam get-role --role-name "${APP_NAME}-codedeploy-role" \
-            --query 'Role.Arn' --output text --region "$AWS_REGION")
-
-          # Determine production traffic listener
-          # CloudFront connects to ALB over HTTP (port 80), so the HTTP
-          # listener is the one CodeDeploy must manage during Blue/Green
-          # deployments. prodTrafficRoute accepts exactly one listener ARN.
-          HTTP_LISTENER="${{ steps.alb.outputs.listener_arn }}"
-          LISTENER_ARNS="\"${HTTP_LISTENER}\""
-
-          # Create CodeDeploy application (ECS compute platform)
-          if aws deploy get-application --application-name "$CODEDEPLOY_APP" \
-               --region "$AWS_REGION" &>/dev/null; then
-            echo "  ⏭️  CodeDeploy application exists: $CODEDEPLOY_APP"
-          else
-            aws deploy create-application --application-name "$CODEDEPLOY_APP" \
-              --compute-platform ECS --region "$AWS_REGION" --no-cli-pager >/dev/null
-            echo "  ✅ Created CodeDeploy application: $CODEDEPLOY_APP"
-          fi
-
-          # Helper: create or update a CodeDeploy deployment group
-          create_or_update_dg() {
-            local DG_NAME="$1" SVC_NAME="$2" BLUE_TG="$3" GREEN_TG="$4"
-
-            LOAD_BALANCER_INFO=$(cat <<EOF
-          {
-            "targetGroupPairInfoList": [{
-              "targetGroups": [
-                {"name": "${BLUE_TG}"},
-                {"name": "${GREEN_TG}"}
-              ],
-              "prodTrafficRoute": {
-                "listenerArns": [${LISTENER_ARNS}]
-              }
-            }]
-          }
-          EOF
-          )
-
-            BG_CONFIG=$(cat <<EOF
-          {
-            "terminateBlueInstancesOnDeploymentSuccess": {
-              "action": "TERMINATE",
-              "terminationWaitTimeInMinutes": 5
-            },
-            "deploymentReadyOption": {
-              "actionOnTimeout": "CONTINUE_DEPLOYMENT",
-              "waitTimeInMinutes": 0
-            }
-          }
-          EOF
-          )
-
-            if aws deploy get-deployment-group --application-name "$CODEDEPLOY_APP" \
-                 --deployment-group-name "$DG_NAME" --region "$AWS_REGION" &>/dev/null; then
-              aws deploy update-deployment-group \
-                --application-name "$CODEDEPLOY_APP" \
-                --current-deployment-group-name "$DG_NAME" \
-                --service-role-arn "$CODEDEPLOY_ROLE_ARN" \
-                --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
-                --ecs-services "clusterName=${APP_NAME}-cluster,serviceName=${SVC_NAME}" \
-                --load-balancer-info "$LOAD_BALANCER_INFO" \
-                --blue-green-deployment-configuration "$BG_CONFIG" \
-                --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
-                --auto-rollback-configuration "enabled=true,events=DEPLOYMENT_FAILURE" \
-                --region "$AWS_REGION" --no-cli-pager >/dev/null
-              echo "  ⏭️  Updated deployment group: $DG_NAME"
-            else
-              aws deploy create-deployment-group \
-                --application-name "$CODEDEPLOY_APP" \
-                --deployment-group-name "$DG_NAME" \
-                --service-role-arn "$CODEDEPLOY_ROLE_ARN" \
-                --deployment-style deploymentType=BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL \
-                --ecs-services "clusterName=${APP_NAME}-cluster,serviceName=${SVC_NAME}" \
-                --load-balancer-info "$LOAD_BALANCER_INFO" \
-                --blue-green-deployment-configuration "$BG_CONFIG" \
-                --deployment-config-name CodeDeployDefault.ECSAllAtOnce \
-                --auto-rollback-configuration "enabled=true,events=DEPLOYMENT_FAILURE" \
-                --region "$AWS_REGION" --no-cli-pager >/dev/null
-              echo "  ✅ Created deployment group: $DG_NAME"
-            fi
-          }
-
-          create_or_update_dg "${APP_NAME}-backend-dg"  "${APP_NAME}-backend"  "${APP_NAME}-backend-tg"  "${APP_NAME}-be-green-tg"
-
-      # ── 13. Async Deployment Callback (LEAN WAIT) ───────────────
-      - name: Provision async deployment callback infrastructure
-        env:
-          GH_TOKEN: ${{ secrets.GH_CALLBACK_TOKEN }}
-        run: |
-          # Only provision if callback token is available
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "⏭️  GH_CALLBACK_TOKEN is not set. Skipping callback infrastructure setup."
-            echo "Deployment will still occur, but without the automated async callback job."
-            exit 0
-          fi
-
-          echo "🚀 Provisioning EventBridge-to-GitHub callback infrastructure..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          
-          # best-effort self-grant of EventBridge/IAM permissions (setup runs with
-          # the same credentials that will be used for deployments)
-          if aws iam get-user &>/dev/null 2>&1; then
-            USERNAME=$(aws iam get-user --query 'User.UserName' --output text)
-            # Full permission block required for EventBridge to manage its own connections (incl. Secrets Manager)
-            CALLBACK_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["events:CreateConnection","events:DescribeConnection","events:UpdateConnection","events:CreateApiDestination","events:DescribeApiDestination","events:UpdateApiDestination","events:PutRule","events:PutTargets","iam:GetRole","iam:CreateRole","iam:PutRolePolicy","iam:PutUserPolicy","iam:PassRole","iam:CreateServiceLinkedRole","secretsmanager:CreateSecret","secretsmanager:TagResource","secretsmanager:GetSecretValue","secretsmanager:PutSecretValue","secretsmanager:DescribeSecret","secretsmanager:UpdateSecret","secretsmanager:DeleteSecret"],"Resource":"*"}]}'
-            aws iam put-user-policy --user-name "$USERNAME" --policy-name "ShoreExplorerCallbackHelper" --policy-document "$CALLBACK_POLICY" >/dev/null 2>&1 || true
-            # Wait for IAM inline-policy propagation before proceeding
-            sleep 15
-          fi
-
-          # helper for permission errors
-          fail() {
-            echo "❌ $1"
-            echo "   Error Details: ${2:-No additional info}"
-            echo "   Deployment will continue, but the async callback won't be configured."
-            # We exit 0 because if callback infrastructure fails, we don't want to break the whole deployment.
-            exit 0
-          }
-
-          # 1. Connection (Auth for GitHub)
-          CONN_ARN=$(aws events describe-connection --name "${APP_NAME}-gh-conn" \
-            --query 'ConnectionArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          
-          if [[ -z "$CONN_ARN" || "$CONN_ARN" == "None" ]]; then
-            if ! CONN_OUTPUT=$(aws events create-connection --name "${APP_NAME}-gh-conn" \
-              --authorization-type API_KEY \
-              --auth-parameters "{\"ApiKeyAuthParameters\": {\"ApiKeyName\": \"Authorization\", \"ApiKeyValue\": \"Bearer ${GH_TOKEN}\"}}" \
-              --region "$AWS_REGION" 2>&1); then
-              fail "Unable to create EventBridge Connection. Ensure deployment role has events:CreateConnection and related Secrets Manager actions." "$CONN_OUTPUT"
-            fi
-            CONN_ARN=$(echo "$CONN_OUTPUT" | grep -o 'arn:aws:events:[^"]*')
-            echo "  ✅ Created EventBridge Connection"
-          else
-            echo "  ⏭️  Connection exists"
-          fi
-
-          # 2. API Destination (GitHub Repos Dispatch)
-          DEST_ARN=$(aws events describe-api-destination --name "${APP_NAME}-gh-dispatch" \
-            --query 'ApiDestinationArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          
-          if [[ -z "$DEST_ARN" || "$DEST_ARN" == "None" ]]; then
-            DEST_URL="https://api.github.com/repos/${{ github.repository }}/dispatches"
-            if ! DEST_OUTPUT=$(aws events create-api-destination --name "${APP_NAME}-gh-dispatch" \
-              --connection-arn "$CONN_ARN" \
-              --invocation-endpoint "$DEST_URL" \
-              --http-method POST \
-              --region "$AWS_REGION" 2>&1); then
-              fail "Unable to create API Destination. Ensure deployment role has events:CreateApiDestination." "$DEST_OUTPUT"
-            fi
-            DEST_ARN=$(echo "$DEST_OUTPUT" | grep -o 'arn:aws:events:[^"]*')
-            echo "  ✅ Created API Destination"
-          else
-            echo "  ⏭️  API Destination exists"
-          fi
-
-          # 3. IAM Role for EventBridge to call API Destination
-          ROLE_NAME="${APP_NAME}-eventbridge-callback-role"
-          if ! aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
-            TRUST_POLICY='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"events.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-            if ! aws iam create-role --role-name "$ROLE_NAME" --assume-role-policy-document "$TRUST_POLICY" \
-              --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" >/dev/null 2>&1; then
-              fail "Unable to create IAM role. Ensure deployment role has iam:CreateRole."
-            fi
-            
-            POLICY_DOC="{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"events:InvokeApiDestination\",\"Resource\":\"$DEST_ARN\"}]}"
-            if ! aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name "InvokeAPIDestination" --policy-document "$POLICY_DOC" >/dev/null 2>&1; then
-              fail "Unable to attach policy to callback IAM role. Ensure deployment role has iam:PutRolePolicy."
-            fi
-            echo "  ✅ Created IAM Role for EventBridge callback"
-          fi
-          ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
-
-          # 4. Rule (Listen for CodeDeploy SUCCESS)
-          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
-          aws events put-rule --name "${APP_NAME}-codedeploy-success-rule" \
-            --event-pattern "{\"source\":[\"aws.codedeploy\"],\"detail-type\":[\"CodeDeploy Deployment State-change Notification\"],\"detail\":{\"application\":[\"${CODEDEPLOY_APP}\"],\"state\":[\"SUCCESS\"]}}" \
-            --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
-
-          # Tag EventBridge rules
-          SUCCESS_RULE_ARN=$(aws events describe-rule --name "${APP_NAME}-codedeploy-success-rule" \
-            --query 'Arn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          if [[ -n "$SUCCESS_RULE_ARN" && "$SUCCESS_RULE_ARN" != "None" ]]; then
-            aws events tag-resource --resource-arn "$SUCCESS_RULE_ARN" \
-              --tags "Key=Project,Value=$PROJECT_NAME" "Key=Environment,Value=$ENVIRONMENT" \
-              --region "$AWS_REGION" 2>/dev/null || true
-          fi
-          
-          aws events put-targets --rule "${APP_NAME}-codedeploy-success-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubSuccessDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_success\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": \\\"<dg>\\\", \\\"status\\\": \\\"success\\\"}}\"}}]" \
-            --no-cli-pager >/dev/null
-          echo "  ✅ Configured CodeDeploy Success Callback Route"
-
-          # 5. Rule (Listen for CodeDeploy FAILURE / STOP)
-          aws events put-rule --name "${APP_NAME}-codedeploy-failure-rule" \
-            --event-pattern "{\"source\":[\"aws.codedeploy\"],\"detail-type\":[\"CodeDeploy Deployment State-change Notification\"],\"detail\":{\"application\":[\"${CODEDEPLOY_APP}\"],\"state\":[\"FAILURE\",\"STOP\"]}}" \
-            --state ENABLED --region "$AWS_REGION" --no-cli-pager >/dev/null
-
-          FAILURE_RULE_ARN=$(aws events describe-rule --name "${APP_NAME}-codedeploy-failure-rule" \
-            --query 'Arn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")
-          if [[ -n "$FAILURE_RULE_ARN" && "$FAILURE_RULE_ARN" != "None" ]]; then
-            aws events tag-resource --resource-arn "$FAILURE_RULE_ARN" \
-              --tags "Key=Project,Value=$PROJECT_NAME" "Key=Environment,Value=$ENVIRONMENT" \
-              --region "$AWS_REGION" 2>/dev/null || true
-          fi
-          
-          aws events put-targets --rule "${APP_NAME}-codedeploy-failure-rule" --region "$AWS_REGION" \
-            --targets "[{\"Id\":\"GitHubFailureDispatch\",\"Arn\":\"$DEST_ARN\",\"RoleArn\":\"$ROLE_ARN\",\"HttpParameters\":{\"QueryStringParameters\":{},\"HeaderParameters\":{\"User-Agent\":\"AWS-EventBridge\"}},\"InputTransformer\":{\"InputPathsMap\":{\"app\":\"$.detail.application\",\"dg\":\"$.detail.deploymentGroup\"},\"InputTemplate\":\"{\\\"event_type\\\": \\\"codedeploy_deploy_failed\\\", \\\"client_payload\\\": {\\\"environment\\\": \\\"${ENVIRONMENT}\\\", \\\"application\\\": \\\"${CODEDEPLOY_APP}\\\", \\\"deployment_group\\\": \\\"<dg>\\\", \\\"status\\\": \\\"failed\\\"}}\"}}]" \
-            --no-cli-pager >/dev/null
-          echo "  ✅ Configured CodeDeploy Failure Callback Route"
-
-          # 6. Clean up old ECS-based callback rules (if they exist)
-          aws events remove-targets --rule "${APP_NAME}-ecs-success-rule" --ids "GitHubSuccessDispatch" \
-            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-          aws events delete-rule --name "${APP_NAME}-ecs-success-rule" \
-            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-          aws events remove-targets --rule "${APP_NAME}-ecs-failure-rule" --ids "GitHubFailureDispatch" \
-            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-          aws events delete-rule --name "${APP_NAME}-ecs-failure-rule" \
-            --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-
-      # ── 14. Monitoring ──────────────────────────────────────────
-      - name: Setup monitoring
-        env:
-          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL || '' }}
-        run: |
-          chmod +x infra/aws/scripts/10-setup-monitoring.sh
-          bash infra/aws/scripts/10-setup-monitoring.sh "${ENVIRONMENT}"
-        continue-on-error: true
-
-      # ── Summary ─────────────────────────────────────────────────
-      - name: Deployment summary
+      # ── Summary ──────────────────────────────────────────────────
+      - name: Setup summary
         if: always()
-        run: |
-          BACKEND_URL="${{ steps.https.outputs.backend_url }}"
-          CF_DOMAIN="${{ steps.cloudfront.outputs.cf_domain }}"
-          if [[ -z "$BACKEND_URL" ]]; then
-            if [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
-              BACKEND_URL="https://${CF_DOMAIN}"
-            else
-              BACKEND_URL="http://${{ steps.alb.outputs.alb_dns }}"
-            fi
-          fi
-
-          echo "## Test Environment Setup & Deploy Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Environment | \`test\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image Tag | \`${{ steps.vars.outputs.image_tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| App URL | ${BACKEND_URL} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| API Health | ${BACKEND_URL}/api/health |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Frontend | S3 + CloudFront (${{ steps.cloudfront.outputs.cf_dist_id }}) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| S3 Bucket | ${{ steps.s3.outputs.s3_bucket }} |" >> "$GITHUB_STEP_SUMMARY"
-          DASHBOARD_URL="https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards:name=${PROJECT_NAME}-${ENVIRONMENT}-dashboard"
-          echo "| Dashboard | [CloudWatch](${DASHBOARD_URL}) |" >> "$GITHUB_STEP_SUMMARY"
-
-  # ─────────────────────────────────────────────────
-  # Post-deployment smoke tests
-  # Polls for ECS service stability (no callback for initial setup)
-  # ─────────────────────────────────────────────────
-  cleanup-and-smoke:
-    name: Deployment Smoke Test
-    runs-on: ubuntu-latest
-    needs: setup-and-deploy-test
-    if: always() && needs.setup-and-deploy-test.result == 'success'
-
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Wait for ECS service to stabilize
-        run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CLUSTER="${APP_NAME}-cluster"
-          SERVICE="${APP_NAME}-backend"
-
-          echo "⏳ Waiting for ECS service ${SERVICE} to stabilize..."
-          for i in $(seq 1 30); do
-            # Use runningCount/desiredCount (works with both ECS and CODE_DEPLOY controllers)
-            RESULT=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-              --query "services[0].[runningCount, desiredCount, status]" \
-              --output text --region "$AWS_REGION" 2>/dev/null || echo "0 0 UNKNOWN")
-
-            RUNNING=$(echo "$RESULT" | awk '{print $1}')
-            DESIRED=$(echo "$RESULT" | awk '{print $2}')
-            SVC_STATUS=$(echo "$RESULT" | awk '{print $3}')
-
-            if [[ "$SVC_STATUS" == "ACTIVE" && "$DESIRED" -gt 0 && "$RUNNING" -ge "$DESIRED" ]]; then
-              echo "✅ ECS service is stable — ${RUNNING}/${DESIRED} tasks running (attempt ${i}/30)"
-              exit 0
-            fi
-            echo "  Attempt ${i}/30: ${RUNNING}/${DESIRED} tasks running (status=${SVC_STATUS}) — waiting 20s..."
-            sleep 20
-          done
-          echo "⚠️  Timed out waiting for ECS service to stabilize (last: ${RUNNING}/${DESIRED} tasks, status=${SVC_STATUS})"
-          echo "  Continuing with smoke tests anyway..."
-
-      - name: Get deployment URL
-        id: alb
         env:
+          S3_BUCKET: ${{ steps.vars.outputs.s3_bucket }}
+          CF_DIST_ID: ${{ steps.cf.outputs.cf_dist_id }}
+          CF_DOMAIN: ${{ steps.cf.outputs.cf_domain }}
           CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
         run: |
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-
-          # Get CloudFront URL for frontend
-          CF_DOMAIN=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].DomainName | [0]" \
-            --output text 2>/dev/null || echo "")
-
           if [[ -n "$CUSTOM_DOMAIN" ]]; then
-            URL="https://test.${CUSTOM_DOMAIN}"
-          elif [[ -n "$CF_DOMAIN" && "$CF_DOMAIN" != "None" ]]; then
-            URL="https://${CF_DOMAIN}"
+            SITE_URL="https://test.${CUSTOM_DOMAIN}"
+          elif [[ -n "$CF_DOMAIN" ]]; then
+            SITE_URL="https://${CF_DOMAIN}"
           else
-            URL="http://localhost:8001"
-          fi
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
-
-      - name: Run smoke tests
-        if: steps.alb.outputs.url != 'http://localhost:8001'
-        run: |
-          URL="${{ steps.alb.outputs.url }}"
-          echo "Running smoke tests against ${URL}"
-          sleep 15
-
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${URL}/api/health" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Health check passed (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Health check failed (HTTP $HTTP_CODE)"
-            exit 1
+            SITE_URL="(pending CloudFront deployment)"
           fi
 
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${URL}/" --max-time 30 --retry 3 --retry-delay 10 || echo "000")
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "✅ Frontend accessible (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Frontend check failed (HTTP $HTTP_CODE)"
-            exit 1
-          fi
-
-      - name: Smoke test summary
-        if: always()
-        run: |
-          DEPLOY_STATUS="${{ needs.setup-and-deploy-test.result }}"
-          echo "## Deployment Smoke Test" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Test Environment Setup Complete" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Environment | \`${ENVIRONMENT}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Setup & Deploy Result | \`${DEPLOY_STATUS}\` |" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ steps.alb.outputs.url }}" != "" && "${{ steps.alb.outputs.url }}" != "http://localhost:8001" ]]; then
-            echo "| App URL | ${{ steps.alb.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| API Health | ${{ steps.alb.outputs.url }}/api/health |" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "| Resource | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| S3 Bucket | \`${S3_BUCKET}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CloudFront ID | \`${CF_DIST_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Site URL | ${SITE_URL} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Next:** Push to \`main\` to trigger automatic deployments." >> "$GITHUB_STEP_SUMMARY"

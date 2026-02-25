@@ -1,6 +1,8 @@
-# ShoreExplorer CI Pipeline
-# Runs on all PRs and pushes to main/develop
-# Ensures code quality, security, and functionality before merge
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  CI Pipeline — Static Site Template                                        ║
+# ║  Runs on all PRs and pushes to main/develop                                ║
+# ║  Ensures code quality, security, and a valid production build              ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
 
 name: CI
 
@@ -10,102 +12,17 @@ on:
   pull_request:
     branches: [main, develop]
 
-# Cancel in-progress runs when a new run is triggered
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Default permissions for all jobs (least privilege)
 permissions:
   contents: read
 
 jobs:
-  # Combined Backend CI - Lint, Type-check, and Test
-  backend-ci:
-    name: Backend CI (Lint & Test)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
-          pip install black isort flake8 mypy pytest pytest-asyncio httpx pytest-cov requests uvicorn boto3
-
-      - name: Run Linting (black, isort, flake8)
-        run: |
-          cd backend
-          black --check .
-          isort --check-only .
-          flake8 . --max-line-length=88 --extend-ignore=E203,W503
-
-      - name: Run Type Checking (mypy)
-        run: |
-          cd backend
-          mypy . --ignore-missing-imports
-        continue-on-error: true
-
-      - name: Run pytest (Unit & Integration)
-        run: |
-          pytest -v --cov=backend --cov-report=xml --cov-report=term
-        env:
-          GROQ_API_KEY: mock-key-for-testing
-          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
-
-      - name: Run Integrity Tests (Live Server)
-        run: |
-          cd backend
-          uvicorn server:app --host 0.0.0.0 --port 8001 &
-          SERVER_PID=$!
-          for i in {1..15}; do if curl -s http://localhost:8001/api/health > /dev/null; then break; fi; sleep 1; done
-          cd ..
-          python3 backend_test.py
-          RESULT=$?
-          kill $SERVER_PID
-          exit $RESULT
-        env:
-          GROQ_API_KEY: mock-key-for-testing
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: backend-coverage
-          path: backend/coverage.xml
-          retention-days: 7
-
-  # Backend build - Ensure Docker image builds successfully (can run in parallel with CI)
-  backend-build:
-    name: Backend Docker Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: false
-          tags: shoreexplorer-backend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # Combined Frontend CI - Lint & Test
-  frontend-ci:
-    name: Frontend CI (Lint & Test)
+  # ── Lint ────────────────────────────────────────────────────────
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -114,8 +31,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'yarn'
+          node-version: "20"
+          cache: "yarn"
           cache-dependency-path: frontend/yarn.lock
 
       - name: Install dependencies
@@ -123,12 +40,32 @@ jobs:
           cd frontend
           yarn install --frozen-lockfile
 
-      - name: Run Linting
+      - name: Run ESLint
         run: |
           cd frontend
           yarn lint
 
-      - name: Run Tests
+  # ── Unit & Integration Tests ────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "yarn"
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+
+      - name: Run tests with coverage
         run: |
           cd frontend
           yarn test --watchAll=false --coverage --passWithNoTests
@@ -139,13 +76,13 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: frontend-coverage
+          name: coverage-report
           path: frontend/coverage/
           retention-days: 7
 
-  # Frontend build - Ensure the app builds successfully (runs in parallel with CI)
-  frontend-build:
-    name: Frontend Build
+  # ── Production Build ────────────────────────────────────────────
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -154,8 +91,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'yarn'
+          node-version: "20"
+          cache: "yarn"
           cache-dependency-path: frontend/yarn.lock
 
       - name: Install dependencies
@@ -168,21 +105,20 @@ jobs:
           cd frontend
           yarn build
         env:
-          REACT_APP_BACKEND_URL: https://api.shoreexplorer.com
           CI: true
 
-      - name: Upload build artifacts
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build
           path: frontend/build/
           retention-days: 7
 
-  # Frontend E2E tests - Playwright tests against the built frontend
-  frontend-e2e:
-    name: Frontend E2E (Playwright)
+  # ── E2E Tests (Playwright) ─────────────────────────────────────
+  e2e:
+    name: E2E (Playwright)
     runs-on: ubuntu-latest
-    needs: [frontend-build]
+    needs: [build]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -190,11 +126,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: tests/e2e/package-lock.json
 
-      - name: Download frontend build
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: frontend-build
@@ -210,12 +146,14 @@ jobs:
           cd tests/e2e
           npx playwright install --with-deps chromium
 
-      - name: Serve frontend and run E2E tests
+      - name: Serve and run E2E tests
         run: |
-          # Serve the built frontend in the background
           npx serve -s frontend/build -l 3000 &
           SERVER_PID=$!
-          for i in {1..15}; do if curl -s http://localhost:3000 > /dev/null; then break; fi; sleep 1; done
+          for i in {1..15}; do
+            if curl -s http://localhost:3000 > /dev/null; then break; fi
+            sleep 1
+          done
           cd tests/e2e
           BASE_URL=http://localhost:3000 npx playwright test
           RESULT=$?
@@ -230,9 +168,9 @@ jobs:
           path: tests/e2e/playwright-report/
           retention-days: 7
 
-  # Security Scan - SAST & SCA
-  security-sast:
-    name: Security Scan (SAST & SCA)
+  # ── Security Scan (SAST & SCA) ─────────────────────────────────
+  security:
+    name: Security Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -242,76 +180,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Run Semgrep
+      - name: Run Semgrep (SAST)
         run: |
           pip install semgrep
           semgrep ci \
             --config p/security-audit \
             --config p/owasp-top-ten \
-            --config p/python \
             --config p/javascript \
             --sarif --output semgrep.sarif || true
 
-      - name: Run Trivy Scan - Backend
+      - name: Run Trivy (SCA)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          scan-type: 'fs'
-          scan-ref: 'backend'
-          format: 'sarif'
-          output: 'trivy-backend-results.sarif'
-          severity: 'CRITICAL,HIGH'
+          scan-type: "fs"
+          scan-ref: "frontend"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
 
-      - name: Run Trivy Scan - Frontend
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: 'frontend'
-          format: 'sarif'
-          output: 'trivy-frontend-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Ensure SARIF files exist for upload
+      - name: Ensure SARIF files exist
         if: always()
         run: |
-          # Create placeholder SARIF files if they don't exist, to prevent upload-sarif failures
-          for f in semgrep.sarif trivy-backend-results.sarif trivy-frontend-results.sarif; do
+          for f in semgrep.sarif trivy-results.sarif; do
             if [ ! -f "$f" ]; then
-              # Note: Using escaped schema for heredoc/env compatibility
-              echo "{\"version\":\"2.1.0\",\"\$schema\":\"https://json.schemastore.org/sarif-2.1.0-rtm.5.json\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"Placeholder\"}},\"results\":[]}]}" > "$f"
-              echo "Created placeholder for missing $f"
+              echo '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0-rtm.5.json","runs":[{"tool":{"driver":{"name":"Placeholder"}},"results":[]}]}' > "$f"
             fi
           done
 
-      - name: Upload Semgrep SARIF results
+      - name: Upload Semgrep results
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: semgrep.sarif
 
-      - name: Upload Trivy Backend results
+      - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: 'trivy-backend-results.sarif'
-          category: trivy-backend
+          sarif_file: trivy-results.sarif
+          category: trivy
 
-      - name: Upload Trivy Frontend results
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: 'trivy-frontend-results.sarif'
-          category: trivy-frontend
-
-      - name: Check generated SARIF files
-        if: always()
-        run: ls -la *.sarif || echo "No SARIF files found"
-
-  # YAML Lint - Validate all workflow YAML files
+  # ── YAML Lint ───────────────────────────────────────────────────
   yaml-lint:
     name: YAML Lint
     runs-on: ubuntu-latest
@@ -322,26 +231,25 @@ jobs:
       - name: Install yamllint
         run: pip install yamllint
 
-      - name: Lint workflow YAML files
+      - name: Lint workflow YAML
         run: yamllint .github/workflows/
 
-  # All checks passed
+  # ── Gate: All Checks Passed ─────────────────────────────────────
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [backend-ci, backend-build, frontend-ci, frontend-build, frontend-e2e, security-sast, yaml-lint]
+    needs: [lint, test, build, e2e, security, yaml-lint]
     if: always()
     steps:
-      - name: Check all jobs status
+      - name: Check all jobs
         run: |
-          if [[ "${{ needs.backend-ci.result }}" != "success" ]] || \
-             [[ "${{ needs.backend-build.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-ci.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-build.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-e2e.result }}" != "success" ]] || \
-             [[ "${{ needs.security-sast.result }}" != "success" ]] || \
+          if [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.build.result }}" != "success" ]] || \
+             [[ "${{ needs.e2e.result }}" != "success" ]] || \
+             [[ "${{ needs.security.result }}" != "success" ]] || \
              [[ "${{ needs.yaml-lint.result }}" != "success" ]]; then
-            echo "❌ Critical CI jobs failed"
+            echo "❌ One or more CI jobs failed"
             exit 1
           fi
-          echo "✅ All critical CI checks passed!"
+          echo "✅ All CI checks passed!"

@@ -1,13 +1,15 @@
-name: Teardown Test Environment
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  Teardown Test Environment                                                 ║
+# ║  DANGER: Destroys all test infrastructure. HTTPS cert is preserved.        ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
 
-# DANGER: This workflow completely destroys the test environment infrastructure.
-# HTTPS certificate is preserved for future reattachment.
+name: Teardown Test Environment
 
 on:
   workflow_dispatch:
     inputs:
       confirm_teardown:
-        description: 'Type "DESTROY TEST" to confirm teardown'
+        description: 'Type "DESTROY TEST" to confirm'
         required: true
         type: string
 
@@ -18,10 +20,10 @@ permissions:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
   ENVIRONMENT: test
-  PROJECT_NAME: shoreexplorer
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'static-site' }}
 
 jobs:
-  teardown-test:
+  teardown:
     name: Teardown Test Environment
     runs-on: ubuntu-latest
     environment: test
@@ -29,8 +31,7 @@ jobs:
 
     steps:
       - name: Validate confirmation
-        run: |
-          echo "✅ Teardown confirmed for TEST environment"
+        run: echo "✅ Teardown confirmed for TEST environment"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -39,509 +40,128 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ── 1. Delete CodeDeploy Resources ────────────────────────────
-      - name: Delete CodeDeploy resources
-        run: |
-          echo "🗑️  Deleting CodeDeploy resources..."
-          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
-          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
-
-          # Delete deployment groups (only backend uses CodeDeploy now)
-          for DG in "${APP_NAME}-backend-dg" "${APP_NAME}-frontend-dg"; do
-            aws deploy delete-deployment-group \
-              --application-name "$CODEDEPLOY_APP" \
-              --deployment-group-name "$DG" \
-              --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted deployment group: $DG"
-          done
-
-          # Delete application
-          aws deploy delete-application \
-            --application-name "$CODEDEPLOY_APP" \
-            --region "$AWS_REGION" 2>/dev/null || true
-          echo "  ✅ Deleted CodeDeploy application: $CODEDEPLOY_APP"
-
-      # ── 2. Delete ECS Services ──────────────────────────────────
-      - name: Delete ECS services
-        run: |
-          echo "🗑️  Deleting ECS services..."
-          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-
-          # Delete backend ECS service (frontend is on S3/CloudFront, but try to clean up legacy frontend service too)
-          for SERVICE in "${PROJECT_NAME}-${ENVIRONMENT}-backend" "${PROJECT_NAME}-${ENVIRONMENT}-frontend"; do
-            # Scale to 0
-            aws ecs update-service \
-              --cluster "$CLUSTER" --service "$SERVICE" --desired-count 0 \
-              --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
-
-            # Force delete
-            aws ecs delete-service \
-              --cluster "$CLUSTER" --service "$SERVICE" --force \
-              --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
-
-            echo "  ✅ Deleted service: $SERVICE"
-          done
-
-          echo "  Waiting for tasks to drain..."
-          sleep 10
-
-      # ── 2. Delete ALB, Listeners, Target Groups ─────────────────
-      - name: Delete ALB and target groups
-        run: |
-          echo "🗑️  Deleting load balancer..."
-          ALB_ARN=$(aws elbv2 describe-load-balancers \
-            --names "${PROJECT_NAME}-${ENVIRONMENT}-alb" \
-            --query "LoadBalancers[0].LoadBalancerArn" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$ALB_ARN" != "None" && -n "$ALB_ARN" ]]; then
-            # Delete listeners (and their rules)
-            LISTENERS=$(aws elbv2 describe-listeners \
-              --load-balancer-arn "$ALB_ARN" \
-              --query "Listeners[].ListenerArn" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "")
-
-            for LISTENER in $LISTENERS; do
-              RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER" \
-                --query "Rules[?!IsDefault].RuleArn" --output text \
-                --region "$AWS_REGION" 2>/dev/null || echo "")
-              for RULE in $RULES; do
-                aws elbv2 delete-rule --rule-arn "$RULE" --region "$AWS_REGION" 2>/dev/null || true
-              done
-              aws elbv2 delete-listener --listener-arn "$LISTENER" --region "$AWS_REGION" 2>/dev/null || true
-            done
-
-            aws elbv2 delete-load-balancer --load-balancer-arn "$ALB_ARN" --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted ALB: ${PROJECT_NAME}-${ENVIRONMENT}-alb"
-
-            echo "  Waiting for ALB to finish deleting..."
-            aws elbv2 wait load-balancers-deleted --load-balancer-arns "$ALB_ARN" \
-              --region "$AWS_REGION" 2>/dev/null || sleep 30
-          else
-            echo "  ⏭️  ALB not found — skipping"
-          fi
-
-          # Delete target groups (including green TGs for CodeDeploy Blue/Green)
-          for TG_NAME in "${PROJECT_NAME}-${ENVIRONMENT}-backend-tg" "${PROJECT_NAME}-${ENVIRONMENT}-frontend-tg" "${PROJECT_NAME}-${ENVIRONMENT}-be-green-tg" "${PROJECT_NAME}-${ENVIRONMENT}-fe-green-tg"; do
-            TG_ARN=$(aws elbv2 describe-target-groups --names "$TG_NAME" \
-              --query "TargetGroups[0].TargetGroupArn" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-            if [[ "$TG_ARN" != "None" && -n "$TG_ARN" ]]; then
-              aws elbv2 delete-target-group --target-group-arn "$TG_ARN" --region "$AWS_REGION" 2>/dev/null || true
-              echo "  ✅ Deleted target group: $TG_NAME"
-            fi
-          done
-
-      # ── 3. Delete ECS Cluster ───────────────────────────────────
-      - name: Delete ECS cluster
-        run: |
-          echo "🗑️  Deleting ECS cluster..."
-          aws ecs delete-cluster \
-            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
-            --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
-          echo "  ✅ Deleted cluster: ${PROJECT_NAME}-${ENVIRONMENT}-cluster"
-
-      # ── 4. Deregister Task Definitions ──────────────────────────
-      - name: Deregister task definitions
-        run: |
-          echo "🗑️  Deregistering task definitions..."
-          for FAMILY in "${PROJECT_NAME}-${ENVIRONMENT}-backend-task" "${PROJECT_NAME}-${ENVIRONMENT}-frontend-task"; do
-            TASK_DEFS=$(aws ecs list-task-definitions \
-              --family-prefix "$FAMILY" \
-              --query "taskDefinitionArns[]" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "")
-
-            for TD in $TASK_DEFS; do
-              aws ecs deregister-task-definition --task-definition "$TD" \
-                --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
-              # Also delete the deregistered task definition
-              aws ecs delete-task-definitions --task-definitions "$TD" \
-                --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
-            done
-            if [[ -n "$TASK_DEFS" ]]; then
-              echo "  ✅ Deregistered task definitions: $FAMILY"
-            fi
-          done
-
-      # ── 5. Delete CloudWatch Monitoring ─────────────────────────
-      - name: Delete monitoring resources
-        run: |
-          echo "🗑️  Deleting monitoring resources..."
-
-          # Delete CloudWatch dashboard
-          aws cloudwatch delete-dashboards \
-            --dashboard-names "${PROJECT_NAME}-${ENVIRONMENT}-dashboard" \
-            --region "$AWS_REGION" 2>/dev/null || true
-          echo "  ✅ Deleted dashboard: ${PROJECT_NAME}-${ENVIRONMENT}-dashboard"
-
-          # Delete all CloudWatch alarms for this environment
-          ALARMS=$(aws cloudwatch describe-alarms \
-            --alarm-name-prefix "${PROJECT_NAME}-${ENVIRONMENT}-" \
-            --query "MetricAlarms[].AlarmName" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "")
-
-          if [[ -n "$ALARMS" ]]; then
-            aws cloudwatch delete-alarms --alarm-names $ALARMS \
-              --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted CloudWatch alarms"
-          fi
-
-          # Delete SNS topic
-          TOPIC_ARN=$(aws sns list-topics --region "$AWS_REGION" \
-            --query "Topics[?ends_with(TopicArn, ':${PROJECT_NAME}-${ENVIRONMENT}-alarms')].TopicArn" \
-            --output text 2>/dev/null || echo "")
-
-          if [[ -n "$TOPIC_ARN" && "$TOPIC_ARN" != "None" ]]; then
-            aws sns delete-topic --topic-arn "$TOPIC_ARN" --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted SNS topic: ${PROJECT_NAME}-${ENVIRONMENT}-alarms"
-          fi
-
-          # Delete log metric filters
-          for LOG_GROUP in "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-backend" "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-frontend"; do
-            FILTERS=$(aws logs describe-metric-filters \
-              --log-group-name "$LOG_GROUP" \
-              --query "metricFilters[].filterName" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "")
-            for FILTER in $FILTERS; do
-              aws logs delete-metric-filter \
-                --log-group-name "$LOG_GROUP" --filter-name "$FILTER" \
-                --region "$AWS_REGION" 2>/dev/null || true
-            done
-          done
-          echo "  ✅ Deleted log metric filters"
-
-      # ── 6. Delete CloudWatch Log Groups ─────────────────────────
-      - name: Delete log groups
-        run: |
-          echo "🗑️  Deleting log groups..."
-          for LOG_GROUP in "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-backend" "/ecs/${PROJECT_NAME}-${ENVIRONMENT}-frontend"; do
-            aws logs delete-log-group --log-group-name "$LOG_GROUP" \
-              --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted log group: $LOG_GROUP"
-          done
-
-      # ── 7. Delete DynamoDB Table ────────────────────────────────
-      - name: Delete DynamoDB table
-        run: |
-          echo "🗑️  Deleting DynamoDB table..."
-          aws dynamodb delete-table \
-            --table-name "${PROJECT_NAME}-${ENVIRONMENT}" \
-            --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
-          echo "  ✅ Deleted DynamoDB table: ${PROJECT_NAME}-${ENVIRONMENT}"
-
-      # ── 8. Delete Secrets Manager ───────────────────────────────
-      - name: Delete secrets
-        run: |
-          echo "🗑️  Deleting secrets..."
-          aws secretsmanager delete-secret \
-            --secret-id "${PROJECT_NAME}-${ENVIRONMENT}-secrets" \
-            --force-delete-without-recovery \
-            --region "$AWS_REGION" 2>/dev/null || true
-          echo "  ✅ Deleted secret: ${PROJECT_NAME}-${ENVIRONMENT}-secrets"
-
-      # ── 9. Delete IAM Roles ─────────────────────────────────────
-      - name: Delete IAM roles
-        run: |
-          echo "🗑️  Deleting IAM roles..."
-          for ROLE in "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-execution-role" "${PROJECT_NAME}-${ENVIRONMENT}-ecs-task-role" "${PROJECT_NAME}-${ENVIRONMENT}-codedeploy-role"; do
-            # Detach managed policies
-            POLICIES=$(aws iam list-attached-role-policies --role-name "$ROLE" \
-              --query "AttachedPolicies[].PolicyArn" --output text 2>/dev/null || echo "")
-            for POLICY in $POLICIES; do
-              aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$POLICY" 2>/dev/null || true
-            done
-
-            # Delete inline policies
-            INLINE=$(aws iam list-role-policies --role-name "$ROLE" \
-              --query "PolicyNames[]" --output text 2>/dev/null || echo "")
-            for POLICY in $INLINE; do
-              aws iam delete-role-policy --role-name "$ROLE" --policy-name "$POLICY" 2>/dev/null || true
-            done
-
-            aws iam delete-role --role-name "$ROLE" 2>/dev/null || true
-            echo "  ✅ Deleted role: $ROLE"
-          done
-
-      # ── 10. Delete CloudFront Distribution ────────────────────────
+      # ── 1. Delete CloudFront Distribution ────────────────────────
       - name: Delete CloudFront distribution
         run: |
           echo "🗑️  Deleting CloudFront distribution..."
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
 
           CF_DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='${APP_NAME}-frontend'].Id | [0]" \
+            --query "DistributionList.Items[?Comment=='${APP_NAME}'].Id | [0]" \
             --output text 2>/dev/null || echo "")
 
           if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
-            # Get the current config to disable the distribution
+            # Disable first (required before deletion)
             ETAG=$(aws cloudfront get-distribution-config --id "$CF_DIST_ID" \
-              --query 'ETag' --output text)
+              --query "ETag" --output text)
             CONFIG=$(aws cloudfront get-distribution-config --id "$CF_DIST_ID" \
-              --query 'DistributionConfig' --output json)
-
-            # Disable the distribution first (required before deletion)
+              --query "DistributionConfig" --output json)
             DISABLED_CONFIG=$(echo "$CONFIG" | jq '.Enabled = false')
+
             aws cloudfront update-distribution --id "$CF_DIST_ID" \
               --distribution-config "$DISABLED_CONFIG" --if-match "$ETAG" \
               --no-cli-pager >/dev/null 2>&1 || true
-            echo "  ⏳ Distribution disabled, waiting for propagation..."
+            echo "  ⏳ Disabled, waiting for propagation..."
 
-            # Wait for distribution to be deployed (disabled state)
             for i in {1..60}; do
               STATUS=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
-                --query 'Distribution.Status' --output text 2>/dev/null || echo "Unknown")
-              if [[ "$STATUS" == "Deployed" ]]; then
-                break
-              fi
-              echo "  ⏳ Waiting for distribution to finish deploying... ($i/60)"
+                --query "Distribution.Status" --output text 2>/dev/null || echo "Unknown")
+              if [[ "$STATUS" == "Deployed" ]]; then break; fi
+              echo "  ⏳ Waiting... ($i/60)"
               sleep 30
             done
 
-            # Delete the distribution
             ETAG=$(aws cloudfront get-distribution --id "$CF_DIST_ID" \
-              --query 'ETag' --output text 2>/dev/null || echo "")
-            aws cloudfront delete-distribution --id "$CF_DIST_ID" --if-match "$ETAG" \
-              2>/dev/null || true
-            echo "  ✅ Deleted CloudFront distribution: $CF_DIST_ID"
+              --query "ETag" --output text 2>/dev/null || echo "")
+            aws cloudfront delete-distribution --id "$CF_DIST_ID" \
+              --if-match "$ETAG" 2>/dev/null || true
+            echo "  ✅ Deleted CloudFront distribution: ${CF_DIST_ID}"
           else
-            echo "  ⏭️  CloudFront distribution not found — skipping"
+            echo "  ⏭️  Not found — skipping"
           fi
 
           # Delete OAC
           OAC_ID=$(aws cloudfront list-origin-access-controls \
-            --query "OriginAccessControlList.Items[?Name=='${APP_NAME}-frontend-oac'].Id | [0]" \
+            --query "OriginAccessControlList.Items[?Name=='${APP_NAME}-oac'].Id | [0]" \
             --output text 2>/dev/null || echo "")
           if [[ -n "$OAC_ID" && "$OAC_ID" != "None" ]]; then
             ETAG=$(aws cloudfront get-origin-access-control --id "$OAC_ID" \
-              --query 'ETag' --output text 2>/dev/null || echo "")
-            aws cloudfront delete-origin-access-control --id "$OAC_ID" --if-match "$ETAG" \
-              2>/dev/null || true
-            echo "  ✅ Deleted OAC: $OAC_ID"
+              --query "ETag" --output text 2>/dev/null || echo "")
+            aws cloudfront delete-origin-access-control --id "$OAC_ID" \
+              --if-match "$ETAG" 2>/dev/null || true
+            echo "  ✅ Deleted OAC: ${OAC_ID}"
           fi
 
-      # ── 10b. Delete S3 Frontend Bucket ──────────────────────────
-      - name: Delete S3 frontend bucket
+      # ── 2. Delete S3 Bucket ──────────────────────────────────────
+      - name: Delete S3 bucket
         run: |
-          echo "🗑️  Deleting S3 frontend bucket..."
+          echo "🗑️  Deleting S3 bucket..."
           S3_BUCKET="${PROJECT_NAME}-${ENVIRONMENT}-frontend"
 
           if aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
-            # Empty the bucket first (required before deletion)
-            aws s3 rm "s3://${S3_BUCKET}" --recursive --region "$AWS_REGION" 2>/dev/null || true
+            # Empty all versions (versioned bucket)
+            aws s3api list-object-versions --bucket "$S3_BUCKET" --output json \
+              | jq -r '.Versions[]? | "aws s3api delete-object --bucket '"$S3_BUCKET"' --key \"\(.Key)\" --version-id \"\(.VersionId)\""' \
+              | while read -r cmd; do eval "$cmd" 2>/dev/null || true; done
+
+            aws s3api list-object-versions --bucket "$S3_BUCKET" --output json \
+              | jq -r '.DeleteMarkers[]? | "aws s3api delete-object --bucket '"$S3_BUCKET"' --key \"\(.Key)\" --version-id \"\(.VersionId)\""' \
+              | while read -r cmd; do eval "$cmd" 2>/dev/null || true; done
+
+            aws s3 rm "s3://${S3_BUCKET}" --recursive 2>/dev/null || true
             aws s3api delete-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted S3 bucket: $S3_BUCKET"
+            echo "  ✅ Deleted S3 bucket: ${S3_BUCKET}"
           else
-            echo "  ⏭️  S3 bucket not found — skipping"
+            echo "  ⏭️  Not found — skipping"
           fi
 
-      # ── 11. Delete DNS Record ───────────────────────────────────
+      # ── 3. Delete DNS Record ─────────────────────────────────────
       - name: Delete DNS record
         env:
-          TEST_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
+          CUSTOM_DOMAIN: ${{ secrets.TEST_DOMAIN || '' }}
         run: |
-          echo "🗑️  Deleting DNS record..."
-
-          if [[ -z "$TEST_DOMAIN" ]]; then
-            echo "  ⏭️  TEST_DOMAIN secret not set — skipping DNS cleanup"
+          if [[ -z "$CUSTOM_DOMAIN" ]]; then
+            echo "  ⏭️  No TEST_DOMAIN — skipping DNS"
             exit 0
           fi
 
-          FULL_DOMAIN="test.${TEST_DOMAIN}"
+          FULL_DOMAIN="test.${CUSTOM_DOMAIN}"
 
-          # Find hosted zone
           ZONE_ID=$(aws route53 list-hosted-zones-by-name \
-            --query "HostedZones[?Name=='${TEST_DOMAIN}.'].Id" \
+            --query "HostedZones[?Name=='${CUSTOM_DOMAIN}.'].Id" \
             --output text 2>/dev/null | cut -d'/' -f3 || echo "")
 
           if [[ -z "$ZONE_ID" || "$ZONE_ID" == "None" ]]; then
-            echo "  ⏭️  No hosted zone found for ${TEST_DOMAIN} — skipping"
+            echo "  ⏭️  No hosted zone — skipping"
             exit 0
           fi
 
-          # Find existing record
-          EXISTING=$(aws route53 list-resource-record-sets \
+          # Get current record target
+          RECORD_JSON=$(aws route53 list-resource-record-sets \
             --hosted-zone-id "$ZONE_ID" \
-            --query "ResourceRecordSets[?Name=='${FULL_DOMAIN}.'].Type" \
-            --output text 2>/dev/null || echo "")
+            --query "ResourceRecordSets[?Name=='${FULL_DOMAIN}.'] | [0]" \
+            --output json 2>/dev/null || echo "null")
 
-          if [[ -z "$EXISTING" || "$EXISTING" == "None" ]]; then
-            echo "  ⏭️  No DNS record found for ${FULL_DOMAIN} — skipping"
-            exit 0
-          fi
-
-          # Get the ALB DNS that it currently points to
-          ALB_DNS=$(aws route53 list-resource-record-sets \
-            --hosted-zone-id "$ZONE_ID" \
-            --query "ResourceRecordSets[?Name=='${FULL_DOMAIN}.'].AliasTarget.DNSName" \
-            --output text 2>/dev/null || echo "")
-          ALB_ZONE=$(aws route53 list-resource-record-sets \
-            --hosted-zone-id "$ZONE_ID" \
-            --query "ResourceRecordSets[?Name=='${FULL_DOMAIN}.'].AliasTarget.HostedZoneId" \
-            --output text 2>/dev/null || echo "")
-
-          if [[ -n "$ALB_DNS" && "$ALB_DNS" != "None" && -n "$ALB_ZONE" && "$ALB_ZONE" != "None" ]]; then
-            CHANGE_BATCH=$(cat <<EOF
-          {
-            "Changes": [{
-              "Action": "DELETE",
-              "ResourceRecordSet": {
-                "Name": "${FULL_DOMAIN}",
-                "Type": "A",
-                "AliasTarget": {
-                  "HostedZoneId": "${ALB_ZONE}",
-                  "DNSName": "${ALB_DNS}",
-                  "EvaluateTargetHealth": false
-                }
-              }
-            }]
-          }
-          EOF
-          )
+          if [[ "$RECORD_JSON" != "null" && -n "$RECORD_JSON" ]]; then
+            CHANGE_BATCH="{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":${RECORD_JSON}}]}"
             aws route53 change-resource-record-sets \
-              --hosted-zone-id "$ZONE_ID" \
-              --change-batch "$CHANGE_BATCH" 2>/dev/null || true
-            echo "  ✅ Deleted DNS record: ${FULL_DOMAIN}"
+              --hosted-zone-id "$ZONE_ID" --change-batch "$CHANGE_BATCH" 2>/dev/null || true
+            echo "  ✅ Deleted DNS: ${FULL_DOMAIN}"
           else
-            echo "  ⏭️  Could not determine current DNS target — skipping"
+            echo "  ⏭️  No DNS record found"
           fi
 
-      # ── 11. Delete Networking ───────────────────────────────────
-      - name: Delete networking resources
-        run: |
-          echo "🗑️  Deleting networking resources..."
-
-          VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-vpc" \
-            --query "Vpcs[0].VpcId" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
-            echo "  ⏭️  VPC not found — skipping networking teardown"
-            exit 0
-          fi
-
-          echo "  Found VPC: $VPC_ID"
-
-          # Delete security groups (except default)
-          for SG_NAME in "${PROJECT_NAME}-${ENVIRONMENT}-alb-sg" "${PROJECT_NAME}-${ENVIRONMENT}-ecs-sg"; do
-            SG_ID=$(aws ec2 describe-security-groups \
-              --filters "Name=group-name,Values=$SG_NAME" "Name=vpc-id,Values=$VPC_ID" \
-              --query "SecurityGroups[0].GroupId" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-            if [[ "$SG_ID" != "None" && -n "$SG_ID" ]]; then
-              aws ec2 delete-security-group --group-id "$SG_ID" \
-                --region "$AWS_REGION" 2>/dev/null || true
-              echo "  ✅ Deleted security group: $SG_NAME"
-            fi
-          done
-
-          # Disassociate and delete route tables
-          RT_ID=$(aws ec2 describe-route-tables \
-            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-public-rt" "Name=vpc-id,Values=$VPC_ID" \
-            --query "RouteTables[0].RouteTableId" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$RT_ID" != "None" && -n "$RT_ID" ]]; then
-            ASSOCS=$(aws ec2 describe-route-tables --route-table-ids "$RT_ID" \
-              --query "RouteTables[0].Associations[?!Main].RouteTableAssociationId" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "")
-            for ASSOC in $ASSOCS; do
-              aws ec2 disassociate-route-table --association-id "$ASSOC" \
-                --region "$AWS_REGION" 2>/dev/null || true
-            done
-            aws ec2 delete-route-table --route-table-id "$RT_ID" \
-              --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted route table: $RT_ID"
-          fi
-
-          # Delete subnets
-          for SUBNET_TAG in "public-1" "public-2" "private-1" "private-2"; do
-            SUBNET_ID=$(aws ec2 describe-subnets \
-              --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-${SUBNET_TAG}" "Name=vpc-id,Values=$VPC_ID" \
-              --query "Subnets[0].SubnetId" --output text \
-              --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-            if [[ "$SUBNET_ID" != "None" && -n "$SUBNET_ID" ]]; then
-              aws ec2 delete-subnet --subnet-id "$SUBNET_ID" \
-                --region "$AWS_REGION" 2>/dev/null || true
-              echo "  ✅ Deleted subnet: ${PROJECT_NAME}-${ENVIRONMENT}-${SUBNET_TAG}"
-            fi
-          done
-
-          # Detach and delete internet gateway
-          IGW_ID=$(aws ec2 describe-internet-gateways \
-            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-igw" \
-            --query "InternetGateways[0].InternetGatewayId" --output text \
-            --region "$AWS_REGION" 2>/dev/null || echo "None")
-
-          if [[ "$IGW_ID" != "None" && -n "$IGW_ID" ]]; then
-            aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" \
-              --region "$AWS_REGION" 2>/dev/null || true
-            aws ec2 delete-internet-gateway --internet-gateway-id "$IGW_ID" \
-              --region "$AWS_REGION" 2>/dev/null || true
-            echo "  ✅ Deleted internet gateway: $IGW_ID"
-          fi
-
-          # Delete VPC
-          aws ec2 delete-vpc --vpc-id "$VPC_ID" --region "$AWS_REGION" 2>/dev/null || true
-          echo "  ✅ Deleted VPC: $VPC_ID"
-
-      # ── 12. Clean up ECR test images ────────────────────────────
-      - name: Clean up ECR test images
-        run: |
-          echo "🗑️  Cleaning up test-tagged ECR images..."
-          # Only backend uses ECR now (frontend is on S3/CloudFront)
-          for REPO in "${PROJECT_NAME}-backend" "${PROJECT_NAME}-frontend"; do
-            # Find images tagged with test- prefix
-            TEST_IMAGES=$(aws ecr list-images --repository-name "$REPO" \
-              --query "imageIds[?starts_with(imageTag, 'test-')].{imageDigest:imageDigest,imageTag:imageTag}" \
-              --output json --region "$AWS_REGION" 2>/dev/null || echo "[]")
-
-            # Also find test-latest
-            LATEST_IMAGE=$(aws ecr list-images --repository-name "$REPO" \
-              --query "imageIds[?imageTag=='test-latest'].{imageDigest:imageDigest,imageTag:imageTag}" \
-              --output json --region "$AWS_REGION" 2>/dev/null || echo "[]")
-
-            # Merge and batch delete
-            ALL_IMAGES=$(echo "[$TEST_IMAGES, $LATEST_IMAGE]" | jq -s 'add | flatten | unique_by(.imageDigest) | map(select(.imageDigest != null))' 2>/dev/null || echo "[]")
-
-            COUNT=$(echo "$ALL_IMAGES" | jq 'length')
-            if [[ "$COUNT" -gt 0 && "$COUNT" != "null" ]]; then
-              echo "$ALL_IMAGES" | jq -c '.[]' | while read -r img; do
-                DIGEST=$(echo "$img" | jq -r '.imageDigest')
-                aws ecr batch-delete-image --repository-name "$REPO" \
-                  --image-ids "imageDigest=$DIGEST" \
-                  --region "$AWS_REGION" --no-cli-pager 2>/dev/null || true
-              done
-              echo "  ✅ Cleaned $COUNT test images from $REPO"
-            else
-              echo "  ⏭️  No test images found in $REPO"
-            fi
-          done
-
-      # ── Summary ─────────────────────────────────────────────────
+      # ── Summary ──────────────────────────────────────────────────
       - name: Teardown summary
         if: always()
         run: |
-          echo "## Test Environment Teardown Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Test Environment Teardown Complete" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Resource | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ECS Services | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ALB & Target Groups | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ECS Cluster | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Task Definitions | 🗑️ Deregistered |" >> "$GITHUB_STEP_SUMMARY"
           echo "| CloudFront Distribution | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| S3 Frontend Bucket | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| CloudWatch Monitoring | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Log Groups | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| DynamoDB Table | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Secrets | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| IAM Roles | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Origin Access Control | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| S3 Bucket | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
           echo "| DNS Record | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| VPC & Networking | 🗑️ Deleted |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ECR Test Images | 🗑️ Cleaned |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Preserved:** HTTPS certificate, ECR repositories, Route53 hosted zone" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Preserved:** ACM certificates, Route 53 hosted zone" >> "$GITHUB_STEP_SUMMARY"
