@@ -2,6 +2,16 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Ship, Compass, FileText, Home } from 'lucide-react';
 
+function AnchorLogo({ className = 'w-10 h-10' }) {
+  return (
+    <img
+      src="/favicon.svg"
+      alt="ShoreExplorer anchor logo"
+      className={`${className} rounded-xl`}
+    />
+  );
+}
+
 const navItems = [
   { path: '/', label: 'Home', icon: Home },
   { path: '/trips', label: 'My Trips', icon: Ship },
@@ -17,9 +27,7 @@ export default function Layout({ children }) {
       {/* Desktop Top Nav */}
       <header className="hidden md:flex items-center justify-between px-8 py-4 bg-primary text-primary-foreground sticky top-0 z-40" data-testid="desktop-nav">
         <Link to="/" className="flex items-center gap-3 group">
-          <div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Compass className="w-5 h-5 text-white" />
-          </div>
+          <AnchorLogo className="w-10 h-10 group-hover:scale-110 transition-transform" />
           <span className="font-heading text-xl font-bold tracking-tight">ShoreExplorer</span>
         </Link>
         <nav className="flex items-center gap-1">
@@ -48,9 +56,7 @@ export default function Layout({ children }) {
       {/* Mobile Top Bar */}
       <header className="md:hidden flex items-center justify-between px-5 py-3 bg-primary text-primary-foreground sticky top-0 z-40" data-testid="mobile-header">
         <Link to="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-accent rounded-full flex items-center justify-center">
-            <Compass className="w-4 h-4 text-white" />
-          </div>
+          <AnchorLogo className="w-8 h-8" />
           <span className="font-heading text-lg font-bold">ShoreExplorer</span>
         </Link>
       </header>
