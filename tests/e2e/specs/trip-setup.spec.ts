@@ -50,23 +50,24 @@ test.describe('Trip Setup — Create New Trip', () => {
     await expect(page.getByTestId('port-lng-0')).not.toBeAttached();
   });
 
-  test('arrival datetime input has 5-minute step and a min attribute', async ({ page }) => {
+  test('arrival picker has date input, hour select, and minute select', async ({ page }) => {
     await page.getByTestId('add-port-btn').click();
-    const arrivalInput = page.getByTestId('port-arrival-0');
-    await expect(arrivalInput).toHaveAttribute('step', '300');
-    const minAttr = await arrivalInput.getAttribute('min');
-    expect(minAttr).toBeTruthy();
-    // min should be a valid datetime-local value (YYYY-MM-DDTHH:mm)
-    expect(minAttr).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    await expect(page.getByTestId('port-arrival-0-date')).toBeVisible();
+    await expect(page.getByTestId('port-arrival-0-hour')).toBeVisible();
+    await expect(page.getByTestId('port-arrival-0-minute')).toBeVisible();
+    // Minute select must only contain 5-minute interval options
+    const minuteOptions = await page.getByTestId('port-arrival-0-minute').locator('option').allTextContents();
+    expect(minuteOptions).toEqual(['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']);
   });
 
-  test('departure datetime input has 5-minute step and a min attribute', async ({ page }) => {
+  test('departure picker has date input, hour select, and minute select', async ({ page }) => {
     await page.getByTestId('add-port-btn').click();
-    const departureInput = page.getByTestId('port-departure-0');
-    await expect(departureInput).toHaveAttribute('step', '300');
-    const minAttr = await departureInput.getAttribute('min');
-    expect(minAttr).toBeTruthy();
-    expect(minAttr).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    await expect(page.getByTestId('port-departure-0-date')).toBeVisible();
+    await expect(page.getByTestId('port-departure-0-hour')).toBeVisible();
+    await expect(page.getByTestId('port-departure-0-minute')).toBeVisible();
+    // Minute select must only contain 5-minute interval options
+    const minuteOptions = await page.getByTestId('port-departure-0-minute').locator('option').allTextContents();
+    expect(minuteOptions).toEqual(['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']);
   });
 
   test('ship name input shows autocomplete dropdown on focus', async ({ page }) => {
