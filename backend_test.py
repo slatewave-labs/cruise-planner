@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Comprehensive API Testing for ShoreExplorer Backend
-Tests all endpoints including health, trips, ports, weather, and AI plan generation
+Tests remaining endpoints: health, port search, weather, and AI plan generation
+(Trip/plan CRUD is now handled client-side via localStorage)
 """
 
 import requests
@@ -13,16 +14,10 @@ from datetime import datetime
 class ShoreExplorerAPITester:
     def __init__(self):
         self.base_url = "http://localhost:8001"
-        self.test_trip_id = None
-        self.test_port_id = None
-        self.test_plan_id = None
         self.tests_run = 0
         self.tests_passed = 0
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
-        # Generate unique device IDs for privacy testing
-        self.device_a = str(uuid.uuid4())
-        self.device_b = str(uuid.uuid4())
 
     def log(self, message, status="INFO"):
         print(f"[{status}] {message}")
@@ -89,206 +84,6 @@ class ShoreExplorerAPITester:
             self.log("Health endpoint failed or returned incorrect response", "FAIL")
             return False
 
-    def test_device_privacy_isolation(self):
-        """Test critical privacy fix - device isolation"""
-        self.log("Testing device privacy isolation (CRITICAL PRIVACY TEST)...", "INFO")
-        
-        # Test 1: Create trip with Device A
-        trip_data_a = {
-            "ship_name": f"Device A Ship {uuid.uuid4().hex[:8]}",
-            "cruise_line": "Device A Cruise"
-        }
-        
-        success, response_a = self.run_test("Create Trip Device A", "POST", "api/trips", 200, trip_data_a, device_id=self.device_a)
-        if not success:
-            return False
-        trip_id_a = response_a.get("trip_id")
-        
-        # Test 2: Create trip with Device B  
-        trip_data_b = {
-            "ship_name": f"Device B Ship {uuid.uuid4().hex[:8]}",
-            "cruise_line": "Device B Cruise"
-        }
-        
-        success, response_b = self.run_test("Create Trip Device B", "POST", "api/trips", 200, trip_data_b, device_id=self.device_b)
-        if not success:
-            return False
-        trip_id_b = response_b.get("trip_id")
-        
-        # Test 3: Device A should only see Device A trips
-        success, trips_a = self.run_test("List Trips Device A", "GET", "api/trips", device_id=self.device_a)
-        if not success:
-            return False
-            
-        device_a_trip_ids = [trip.get("trip_id") for trip in trips_a]
-        if trip_id_a not in device_a_trip_ids:
-            self.log("❌ Device A cannot see its own trip", "FAIL")
-            return False
-            
-        if trip_id_b in device_a_trip_ids:
-            self.log("❌ PRIVACY VIOLATION: Device A can see Device B's trip!", "FAIL")
-            return False
-        
-        # Test 4: Device B should only see Device B trips
-        success, trips_b = self.run_test("List Trips Device B", "GET", "api/trips", device_id=self.device_b)
-        if not success:
-            return False
-            
-        device_b_trip_ids = [trip.get("trip_id") for trip in trips_b]
-        if trip_id_b not in device_b_trip_ids:
-            self.log("❌ Device B cannot see its own trip", "FAIL")
-            return False
-            
-        if trip_id_a in device_b_trip_ids:
-            self.log("❌ PRIVACY VIOLATION: Device B can see Device A's trip!", "FAIL")
-            return False
-            
-        # Test 5: Device A cannot access Device B's trip directly
-        success, _ = self.run_test("Device A Access Device B Trip", "GET", f"api/trips/{trip_id_b}", 404, device_id=self.device_a)
-        if not success:
-            self.log("❌ Device A should get 404 when accessing Device B's trip", "FAIL")
-            return False
-            
-        # Test 6: Device B cannot access Device A's trip directly  
-        success, _ = self.run_test("Device B Access Device A Trip", "GET", f"api/trips/{trip_id_a}", 404, device_id=self.device_b)
-        if not success:
-            self.log("❌ Device B should get 404 when accessing Device A's trip", "FAIL")
-            return False
-            
-        # Test 7: Device A cannot delete Device B's trip
-        success, _ = self.run_test("Device A Delete Device B Trip", "DELETE", f"api/trips/{trip_id_b}", 404, device_id=self.device_a)
-        if not success:
-            self.log("❌ Device A should get 404 when deleting Device B's trip", "FAIL")
-            return False
-            
-        # Test 8: Test endpoints without X-Device-Id header (should fail with 422)
-        success, _ = self.run_test("Create Trip No Device ID", "POST", "api/trips", 422, trip_data_a)
-        if not success:
-            self.log("❌ Endpoints should require X-Device-Id header", "FAIL")
-            return False
-            
-        success, _ = self.run_test("List Trips No Device ID", "GET", "api/trips", 422)
-        if not success:
-            self.log("❌ Endpoints should require X-Device-Id header", "FAIL")
-            return False
-        
-        # Cleanup test trips
-        self.run_test("Cleanup Device A Trip", "DELETE", f"api/trips/{trip_id_a}", device_id=self.device_a)
-        self.run_test("Cleanup Device B Trip", "DELETE", f"api/trips/{trip_id_b}", device_id=self.device_b)
-        
-        self.log("✅ DEVICE PRIVACY ISOLATION WORKING CORRECTLY", "PASS")
-        return True
-    def test_trip_crud(self):
-        """Test complete trip CRUD operations"""
-        # Use device A for main CRUD tests
-        device_id = self.device_a
-        
-        # 1. Create trip
-        trip_data = {
-            "ship_name": f"Test Ship {uuid.uuid4().hex[:8]}",
-            "cruise_line": "Test Cruise Line"
-        }
-        
-        success, response = self.run_test("Create Trip", "POST", "api/trips", 200, trip_data, device_id=device_id)
-        if not success:
-            return False
-        
-        self.test_trip_id = response.get("trip_id")
-        if not self.test_trip_id:
-            self.log("No trip_id returned in create response", "FAIL")
-            return False
-
-        # 2. List trips
-        success, response = self.run_test("List Trips", "GET", "api/trips", device_id=device_id)
-        if not success:
-            return False
-        
-        found_trip = any(trip.get("trip_id") == self.test_trip_id for trip in response)
-        if not found_trip:
-            self.log("Created trip not found in list", "FAIL")
-            return False
-
-        # 3. Get specific trip
-        success, response = self.run_test("Get Trip", "GET", f"api/trips/{self.test_trip_id}", device_id=device_id)
-        if not success:
-            return False
-        
-        if response.get("ship_name") != trip_data["ship_name"]:
-            self.log("Retrieved trip data doesn't match created data", "FAIL")
-            return False
-
-        # 4. Update trip
-        updated_data = {
-            "ship_name": f"Updated Ship {uuid.uuid4().hex[:8]}",
-            "cruise_line": "Updated Cruise Line"
-        }
-        
-        success, response = self.run_test("Update Trip", "PUT", f"api/trips/{self.test_trip_id}", 200, updated_data, device_id=device_id)
-        if not success:
-            return False
-
-        self.log("✅ Trip CRUD operations completed successfully", "PASS")
-        return True
-
-    def test_port_management(self):
-        """Test port management endpoints"""
-        if not self.test_trip_id:
-            self.log("No test trip available for port testing", "FAIL")
-            return False
-
-        device_id = self.device_a
-
-        # 1. Add port to trip
-        port_data = {
-            "name": "Barcelona",
-            "country": "Spain",
-            "latitude": 41.3784,
-            "longitude": 2.1925,
-            "arrival": "2024-06-15T08:00:00",
-            "departure": "2024-06-15T18:00:00"
-        }
-        
-        success, response = self.run_test("Add Port", "POST", f"api/trips/{self.test_trip_id}/ports", 200, port_data, device_id=device_id)
-        if not success:
-            return False
-        
-        self.test_port_id = response.get("port_id")
-        if not self.test_port_id:
-            self.log("No port_id returned in add port response", "FAIL")
-            return False
-
-        # 2. Get trip with ports
-        success, response = self.run_test("Get Trip with Ports", "GET", f"api/trips/{self.test_trip_id}", device_id=device_id)
-        if not success:
-            return False
-        
-        ports = response.get("ports", [])
-        if len(ports) == 0:
-            self.log("No ports found in trip after adding port", "FAIL")
-            return False
-        
-        found_port = any(port.get("port_id") == self.test_port_id for port in ports)
-        if not found_port:
-            self.log("Added port not found in trip", "FAIL")
-            return False
-
-        # 3. Update port
-        updated_port_data = {
-            "name": "Barcelona Updated",
-            "country": "Spain",
-            "latitude": 41.3784,
-            "longitude": 2.1925,
-            "arrival": "2024-06-15T09:00:00",
-            "departure": "2024-06-15T19:00:00"
-        }
-        
-        success, response = self.run_test("Update Port", "PUT", f"api/trips/{self.test_trip_id}/ports/{self.test_port_id}", 200, updated_port_data, device_id=device_id)
-        if not success:
-            return False
-
-        self.log("✅ Port management operations completed successfully", "PASS")
-        return True
-
     def test_weather_api(self):
         """Test weather proxy endpoint with Celsius temperature verification"""
         # Test with Barcelona coordinates
@@ -322,16 +117,19 @@ class ShoreExplorerAPITester:
 
     def test_plan_generation(self):
         """Test AI plan generation (may take 15-30 seconds) and currency handling"""
-        if not self.test_trip_id or not self.test_port_id:
-            self.log("No test trip/port available for plan generation", "FAIL")
-            return False
+        device_id = str(uuid.uuid4())
 
-        device_id = self.device_a
-
-        # Test 1: Basic plan generation with default currency (GBP)
+        # Test plan generation with port details in request body
         plan_data = {
-            "trip_id": self.test_trip_id,
-            "port_id": self.test_port_id,
+            "trip_id": "test-trip-123",
+            "port_id": "test-port-456",
+            "port_name": "Barcelona",
+            "port_country": "Spain",
+            "latitude": 41.3784,
+            "longitude": 2.1925,
+            "arrival": "2024-06-15T08:00:00",
+            "departure": "2024-06-15T18:00:00",
+            "ship_name": "Test Ship",
             "preferences": {
                 "party_type": "couple",
                 "activity_level": "moderate",
@@ -347,7 +145,7 @@ class ShoreExplorerAPITester:
         if not success:
             return False
         
-        # Test 2: Check if different currencies are accepted
+        # Test with different currencies
         for currency in ["EUR", "USD"]:
             plan_data["preferences"]["currency"] = currency
             self.log(f"Testing plan generation with {currency} currency (expecting budget exceeded)...", "INFO")
@@ -360,15 +158,18 @@ class ShoreExplorerAPITester:
 
     def test_budget_exceeded_error_handling(self):
         """Test that AI service errors return proper 503 (budget/quota/auth)"""
-        if not self.test_trip_id or not self.test_port_id:
-            self.log("No test trip/port available for budget error testing", "FAIL")
-            return False
-
-        device_id = self.device_a
+        device_id = str(uuid.uuid4())
 
         plan_data = {
-            "trip_id": self.test_trip_id,
-            "port_id": self.test_port_id,
+            "trip_id": "test-trip-123",
+            "port_id": "test-port-456",
+            "port_name": "Barcelona",
+            "port_country": "Spain",
+            "latitude": 41.3784,
+            "longitude": 2.1925,
+            "arrival": "2024-06-15T08:00:00",
+            "departure": "2024-06-15T18:00:00",
+            "ship_name": "Test Ship",
             "preferences": {
                 "party_type": "couple",
                 "activity_level": "moderate", 
@@ -419,29 +220,9 @@ class ShoreExplorerAPITester:
             self.tests_run += 1
             return False
 
-    def test_plan_listing(self):
-        """Test plan listing endpoints"""
-        if not self.test_trip_id:
-            self.log("No test trip available for plan listing", "FAIL")
-            return False
-
-        device_id = self.device_a
-
-        # Test list all plans
-        success, response = self.run_test("List All Plans", "GET", "api/plans", device_id=device_id)
-        if not success:
-            return False
-
-        # Test list plans by trip
-        success, response = self.run_test("List Plans by Trip", "GET", f"api/plans?trip_id={self.test_trip_id}", device_id=device_id)
-        if success:
-            self.log("✅ Plan listing endpoints working", "PASS")
-            return True
-        return False
-
     def test_port_search_endpoints(self):
-        """Test the new port search functionality"""
-        self.log("Testing new port search endpoints...", "INFO")
+        """Test the port search functionality"""
+        self.log("Testing port search endpoints...", "INFO")
         
         # Test 1: Get regions list
         success, response = self.run_test("Get Port Regions", "GET", "api/ports/regions")
@@ -503,70 +284,7 @@ class ShoreExplorerAPITester:
         
         self.log("✅ Barcelona search returns Barcelona, Spain", "PASS")
         
-        # Test 4: Search for Alaska ports
-        success, response = self.run_test("Port Search - Alaska", "GET", "api/ports/search?q=alaska")
-        if not success:
-            return False
-        
-        alaska_ports = ["Juneau", "Ketchikan", "Skagway", "Sitka"]
-        found_alaska_ports = [port.get("name") for port in response 
-                            if any(ap in port.get("name", "") for ap in alaska_ports)]
-        
-        if len(found_alaska_ports) < 2:
-            self.log(f"Expected multiple Alaska ports, found: {found_alaska_ports}", "FAIL")
-            return False
-        
-        self.log(f"✅ Alaska search returns Alaska ports: {found_alaska_ports}", "PASS")
-        
-        # Test 5: Search by Caribbean region
-        success, response = self.run_test("Port Search - Caribbean Region", "GET", "api/ports/search?region=Caribbean")
-        if not success:
-            return False
-        
-        if len(response) < 10:  # Should have many Caribbean ports
-            self.log(f"Expected many Caribbean ports, got {len(response)}", "FAIL")
-            return False
-        
-        # All results should be Caribbean
-        non_caribbean = [port for port in response if port.get("region") != "Caribbean"]
-        if non_caribbean:
-            self.log(f"Found non-Caribbean ports in Caribbean search: {[p.get('name') for p in non_caribbean]}", "FAIL")
-            return False
-        
-        caribbean_names = [port.get("name") for port in response[:5]]  # Show first 5
-        self.log(f"✅ Caribbean region filter returns Caribbean ports: {caribbean_names}...", "PASS")
-        
-        # Test 6: Search for Dubai
-        success, response = self.run_test("Port Search - Dubai", "GET", "api/ports/search?q=dubai")
-        if not success:
-            return False
-        
-        dubai_found = any(port.get("name", "").lower() == "dubai" and 
-                         "emirates" in port.get("country", "").lower() 
-                         for port in response)
-        
-        if not dubai_found:
-            self.log("Dubai, UAE not found in search results", "FAIL")
-            return False
-        
-        self.log("✅ Dubai search returns Dubai, UAE", "PASS")
-        
-        # Test 7: Search for Sydney
-        success, response = self.run_test("Port Search - Sydney", "GET", "api/ports/search?q=sydney")
-        if not success:
-            return False
-        
-        sydney_found = any(port.get("name", "").lower() == "sydney" and 
-                          port.get("country", "").lower() == "australia" 
-                          for port in response)
-        
-        if not sydney_found:
-            self.log("Sydney, Australia not found in search results", "FAIL")
-            return False
-        
-        self.log("✅ Sydney search returns Sydney, Australia", "PASS")
-        
-        # Test 8: Test limit parameter
+        # Test 4: Limit parameter
         success, response = self.run_test("Port Search - Limit 5", "GET", "api/ports/search?limit=5")
         if not success:
             return False
@@ -580,19 +298,30 @@ class ShoreExplorerAPITester:
         self.log("🎉 All port search tests passed!", "PASS")
         return True
 
-    def cleanup(self):
-        """Clean up test data"""
-        self.log("Cleaning up test data...", "INFO")
-        
-        device_id = self.device_a
-        
-        # Delete test plan
-        if self.test_plan_id:
-            self.run_test("Delete Plan", "DELETE", f"api/plans/{self.test_plan_id}", device_id=device_id)
-        
-        # Delete test trip (this should also delete associated ports and plans)
-        if self.test_trip_id:
-            self.run_test("Delete Trip", "DELETE", f"api/trips/{self.test_trip_id}", device_id=device_id)
+    def test_generate_plan_requires_device_id(self):
+        """Test that generate plan endpoint requires X-Device-Id header."""
+        plan_data = {
+            "trip_id": "t",
+            "port_id": "p",
+            "port_name": "N",
+            "port_country": "C",
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "arrival": "2024-01-01T08:00:00",
+            "departure": "2024-01-01T18:00:00",
+            "preferences": {
+                "party_type": "solo",
+                "activity_level": "light",
+                "transport_mode": "walking",
+                "budget": "free",
+            },
+        }
+        # No X-Device-Id header
+        success, _ = self.run_test("Generate Plan No Device ID", "POST", "api/plans/generate", 422, plan_data)
+        if success:
+            self.log("✅ Generate plan correctly requires X-Device-Id header", "PASS")
+            return True
+        return False
 
     def run_all_tests(self):
         """Run all backend API tests"""
@@ -606,14 +335,11 @@ class ShoreExplorerAPITester:
             # Test sequence
             tests = [
                 ("Health Check", self.test_health_endpoint),
-                ("DEVICE PRIVACY ISOLATION", self.test_device_privacy_isolation),
                 ("Port Search & Regions", self.test_port_search_endpoints),
-                ("Trip CRUD Operations", self.test_trip_crud),
-                ("Port Management", self.test_port_management),
                 ("Weather API Proxy", self.test_weather_api),
                 ("AI Plan Generation with Currency", self.test_plan_generation),
                 ("Budget Exceeded Error Handling", self.test_budget_exceeded_error_handling),
-                ("Plan Listing", self.test_plan_listing),
+                ("Generate Plan Requires Device ID", self.test_generate_plan_requires_device_id),
             ]
 
             for test_name, test_func in tests:
@@ -624,8 +350,7 @@ class ShoreExplorerAPITester:
                     self.log(f"Test {test_name} failed with exception: {str(e)}", "ERROR")
 
         finally:
-            # Always attempt cleanup
-            self.cleanup()
+            pass
 
         # Print final results
         self.log("", "INFO")

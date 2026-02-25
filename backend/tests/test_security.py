@@ -10,9 +10,7 @@ from fastapi.testclient import TestClient
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-with patch("boto3.resource") as mock_boto_resource:
-    mock_boto_resource.return_value = MagicMock()
-    from server import _sanitize, app
+from server import _sanitize, app  # noqa: E402
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -21,30 +19,22 @@ client = TestClient(app, raise_server_exceptions=False)
 
 
 class TestSecurityHeaders:
-    @patch("server.db_client")
-    def test_x_content_type_options(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_x_content_type_options(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert r.headers.get("x-content-type-options") == "nosniff"
 
-    @patch("server.db_client")
-    def test_x_frame_options(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_x_frame_options(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert r.headers.get("x-frame-options") == "DENY"
 
-    @patch("server.db_client")
-    def test_referrer_policy(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_referrer_policy(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
 
-    @patch("server.db_client")
-    def test_content_security_policy_present(self, mock_db_client):
-        mock_db_client.ping.return_value = None
+    def test_content_security_policy_present(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "k"}):
             r = client.get("/api/health")
         assert "content-security-policy" in r.headers
@@ -69,76 +59,19 @@ class TestCORSHeaders:
 
 
 class TestInputValidation:
-    # PortInput
-    def test_port_name_too_long_rejected(self):
-        r = client.post(
-            "/api/trips/trip-1/ports",
-            json={
-                "name": "A" * 101,
-                "country": "Spain",
-                "latitude": 41.38,
-                "longitude": 2.19,
-                "arrival": "2025-06-01T08:00",
-                "departure": "2025-06-01T18:00",
-            },
-            headers={"X-Device-Id": "dev-1"},
-        )
-        assert r.status_code == 422
-
-    def test_port_latitude_out_of_range_rejected(self):
-        r = client.post(
-            "/api/trips/trip-1/ports",
-            json={
-                "name": "Barcelona",
-                "country": "Spain",
-                "latitude": 999.0,
-                "longitude": 2.19,
-                "arrival": "2025-06-01T08:00",
-                "departure": "2025-06-01T18:00",
-            },
-            headers={"X-Device-Id": "dev-1"},
-        )
-        assert r.status_code == 422
-
-    def test_port_longitude_out_of_range_rejected(self):
-        r = client.post(
-            "/api/trips/trip-1/ports",
-            json={
-                "name": "Barcelona",
-                "country": "Spain",
-                "latitude": 41.38,
-                "longitude": -999.0,
-                "arrival": "2025-06-01T08:00",
-                "departure": "2025-06-01T18:00",
-            },
-            headers={"X-Device-Id": "dev-1"},
-        )
-        assert r.status_code == 422
-
-    # TripInput
-    def test_trip_ship_name_too_long_rejected(self):
-        r = client.post(
-            "/api/trips",
-            json={"ship_name": "S" * 201, "cruise_line": "Test Line"},
-            headers={"X-Device-Id": "dev-1"},
-        )
-        assert r.status_code == 422
-
-    def test_trip_empty_ship_name_rejected(self):
-        r = client.post(
-            "/api/trips",
-            json={"ship_name": "", "cruise_line": "Test"},
-            headers={"X-Device-Id": "dev-1"},
-        )
-        assert r.status_code == 422
-
-    # PlanPreferences – Literal validation
+    # GeneratePlanInput validation
     def test_invalid_party_type_rejected(self):
         r = client.post(
             "/api/plans/generate",
             json={
                 "trip_id": "t1",
                 "port_id": "p1",
+                "port_name": "Barcelona",
+                "port_country": "Spain",
+                "latitude": 41.38,
+                "longitude": 2.19,
+                "arrival": "2025-06-01T08:00",
+                "departure": "2025-06-01T18:00",
                 "preferences": {
                     "party_type": "INVALID",
                     "activity_level": "light",
@@ -156,6 +89,12 @@ class TestInputValidation:
             json={
                 "trip_id": "t1",
                 "port_id": "p1",
+                "port_name": "Barcelona",
+                "port_country": "Spain",
+                "latitude": 41.38,
+                "longitude": 2.19,
+                "arrival": "2025-06-01T08:00",
+                "departure": "2025-06-01T18:00",
                 "preferences": {
                     "party_type": "solo",
                     "activity_level": "extreme",
@@ -173,6 +112,12 @@ class TestInputValidation:
             json={
                 "trip_id": "t1",
                 "port_id": "p1",
+                "port_name": "Barcelona",
+                "port_country": "Spain",
+                "latitude": 41.38,
+                "longitude": 2.19,
+                "arrival": "2025-06-01T08:00",
+                "departure": "2025-06-01T18:00",
                 "preferences": {
                     "party_type": "solo",
                     "activity_level": "light",
@@ -186,13 +131,19 @@ class TestInputValidation:
         assert r.status_code == 422
 
     def test_valid_currency_accepted(self):
-        """Valid currency passes Pydantic validation (may fail later at DB layer)."""
+        """Valid currency passes Pydantic validation (may fail later at LLM layer)."""
         # We only need 422 NOT to be returned for valid input
         r = client.post(
             "/api/plans/generate",
             json={
                 "trip_id": "t1",
                 "port_id": "p1",
+                "port_name": "Barcelona",
+                "port_country": "Spain",
+                "latitude": 41.38,
+                "longitude": 2.19,
+                "arrival": "2025-06-01T08:00",
+                "departure": "2025-06-01T18:00",
                 "preferences": {
                     "party_type": "solo",
                     "activity_level": "light",
@@ -204,6 +155,29 @@ class TestInputValidation:
             headers={"X-Device-Id": "dev-1"},
         )
         assert r.status_code != 422
+
+    def test_generate_plan_latitude_out_of_range_rejected(self):
+        r = client.post(
+            "/api/plans/generate",
+            json={
+                "trip_id": "t1",
+                "port_id": "p1",
+                "port_name": "Barcelona",
+                "port_country": "Spain",
+                "latitude": 999.0,
+                "longitude": 2.19,
+                "arrival": "2025-06-01T08:00",
+                "departure": "2025-06-01T18:00",
+                "preferences": {
+                    "party_type": "solo",
+                    "activity_level": "light",
+                    "transport_mode": "walking",
+                    "budget": "free",
+                },
+            },
+            headers={"X-Device-Id": "dev-1"},
+        )
+        assert r.status_code == 422
 
     # Weather endpoint
     def test_weather_latitude_out_of_range_rejected(self):
@@ -231,22 +205,6 @@ class TestInputValidation:
             mock_client.get = AsyncMock(return_value=mock_resp)
             r = client.get("/api/weather?latitude=41&longitude=2&date=2025-06-01")
         assert r.status_code == 200
-
-    # Pagination limits
-    def test_list_trips_limit_capped(self):
-        r = client.get(
-            "/api/trips?limit=999",
-            headers={"X-Device-Id": "dev-1"},
-        )
-        # 422 because limit > 100
-        assert r.status_code == 422
-
-    def test_list_plans_limit_capped(self):
-        r = client.get(
-            "/api/plans?limit=999",
-            headers={"X-Device-Id": "dev-1"},
-        )
-        assert r.status_code == 422
 
 
 # ── Prompt sanitization helper ───────────────────────────────────────────────

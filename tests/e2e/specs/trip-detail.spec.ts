@@ -5,11 +5,16 @@
  * and navigation to the port planner.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort, buildPlan } from './fixtures';
 
 test.describe('Trip Detail Page', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      plans: [buildPlan()],
+      seedTrips: true,
+      seedPlans: true,
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}`);
   });
 
@@ -48,32 +53,30 @@ test.describe('Trip Detail Page', () => {
 
     // After acceptance, we should navigate to /trips
     await expect(page).toHaveURL(/\/trips$/);
+
+    const storesAfterDelete = await page.evaluate(() => ({
+      trips: JSON.parse(localStorage.getItem('shoreexplorer_trips') || '{}'),
+      plans: JSON.parse(localStorage.getItem('shoreexplorer_plans') || '{}'),
+    }));
+    expect(storesAfterDelete.trips[VALID_TRIP_ID]).toBeUndefined();
+    const orphanedPlans = Object.values(storesAfterDelete.plans).filter(
+      (plan: any) => plan.trip_id === VALID_TRIP_ID
+    );
+    expect(orphanedPlans).toHaveLength(0);
   });
 
   test('shows "Ports of Call" section heading with count', async ({ page }) => {
     await expect(page.getByText(/ports of call \(1\)/i)).toBeVisible();
   });
 
-  test('shows trip expiry banner with date', async ({ page }) => {
-    await expect(page.getByTestId('trip-expiry-banner')).toBeVisible();
-    await expect(page.getByTestId('trip-expiry-banner')).toContainText('automatically removed on');
-    await expect(page.getByTestId('trip-expiry-banner')).toContainText('12 Feb 2026');
+  test('does not show expiry banner', async ({ page }) => {
+    await expect(page.getByTestId('trip-expiry-banner')).not.toBeAttached();
   });
 });
 
 test.describe('Trip Detail — Trip Not Found', () => {
-  test('displays "Trip not found" when API returns 404', async ({ page }) => {
-    // Override the trip GET to return 404
-    await page.route(/\/api\/trips\/[^/]+$/, (route) => {
-      if (route.request().method() === 'GET') {
-        return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'Trip not found' }) });
-      }
-      return route.continue();
-    });
-    await page.route('**/api/ports/regions', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
-    );
-
+  test('displays "Trip not found" when trip is missing in local storage', async ({ page }) => {
+    await mockAllApiRoutes(page, { trips: [], seedTrips: true });
     await page.goto('/trips/nonexistent-trip-id');
     await expect(page.getByText(/trip not found/i)).toBeVisible();
   });

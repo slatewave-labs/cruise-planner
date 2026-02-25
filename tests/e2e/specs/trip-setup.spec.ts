@@ -5,7 +5,7 @@
  * removing ports, form validation, and the save flow.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, buildTrip, buildPort } from './fixtures';
 
 test.describe('Trip Setup — Create New Trip', () => {
   test.beforeEach(async ({ page }) => {
@@ -144,7 +144,7 @@ test.describe('Trip Setup — Create New Trip', () => {
 
     await page.getByTestId('save-trip-btn').click();
 
-    await expect(page).toHaveURL(new RegExp(`/trips/${VALID_TRIP_ID}`));
+    await expect(page).toHaveURL(/\/trips\/[0-9a-f-]+$/);
   });
 
   test('port search shows suggestions dropdown on focus', async ({ page }) => {
@@ -161,7 +161,10 @@ test.describe('Trip Setup — Create New Trip', () => {
 
 test.describe('Trip Setup — Edit Existing Trip', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}/edit`);
   });
 

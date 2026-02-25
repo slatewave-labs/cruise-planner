@@ -91,6 +91,9 @@ export interface PortSuggestion {
 
 export interface MockOptions {
   trips?: Trip[];
+  plans?: Plan[];
+  seedTrips?: boolean;
+  seedPlans?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +118,6 @@ export function buildTrip(overrides: Partial<Trip> = {}): Trip {
     ports: [],
     created_at: '2026-01-15T10:00:00Z',
     updated_at: '2026-01-15T10:00:00Z',
-    expires_at: '2026-02-12T10:00:00Z',
     ...overrides,
   };
 }
@@ -260,8 +262,47 @@ export function buildRegions(): string[] {
  */
 export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): Promise<void> {
   const tripWithPort = buildTrip({ ports: [buildPort()] });
-  const plan = buildPlan();
+  const defaultPlan = buildPlan();
   const trips = options.trips ?? [tripWithPort];
+  const plans = options.plans ?? [defaultPlan];
+  const seedTrips = options.seedTrips ?? false;
+  const seedPlans = options.seedPlans ?? false;
+  const seedSignature = JSON.stringify({ seedTrips, seedPlans, trips, plans });
+
+  // Seed localStorage for local-only trip/plan persistence (opt-in).
+  // Install once per page to avoid accumulating init scripts.
+  const asAnyPage = page as unknown as {
+    __seedInstalled?: boolean;
+    __seedSignature?: string;
+  };
+  if (!asAnyPage.__seedInstalled) {
+    await page.addInitScript((seed) => {
+      if (window.sessionStorage.getItem('__shoreexplorer_e2e_seeded__')) {
+        return;
+      }
+      window.sessionStorage.setItem('__shoreexplorer_e2e_seeded__', '1');
+
+      window.localStorage.removeItem('shoreexplorer_trips');
+      window.localStorage.removeItem('shoreexplorer_plans');
+
+      if (seed.seedTrips) {
+        const tripStore = Object.fromEntries(seed.trips.map((trip) => [trip.trip_id, trip]));
+        window.localStorage.setItem('shoreexplorer_trips', JSON.stringify(tripStore));
+      }
+
+      if (seed.seedPlans) {
+        const planStore = Object.fromEntries(seed.plans.map((p) => [p.plan_id, p]));
+        window.localStorage.setItem('shoreexplorer_plans', JSON.stringify(planStore));
+      }
+    }, { trips, plans, seedTrips, seedPlans });
+    asAnyPage.__seedInstalled = true;
+    asAnyPage.__seedSignature = seedSignature;
+  } else if (asAnyPage.__seedSignature !== seedSignature) {
+    throw new Error(
+      'mockAllApiRoutes called with different seed options on the same page. ' +
+      'Use one seed setup per test page to avoid flaky localStorage initialization.'
+    );
+  }
 
   // Health
   await page.route('**/api/health', (route) =>
@@ -278,62 +319,43 @@ export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): P
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildRegions()) })
   );
 
-  // List trips
-  await page.route('**/api/trips', (route) => {
-    if (route.request().method() === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(trips) });
+  // Generate plan
+  await page.route('**/api/plans/generate', async (route) => {
+    let payload: Partial<Plan> & { preferences?: Plan['preferences'] } = {};
+    try {
+      payload = route.request().postDataJSON();
+    } catch {
+      payload = {};
     }
-    // POST — create trip
-    return route.fulfill({
-      status: 201,
-      contentType: 'application/json',
-      body: JSON.stringify({ trip_id: VALID_TRIP_ID, message: 'Trip created' }),
-    });
-  });
 
-  // Single trip (GET / PUT / DELETE)
-  await page.route(/\/api\/trips\/[^/]+$/, (route) => {
-    const method = route.request().method();
-    if (method === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(tripWithPort) });
-    }
-    if (method === 'PUT') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'Trip updated' }) });
-    }
-    if (method === 'DELETE') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'Trip deleted' }) });
-    }
-    return route.continue();
-  });
-
-  // Add port to trip
-  await page.route(/\/api\/trips\/[^/]+\/ports$/, (route) => {
-    if (route.request().method() === 'POST') {
+    if (!payload.trip_id || !payload.port_id) {
       return route.fulfill({
-        status: 201,
+        status: 422,
         contentType: 'application/json',
-        body: JSON.stringify({ port_id: VALID_PORT_ID, message: 'Port added' }),
+        body: JSON.stringify({ detail: 'Missing trip_id or port_id in generate-plan payload' }),
       });
     }
-    return route.continue();
-  });
 
-  // Update / delete port
-  await page.route(/\/api\/trips\/[^/]+\/ports\/[^/]+$/, (route) => {
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'ok' }) });
-  });
+    const generatedPlan = buildPlan({
+      plan_id: `plan-e2e-${Math.random().toString(16).slice(2, 10)}`,
+      trip_id: payload.trip_id,
+      port_id: payload.port_id,
+      port_name: typeof payload.port_name === 'string' ? payload.port_name : defaultPlan.port_name,
+      port_country:
+        typeof payload.port_country === 'string'
+          ? payload.port_country
+          : defaultPlan.port_country,
+      preferences: {
+        ...defaultPlan.preferences,
+        ...(payload.preferences || {}),
+      },
+    });
 
-  // Generate plan
-  await page.route('**/api/plans/generate', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(plan) })
-  );
-
-  // Get plan (must NOT match /api/plans/generate)
-  await page.route(/\/api\/plans\/(?!generate)[^/]+$/, (route) => {
-    if (route.request().method() === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(plan) });
-    }
-    return route.continue();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(generatedPlan),
+    });
   });
 
   // Weather

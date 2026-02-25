@@ -5,11 +5,14 @@
  * error handling, and navigation to the generated plan.
  */
 import { test, expect } from '@playwright/test';
-import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, VALID_PLAN_ID } from './fixtures';
+import { mockAllApiRoutes, VALID_TRIP_ID, VALID_PORT_ID, buildTrip, buildPort } from './fixtures';
 
 test.describe('Port Planner Page', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
+    });
     await page.goto(`/trips/${VALID_TRIP_ID}/ports/${VALID_PORT_ID}/plan`);
   });
 
@@ -55,7 +58,7 @@ test.describe('Port Planner Page', () => {
 
   test('"Generate Day Plan" button triggers plan generation and redirects', async ({ page }) => {
     await page.getByTestId('generate-plan-btn').click();
-    await expect(page).toHaveURL(new RegExp(`/plans/${VALID_PLAN_ID}`));
+    await expect(page).toHaveURL(/\/plans\/plan-e2e-[0-9a-f]+$/);
   });
 
   test('"Back to Trip" button navigates back to trip detail', async ({ page }) => {
@@ -67,7 +70,10 @@ test.describe('Port Planner Page', () => {
 test.describe('Port Planner — Error Handling', () => {
   test('displays error message when plan generation fails', async ({ page }) => {
     // Mock everything except plan generation
-    await mockAllApiRoutes(page);
+    await mockAllApiRoutes(page, {
+      trips: [buildTrip({ ports: [buildPort()] })],
+      seedTrips: true,
+    });
 
     // Override plan generation to return an error
     await page.route('**/api/plans/generate', (route) =>
