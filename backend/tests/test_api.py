@@ -44,8 +44,8 @@ def test_generate_plan_success(mock_llm_client_class):
         "port_country": "Spain",
         "latitude": 41.38,
         "longitude": 2.19,
-        "arrival": "2023-10-01T08:00:00",
-        "departure": "2023-10-01T18:00:00",
+        "arrival": "2027-06-01T08:00:00",
+        "departure": "2027-06-01T18:00:00",
         "ship_name": "Test Ship",
         "preferences": {
             "party_type": "solo",
