@@ -167,6 +167,20 @@ export default function TripSetup() {
   const updatePort = (index, field, value) => {
     const updated = [...ports];
     updated[index] = { ...updated[index], [field]: value };
+
+    // When arrival changes, ensure departure stays valid
+    if (field === 'arrival' && value) {
+      const currentDeparture = updated[index].departure;
+      if (!currentDeparture) {
+        // Auto-populate departure with current time (or arrival if now < arrival)
+        const now = formatDateTimeLocal(new Date());
+        updated[index].departure = now > value ? now : value;
+      } else if (currentDeparture < value) {
+        // Clamp departure to arrival when it falls before the new arrival
+        updated[index].departure = value;
+      }
+    }
+
     setPorts(updated);
   };
 

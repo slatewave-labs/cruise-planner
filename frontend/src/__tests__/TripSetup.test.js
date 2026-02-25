@@ -272,3 +272,58 @@ describe('TripSetup — datetime picker', () => {
     expect(departureDateInput).toHaveAttribute('min', '2027-05-10');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Departure auto-populate & clamping
+// ---------------------------------------------------------------------------
+describe('TripSetup — departure auto-populate & validation', () => {
+  test('setting arrival auto-populates departure when departure is empty', async () => {
+    renderTripSetup();
+    fireEvent.click(screen.getByTestId('add-port-btn'));
+    await waitFor(() => expect(screen.getByTestId('port-arrival-0-date')).toBeInTheDocument());
+
+    // Set a future arrival date
+    const arrivalDateInput = screen.getByTestId('port-arrival-0-date');
+    fireEvent.change(arrivalDateInput, { target: { value: '2027-05-10' } });
+
+    // Departure date should now be populated (not empty)
+    const departureDateInput = screen.getByTestId('port-departure-0-date');
+    expect(departureDateInput.value).toBeTruthy();
+  });
+
+  test('departure is clamped to arrival when arrival moves past current departure', async () => {
+    renderTripSetup();
+    fireEvent.click(screen.getByTestId('add-port-btn'));
+    await waitFor(() => expect(screen.getByTestId('port-arrival-0-date')).toBeInTheDocument());
+
+    // Set an initial arrival and departure
+    const arrivalDateInput = screen.getByTestId('port-arrival-0-date');
+    fireEvent.change(arrivalDateInput, { target: { value: '2027-05-10' } });
+
+    const departureDateInput = screen.getByTestId('port-departure-0-date');
+    fireEvent.change(departureDateInput, { target: { value: '2027-05-10' } });
+
+    // Now move arrival to a later date — departure should be clamped
+    fireEvent.change(arrivalDateInput, { target: { value: '2027-05-15' } });
+
+    expect(departureDateInput.value).toBe('2027-05-15');
+  });
+
+  test('departure is NOT changed when arrival moves to earlier date', async () => {
+    renderTripSetup();
+    fireEvent.click(screen.getByTestId('add-port-btn'));
+    await waitFor(() => expect(screen.getByTestId('port-arrival-0-date')).toBeInTheDocument());
+
+    // Set arrival and departure to the same date
+    const arrivalDateInput = screen.getByTestId('port-arrival-0-date');
+    fireEvent.change(arrivalDateInput, { target: { value: '2027-05-15' } });
+
+    const departureDateInput = screen.getByTestId('port-departure-0-date');
+    fireEvent.change(departureDateInput, { target: { value: '2027-05-20' } });
+
+    // Move arrival to earlier date — departure should remain at 2027-05-20
+    fireEvent.change(arrivalDateInput, { target: { value: '2027-05-10' } });
+
+    expect(departureDateInput.value).toBe('2027-05-20');
+  });
+});
