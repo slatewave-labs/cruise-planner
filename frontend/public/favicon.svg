@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background rounded rect -->
+  <rect width="512" height="512" rx="96" fill="#0F172A"/>
+  
+  <!-- Anchor icon, centered and scaled to 512x512 -->
+  <!-- Ring at top -->
+  <circle cx="256" cy="160" r="40" fill="none" stroke="#F5F5F4" stroke-width="28" stroke-linecap="round"/>
+  <!-- Center dot / hole -->
+  <circle cx="256" cy="160" r="14" fill="#0F172A"/>
+  
+  <!-- Vertical shaft -->
+  <line x1="256" y1="196" x2="256" y2="380" stroke="#F5F5F4" stroke-width="28" stroke-linecap="round"/>
+  
+  <!-- Horizontal crossbar -->
+  <line x1="168" y1="240" x2="344" y2="240" stroke="#F5F5F4" stroke-width="28" stroke-linecap="round"/>
+  
+  <!-- Left fluke arc -->
+  <path d="M256 380 Q160 380 160 300" fill="none" stroke="#F5F5F4" stroke-width="28" stroke-linecap="round"/>
+  <!-- Right fluke arc -->
+  <path d="M256 380 Q352 380 352 300" fill="none" stroke="#F5F5F4" stroke-width="28" stroke-linecap="round"/>
+  
+  <!-- Left fluke tip (coral accent) -->
+  <circle cx="160" cy="300" r="18" fill="#F43F5E"/>
+  <!-- Right fluke tip (coral accent) -->
+  <circle cx="352" cy="300" r="18" fill="#F43F5E"/>
+  
+  <!-- Ring top coral accent -->
+  <circle cx="256" cy="120" r="14" fill="#F43F5E"/>
+</svg>

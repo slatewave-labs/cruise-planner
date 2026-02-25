@@ -1,0 +1,6 @@
+# ShoreExplorer robots.txt
+# This file is served in non-production environments.
+# The production version (allowing only the homepage) is injected during deployment.
+
+User-agent: *
+Disallow: /

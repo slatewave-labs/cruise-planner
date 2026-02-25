@@ -227,6 +227,7 @@ jobs:
           yarn build
         env:
           REACT_APP_BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
+          REACT_APP_SITE_URL: ${{ steps.alb.outputs.backend_url }}
           CI: true
 
       - name: Deploy frontend to S3
@@ -254,6 +255,27 @@ jobs:
               --region "$AWS_REGION"
           fi
 
+          # Upload prod-specific robots.txt: allow search engines on homepage only.
+          # This overwrites the default (block-all) version built into the static bundle.
+          cat > /tmp/robots-prod.txt << 'ROBOTS'
+# ShoreExplorer — production robots.txt
+# Search engines may index the homepage only. All deeper paths are excluded.
+
+User-agent: *
+Allow: /$
+Disallow: /
+
+Sitemap: $SITE_URL/sitemap.xml
+ROBOTS
+          # Substitute the actual site URL into the Sitemap directive
+          SITE_URL="${{ steps.alb.outputs.backend_url }}"
+          sed -i "s|\$SITE_URL|${SITE_URL}|g" /tmp/robots-prod.txt
+
+          aws s3 cp /tmp/robots-prod.txt "s3://${S3_BUCKET}/robots.txt" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/plain" \
+            --region "$AWS_REGION"
+
           echo "✅ Frontend deployed to S3"
 
       - name: Invalidate CloudFront cache
@@ -262,7 +284,7 @@ jobs:
           if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
             INVALIDATION_ID=$(aws cloudfront create-invalidation \
               --distribution-id "$CF_DIST_ID" \
-              --paths "/index.html" "/asset-manifest.json" "/service-worker.js" \
+              --paths "/index.html" "/asset-manifest.json" "/service-worker.js" "/robots.txt" \
               --query 'Invalidation.Id' --output text)
             echo "🔄 CloudFront invalidation created: ${INVALIDATION_ID}"
           else
