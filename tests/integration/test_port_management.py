@@ -3,7 +3,7 @@ Integration tests for Port Search (remaining backend endpoint).
 Port CRUD within trips is now handled client-side via localStorage.
 """
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 import sys
 import os
