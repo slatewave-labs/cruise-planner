@@ -1,9 +1,12 @@
 # Environment files
 *.env
 *.env.*
--e 
+-e
+
 # Node modules
 frontend/node_modules*
+tests/e2e/node_modules*
+
 # Pycache
 __pycache__/
 .pytest_cache/
@@ -12,26 +15,21 @@ __pycache__/
 test-results/
 test_reports/
 junit.xml
-backend_test_report.html
 frontend/coverage/
 *.sarif
 
 # Build artifacts
 frontend/build/
-backend/dist/
 *.pyc
 
-# Python virtual environments
-venv/
-backend/venv/
-.venv/
-
-# Data & Logs
-data/
+# Logs
 *.log
 
 # Playwright
 tests/e2e/test-results/
 tests/e2e/playwright-report/
 tests/e2e/blob-report/
-tests/e2e/node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db

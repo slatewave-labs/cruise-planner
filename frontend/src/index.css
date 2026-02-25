@@ -7,7 +7,7 @@
   --primary-fg: #F8FAFC;
   --secondary: #F5F5F4;
   --secondary-fg: #1C1917;
-  --accent: #F43F5E;
+  --accent: #3B82F6;
   --accent-fg: #FFFFFF;
   --muted: #E7E5E4;
   --muted-fg: #57534E;
@@ -38,13 +38,6 @@ body {
 
 h1, h2, h3, h4 {
   font-family: 'Playfair Display', serif;
-}
-
-.leaflet-container {
-  width: 100%;
-  height: 100%;
-  border-radius: 1rem;
-  z-index: 0;
 }
 
 ::-webkit-scrollbar {
