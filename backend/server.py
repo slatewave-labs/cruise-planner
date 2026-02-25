@@ -4,14 +4,14 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -120,6 +120,43 @@ def _sanitize(value: str) -> str:
     return _CONTROL_CHAR_RE.sub("", value).strip()
 
 
+def _parse_datetime(value: str, field_name: str) -> datetime:
+    """Parse an ISO-like datetime string, returning a naive datetime."""
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    raise ValueError(
+        f"{field_name} must be a valid datetime in ISO format "
+        "(YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS)"
+    )
+
+
+def _validate_arrival_departure(values: dict) -> dict:
+    """Shared validation: arrival not >24h in past, departure not before arrival."""
+    arrival_str = values.get("arrival", "")
+    departure_str = values.get("departure", "")
+    if not arrival_str or not departure_str:
+        return values
+
+    arrival_dt = _parse_datetime(arrival_str, "arrival")
+    departure_dt = _parse_datetime(departure_str, "departure")
+
+    earliest_allowed = datetime.now() - timedelta(hours=24)
+    if arrival_dt < earliest_allowed:
+        raise ValueError(
+            "arrival must not be more than 24 hours in the past"
+        )
+
+    if departure_dt < arrival_dt:
+        raise ValueError(
+            "departure must not be before arrival"
+        )
+
+    return values
+
+
 class PortInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     country: str = Field(min_length=1, max_length=100)
@@ -127,6 +164,13 @@ class PortInput(BaseModel):
     longitude: float = Field(ge=-180.0, le=180.0)
     arrival: str = Field(min_length=1, max_length=50)
     departure: str = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def check_arrival_departure(self) -> "PortInput":
+        _validate_arrival_departure(
+            {"arrival": self.arrival, "departure": self.departure}
+        )
+        return self
 
 
 class TripInput(BaseModel):
@@ -175,6 +219,13 @@ class GeneratePlanInput(BaseModel):
     departure: str = Field(min_length=1, max_length=50)
     ship_name: str = Field(default="", max_length=200)
     preferences: PlanPreferences
+
+    @model_validator(mode="after")
+    def check_arrival_departure(self) -> "GeneratePlanInput":
+        _validate_arrival_departure(
+            {"arrival": self.arrival, "departure": self.departure}
+        )
+        return self
 
 
 # --- Health ---
