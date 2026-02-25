@@ -1,6 +1,5 @@
-# ShoreExplorer robots.txt
-# This file is served in non-production environments.
-# The production version (allowing only the homepage) is injected during deployment.
+# Development robots.txt — blocks crawlers during local development.
+# Production deployments generate their own robots.txt via deploy-prod.yml.
 
 User-agent: *
 Disallow: /

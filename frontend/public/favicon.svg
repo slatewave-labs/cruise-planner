@@ -1,29 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Background rounded rect (Sunset Coral) -->
-  <rect width="512" height="512" rx="96" fill="#F43F5E"/>
-  
-  <!-- Anchor icon, centered and scaled to 512x512 -->
-  <!-- Ring at top -->
-  <circle cx="256" cy="160" r="40" fill="none" stroke="#0F172A" stroke-width="28" stroke-linecap="round"/>
-  <!-- Center dot / hole -->
-  <circle cx="256" cy="160" r="14" fill="#F43F5E"/>
-  
-  <!-- Vertical shaft -->
-  <line x1="256" y1="196" x2="256" y2="380" stroke="#0F172A" stroke-width="28" stroke-linecap="round"/>
-  
-  <!-- Horizontal crossbar -->
-  <line x1="168" y1="240" x2="344" y2="240" stroke="#0F172A" stroke-width="28" stroke-linecap="round"/>
-  
-  <!-- Left fluke arc -->
-  <path d="M256 380 Q160 380 160 300" fill="none" stroke="#0F172A" stroke-width="28" stroke-linecap="round"/>
-  <!-- Right fluke arc -->
-  <path d="M256 380 Q352 380 352 300" fill="none" stroke="#0F172A" stroke-width="28" stroke-linecap="round"/>
-  
-  <!-- Left fluke tip (deep ocean accent) -->
-  <circle cx="160" cy="300" r="18" fill="#0F172A"/>
-  <!-- Right fluke tip (deep ocean accent) -->
-  <circle cx="352" cy="300" r="18" fill="#0F172A"/>
-  
-  <!-- Ring top deep ocean accent -->
-  <circle cx="256" cy="120" r="14" fill="#0F172A"/>
+  <rect width="512" height="512" rx="96" fill="#3B82F6"/>
+  <path d="M256 96 L406 256 L340 256 L340 416 L172 416 L172 256 L106 256 Z" fill="white" opacity="0.95"/>
 </svg>
