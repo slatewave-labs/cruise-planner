@@ -183,6 +183,7 @@ jobs:
           yarn build
         env:
           REACT_APP_BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
+          REACT_APP_SITE_URL: ${{ steps.alb.outputs.backend_url }}
           CI: true
 
       - name: Deploy frontend to S3

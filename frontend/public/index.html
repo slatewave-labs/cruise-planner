@@ -2,17 +2,41 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+  <!-- Favicon: SVG for modern browsers, ICO fallback for legacy -->
+  <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" sizes="32x32" />
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
   <meta name="theme-color" content="#0F172A" />
-  <meta name="description" content="ShoreExplorer - Plan your perfect day ashore at every cruise port of call" />
-  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+  <!-- Primary SEO meta -->
+  <title>ShoreExplorer — AI Cruise Port Day Planner</title>
+  <meta name="description" content="ShoreExplorer uses AI to build a personalised day itinerary for every cruise port you visit — weather, maps, and timings included. Free to use." />
+  <meta name="robots" content="index, follow" />
+
+  <!-- Open Graph (Facebook, WhatsApp, Slack previews) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="ShoreExplorer" />
+  <meta property="og:title" content="ShoreExplorer — Plan Your Perfect Day Ashore" />
+  <meta property="og:description" content="AI-powered cruise port day planner. Get a personalised itinerary for every port of call — with live weather, interactive maps, and exportable routes." />
+  <meta property="og:image" content="https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1200&q=85&fm=jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Cruise ship in tropical ocean waters" />
+  <meta property="og:url" content="%REACT_APP_SITE_URL%" />
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ShoreExplorer — Plan Your Perfect Day Ashore" />
+  <meta name="twitter:description" content="AI-powered cruise port day planner. Personalised itineraries with live weather and interactive maps." />
+  <meta name="twitter:image" content="https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1200&q=85&fm=jpg" />
+
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <title>ShoreExplorer</title>
 </head>
 <body>
   <noscript>You need to enable JavaScript to run ShoreExplorer.</noscript>
