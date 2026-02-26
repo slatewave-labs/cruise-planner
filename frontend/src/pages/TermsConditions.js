@@ -13,7 +13,7 @@ const sections = [
       'Please read these Terms of Use carefully before using ShoreExplorer.',
     paragraphs: [
       'By accessing or using ShoreExplorer (the "Service"), including our website and any associated applications, you acknowledge that you have read, understood, and agree to be bound by these Terms of Use ("Terms"). If you do not agree to these Terms, you must not access or use the Service.',
-      'These Terms constitute a legally binding agreement between you ("User", "you", or "your") and ShoreExplorer ("we", "us", or "our"). Your continued use of the Service following the posting of any changes to these Terms constitutes acceptance of those changes.',
+      'These Terms constitute a legally binding agreement between you ("User", "you", or "your") and Slatewave Labs ("we", "us", or "our"), the developer and operator of ShoreExplorer. Your continued use of the Service following the posting of any changes to these Terms constitutes acceptance of those changes.',
       'We recommend that you review these Terms periodically to stay informed of any updates. If you are using the Service on behalf of an organisation, you represent and warrant that you have the authority to bind that organisation to these Terms.',
     ],
     terms: [],
@@ -165,7 +165,7 @@ const sections = [
       'The backend services, databases, and APIs that power ShoreExplorer are hosted on AWS data centres. We use industry-standard cloud infrastructure to ensure reliable performance, data security, and availability.',
     ],
     terms: [
-      'ShoreExplorer\'s backend services run on AWS infrastructure located in the EU (London / eu-west-2) region, unless otherwise specified. Data may be processed in other AWS regions for redundancy and performance purposes.',
+      'ShoreExplorer\'s backend services run on AWS infrastructure located in the US East (Virginia / us-east-1) region, unless otherwise specified. Data may be processed in other AWS regions for redundancy and performance purposes.',
       'AWS provides physical security, network security, and infrastructure compliance certifications including ISO 27001, SOC 1/2/3, and GDPR compliance frameworks.',
       'Data transmitted between your device and ShoreExplorer\'s servers is encrypted in transit using TLS (Transport Layer Security). Data at rest is encrypted using AWS-managed encryption keys.',
       'ShoreExplorer relies on AWS\'s uptime commitments but does not guarantee uninterrupted availability of the Service. Planned maintenance, infrastructure incidents, or AWS outages may temporarily affect access.',
@@ -226,7 +226,7 @@ const sections = [
       'TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, ShoreExplorer, its owners, directors, employees, and affiliates shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, goodwill, or other intangible losses, arising out of or in connection with your use of (or inability to use) the Service.',
       'Without limiting the foregoing, ShoreExplorer shall not be liable for: missed cruise ship departures; personal injury or property damage during shore excursions; financial losses from third-party bookings; inaccurate weather forecasts; incorrect AI-generated information; or any actions taken based on information provided by the Service.',
       'In jurisdictions that do not allow the exclusion or limitation of certain warranties or liabilities, our liability shall be limited to the maximum extent permitted by law.',
-      'Nothing in these Terms excludes or limits liability for death or personal injury caused by negligence, fraud, or any other liability that cannot be excluded by law under the laws of England and Wales.',
+      'Nothing in these Terms excludes or limits liability for death or personal injury caused by negligence, fraud, or any other liability that cannot be excluded by applicable law.',
     ],
     url: null,
     linkLabel: null,
@@ -276,8 +276,9 @@ const sections = [
       'The legal framework under which these Terms operate.',
     paragraphs: [],
     terms: [
-      'These Terms shall be governed by and construed in accordance with the laws of England and Wales, without regard to its conflict of law provisions.',
-      'Any disputes arising out of or in connection with these Terms or your use of the Service shall be subject to the exclusive jurisdiction of the courts of England and Wales.',
+      'These Terms shall be governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to its conflict of law provisions.',
+      'Any disputes arising out of or in connection with these Terms or your use of the Service shall be subject to the exclusive jurisdiction of the state and federal courts located in the State of Delaware, United States.',
+      'If you are accessing the Service from outside the United States, you are responsible for compliance with any applicable local laws. Nothing in these Terms limits any consumer protection rights that cannot be waived or limited under the laws of your jurisdiction of residence.',
       'If any provision of these Terms is found to be unenforceable or invalid by a court of competent jurisdiction, that provision shall be limited or eliminated to the minimum extent necessary so that the remaining provisions of these Terms remain in full force and effect.',
       'Our failure to enforce any right or provision of these Terms shall not constitute a waiver of that right or provision.',
     ],
@@ -294,7 +295,7 @@ const sections = [
       'If you have any questions, concerns, or requests regarding these Terms of Use, our data practices, or any aspect of the ShoreExplorer Service, please contact us:',
     ],
     terms: [
-      'Email: support@shoreexplorer.com',
+      'Email: hello@slatewave-labs.com',
       'Please include "Terms of Use Enquiry" in the subject line of your email so we can direct your message appropriately.',
       'We aim to respond to all enquiries within 5 working days.',
     ],
@@ -334,7 +335,18 @@ export default function TermsConditions() {
             and use of the ShoreExplorer application and its associated
             services. ShoreExplorer is a cruise port day-trip planning tool that
             uses artificial intelligence, open weather data, interactive maps,
-            and curated activity links to help you plan shore excursions. Please
+            and curated activity links to help you plan shore excursions.
+            ShoreExplorer is built and maintained by{' '}
+            <a
+              href="https://slatewave-labs.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent font-semibold hover:underline"
+              aria-label="Slatewave Labs (opens in new tab)"
+            >
+              Slatewave Labs
+            </a>
+            . Please
             read these Terms carefully. By using ShoreExplorer, you agree to be
             bound by all of the terms set out below. For information about how
             we collect and process your data, please also review our{' '}
@@ -474,10 +486,10 @@ export default function TermsConditions() {
             <br />
             Questions? Contact us at{' '}
             <a
-              href="mailto:support@shoreexplorer.com"
+              href="mailto:hello@slatewave-labs.com"
               className="text-accent hover:underline"
             >
-              support@shoreexplorer.com
+              hello@slatewave-labs.com
             </a>
           </p>
         </div>

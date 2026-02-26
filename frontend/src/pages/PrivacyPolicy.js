@@ -218,7 +218,7 @@ const sections = [
     ],
     terms: [
       'Client-side storage: Trip data, generated plans, your device ID, and cookie preferences are stored in your browser\'s localStorage on your own device. This data is under your control and can be cleared at any time through your browser settings.',
-      'Backend infrastructure: Our backend services are hosted on Amazon Web Services (AWS) in the EU (London / eu-west-2) region. AWS provides industry-leading physical security, network security, and compliance certifications including ISO 27001 and SOC 1/2/3.',
+      'Backend infrastructure: Our backend services are hosted on Amazon Web Services (AWS) in the US East (Virginia / us-east-1) region. AWS provides industry-leading physical security, network security, and compliance certifications including ISO 27001 and SOC 1/2/3.',
       'Encryption in transit: All data transmitted between your device and ShoreExplorer\'s servers is encrypted using TLS (Transport Layer Security / HTTPS).',
       'Encryption at rest: Data stored on our backend servers is encrypted at rest using AWS-managed encryption keys.',
       'No account system: ShoreExplorer does not use passwords, email addresses, or user accounts. There are no login credentials to be compromised.',
@@ -253,11 +253,11 @@ const sections = [
   {
     number: 8,
     icon: UserCheck,
-    title: 'Your Rights Under GDPR',
+    title: 'Your Privacy Rights',
     description:
-      'Your data protection rights under the General Data Protection Regulation.',
+      'Your data protection rights under applicable privacy laws worldwide.',
     paragraphs: [
-      'If you are located in the European Economic Area (EEA) or the United Kingdom, you have the following rights under the General Data Protection Regulation (GDPR) and the UK GDPR. You can exercise any of these rights by contacting us at the email address in Section 12.',
+      'Depending on your location, you may have specific data protection rights under applicable privacy laws. Below we describe the rights available under the EU/UK General Data Protection Regulation (GDPR), the California Consumer Privacy Act (CCPA), and other applicable frameworks. You can exercise any of these rights by contacting us at the email address in Section 12.',
     ],
     terms: [
       'Right of access: You have the right to request a copy of the personal data we hold about you. Because ShoreExplorer uses anonymous device identifiers rather than personal accounts, you will need to provide your device ID (found in your browser\'s localStorage under the key used by the application) to help us locate your data.',
@@ -267,8 +267,10 @@ const sections = [
       'Right to data portability: You have the right to receive your personal data in a structured, commonly used, machine-readable format (such as JSON) and to transmit it to another controller.',
       'Right to object: You have the right to object to our processing of your data where we rely on legitimate interests as the legal basis. You can also object to processing for analytics purposes by declining cookies via the consent banner.',
       'Right to withdraw consent: Where we process data based on your consent (e.g. analytics cookies), you can withdraw consent at any time by clearing your cookies or adjusting your preferences via the cookie banner. Withdrawal of consent does not affect the lawfulness of processing carried out before withdrawal.',
-      'We will respond to all data rights requests within 30 days. There is no fee for exercising your rights, unless requests are manifestly unfounded or excessive.',
-      'If you are not satisfied with our response, you have the right to lodge a complaint with your local data protection supervisory authority. In the UK, this is the Information Commissioner\'s Office (ICO).',
+      'California residents (CCPA/CPRA): If you are a California resident, you have the right to know what personal information we collect, the right to delete your personal information, the right to opt out of the sale or sharing of personal information (note: ShoreExplorer does not sell your personal information), and the right to non-discrimination for exercising your privacy rights. To submit a verifiable consumer request, contact us at the email address in Section 12.',
+      'Other US state privacy laws: Residents of Virginia (VCDPA), Colorado (CPA), Connecticut (CTDPA), and other states with comprehensive privacy legislation may have similar rights to access, delete, and opt out of certain data processing. Contact us to exercise these rights.',
+      'We will respond to all data rights requests within 30 days (or within the time frame required by applicable law). There is no fee for exercising your rights, unless requests are manifestly unfounded or excessive.',
+      'If you are not satisfied with our response, you have the right to lodge a complaint with your local data protection supervisory authority. In the UK, this is the Information Commissioner\'s Office (ICO). In the EU, contact your national data protection authority. In the US, you may contact your state attorney general\'s office.',
     ],
     subsections: [],
     url: 'https://ico.org.uk/make-a-complaint/',
@@ -284,7 +286,7 @@ const sections = [
       'ShoreExplorer\'s infrastructure and third-party service providers are located in multiple jurisdictions. We ensure that appropriate safeguards are in place for any international transfers of personal data.',
     ],
     terms: [
-      'AWS (hosting): Our primary backend infrastructure is hosted in AWS EU (London / eu-west-2), within the United Kingdom. Data stored on our servers remains within this region unless otherwise specified.',
+      'AWS (hosting): Our primary backend infrastructure is hosted in AWS US East (Virginia / us-east-1), within the United States. Data stored on our servers remains within this region unless otherwise specified.',
       'Groq Cloud API (AI processing): The Groq API processes data in the United States. Data sent to Groq (port destination, dates, preferences) does not include personally identifiable information. Transfers are protected by Groq\'s data processing agreements and Standard Contractual Clauses (SCCs) where applicable.',
       'Google Analytics: Google processes analytics data globally, including in the United States. Google has implemented Standard Contractual Clauses and other safeguards for international data transfers in accordance with GDPR requirements.',
       'Open-Meteo API (weather data): Open-Meteo is operated from within the European Union. Weather API requests (latitude, longitude, dates) do not contain personally identifiable information.',
@@ -340,10 +342,10 @@ const sections = [
       'If you have any questions about this Privacy Policy, wish to exercise your data protection rights, or have concerns about how we handle your information, please contact us:',
     ],
     terms: [
-      'Email: support@shoreexplorer.com',
+      'Email: hello@slatewave-labs.com',
       'For data protection enquiries, please include "Privacy / Data Request" in the subject line of your email so we can direct your message to the appropriate team.',
       'When making a data access, portability, or deletion request, please include your device ID (found in your browser\'s developer tools under Application → localStorage) so we can locate your data.',
-      'We aim to respond to all privacy-related enquiries within 30 days, as required by GDPR.',
+      'We aim to respond to all privacy-related enquiries within 30 days, or within the time frame required by applicable law in your jurisdiction.',
     ],
     subsections: [],
     url: null,
@@ -563,10 +565,10 @@ export default function PrivacyPolicy() {
             <br />
             Questions? Contact us at{' '}
             <a
-              href="mailto:support@shoreexplorer.com"
+              href="mailto:hello@slatewave-labs.com"
               className="text-accent hover:underline"
             >
-              support@shoreexplorer.com
+              hello@slatewave-labs.com
             </a>
           </p>
         </div>
