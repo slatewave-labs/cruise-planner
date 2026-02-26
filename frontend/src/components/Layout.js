@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Ship, Compass, FileText, Home, ExternalLink } from 'lucide-react';
+import { Ship, Compass, Home, ExternalLink } from 'lucide-react';
 import CookieBanner from './CookieBanner';
 
 function AnchorLogo({ className = 'w-10 h-10' }) {
@@ -17,7 +17,6 @@ const navItems = [
   { path: '/', label: 'Home', icon: Home },
   { path: '/trips', label: 'My Trips', icon: Ship },
   { path: '/trips/new', label: 'New Trip', icon: Compass },
-  { path: '/terms', label: 'Terms', icon: FileText },
 ];
 
 export default function Layout({ children }) {
@@ -93,7 +92,7 @@ export default function Layout({ children }) {
       {/* Desktop Site Footer — hidden on mobile where bottom nav is shown */}
       <footer className="hidden md:block bg-primary text-white/70 py-6 px-8" data-testid="site-footer">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="font-body text-sm text-white/70">Slatewave Labs</p>
+          <p className="font-body text-sm text-white/70">Created by Slatewave Labs</p>
           <nav className="flex items-center gap-4" aria-label="Footer navigation">
             <Link
               to="/terms"

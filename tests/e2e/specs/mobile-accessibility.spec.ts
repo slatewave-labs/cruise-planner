@@ -92,7 +92,7 @@ test.describe('Accessibility — Touch Targets', () => {
     await mockAllApiRoutes(page);
     await page.goto('/');
 
-    const navItems = ['home', 'my-trips', 'new-trip', 'terms'];
+    const navItems = ['home', 'my-trips', 'new-trip'];
     for (const item of navItems) {
       const el = page.getByTestId(`mobile-nav-${item}`);
       const box = await el.boundingBox();
