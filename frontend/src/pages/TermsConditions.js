@@ -132,6 +132,13 @@ const sections = [
       'If you experience any issues with a booking made through an affiliate link — including cancellations, refunds, disputes, or quality concerns — you must contact the third-party platform or tour operator directly. ShoreExplorer cannot intervene in or resolve third-party booking disputes.',
       'Affiliate commissions help fund the continued development and free availability of ShoreExplorer. We are committed to displaying relevant, high-quality suggestions regardless of affiliate relationship status.',
     ],
+    affiliateLinks: [
+      { name: 'Viator', url: 'https://www.viator.com/termsAndConditions' },
+      { name: 'GetYourGuide', url: 'https://www.getyourguide.com/terms-of-service' },
+      { name: 'Klook', url: 'https://www.klook.com/en-GB/conditions/' },
+      { name: 'TripAdvisor', url: 'https://www.tripadvisor.com/pages/serviceterms.html' },
+      { name: 'Booking.com', url: 'https://www.booking.com/content/terms.html' },
+    ],
     url: null,
     linkLabel: null,
   },
@@ -451,6 +458,24 @@ export default function TermsConditions() {
                       <Shield className="w-3.5 h-3.5" aria-hidden="true" />
                       View our full Privacy Policy
                     </Link>
+                  </div>
+                )}
+
+                {/* Affiliate partner links */}
+                {section.affiliateLinks && section.affiliateLinks.length > 0 && (
+                  <div className="ml-11 mb-4 flex flex-wrap gap-x-6 gap-y-2">
+                    {section.affiliateLinks.map((link, aIdx) => (
+                      <a
+                        key={aIdx}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline min-h-[48px]"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                        {link.name} Terms
+                      </a>
+                    ))}
                   </div>
                 )}
 
