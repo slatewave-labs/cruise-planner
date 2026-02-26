@@ -16,6 +16,8 @@ ShoreExplorer uses a **two-tier secret management strategy** that provides both 
 │  • AWS_REGION (optional)                                        │
 │  • TEST_DOMAIN (optional)                                       │
 │  • PROD_DOMAIN (optional)                                       │
+│  • TEST_/PROD_ affiliate IDs (optional)                         │
+│  • TEST_/PROD_GA_MEASUREMENT_ID (optional)                      │
 └────────────┬────────────────────────────────────┬───────────────┘
              │                                    │
              │                                    │
@@ -40,6 +42,7 @@ ShoreExplorer uses a **two-tier secret management strategy** that provides both 
 │                            │    │                            │
 │  Values:                   │    │  Values:                   │
 │  • GROQ_API_KEY (test key) │    │  • GROQ_API_KEY (prod key) │
+│  • Affiliate IDs (test)    │    │  • Affiliate IDs (prod)    │
 └────────────┬───────────────┘    └────────────┬───────────────┘
              │                                  │
              │ Referenced by ECS                │
@@ -72,6 +75,20 @@ ShoreExplorer uses a **two-tier secret management strategy** that provides both 
 | `AWS_REGION` | All deployment workflows | AWS region selection |
 | `TEST_DOMAIN` | Test deployment only | Custom domain for test env |
 | `PROD_DOMAIN` | Prod deployment only | Custom domain for prod env |
+| `TEST_GROQ_API_KEY` | Test setup/deploy | Groq AI API key for test |
+| `PROD_GROQ_API_KEY` | Prod setup/deploy | Groq AI API key for production |
+| `TEST_VIATOR_AFFILIATE_ID` | Test setup/deploy | Viator affiliate ID |
+| `TEST_GETYOURGUIDE_AFFILIATE_ID` | Test setup/deploy | GetYourGuide affiliate ID |
+| `TEST_KLOOK_AFFILIATE_ID` | Test setup/deploy | Klook affiliate ID |
+| `TEST_TRIPADVISOR_AFFILIATE_ID` | Test setup/deploy | TripAdvisor affiliate ID |
+| `TEST_BOOKING_AFFILIATE_ID` | Test setup/deploy | Booking.com affiliate ID |
+| `PROD_VIATOR_AFFILIATE_ID` | Prod setup/deploy | Viator affiliate ID |
+| `PROD_GETYOURGUIDE_AFFILIATE_ID` | Prod setup/deploy | GetYourGuide affiliate ID |
+| `PROD_KLOOK_AFFILIATE_ID` | Prod setup/deploy | Klook affiliate ID |
+| `PROD_TRIPADVISOR_AFFILIATE_ID` | Prod setup/deploy | TripAdvisor affiliate ID |
+| `PROD_BOOKING_AFFILIATE_ID` | Prod setup/deploy | Booking.com affiliate ID |
+| `TEST_GA_MEASUREMENT_ID` | Test frontend build | Google Analytics measurement ID |
+| `PROD_GA_MEASUREMENT_ID` | Prod frontend build | Google Analytics measurement ID |
 
 ### Tier 2: AWS Secrets Manager
 
@@ -83,8 +100,8 @@ ShoreExplorer uses a **two-tier secret management strategy** that provides both 
 
 | Environment | Secret Name | Contains |
 |-------------|-------------|----------|
-| Test | `shoreexplorer-test-secrets` | Test Groq API key |
-| Production | `shoreexplorer-prod-secrets` | Prod Groq API key |
+| Test | `shoreexplorer-test-secrets` | Test Groq API key, affiliate IDs |
+| Production | `shoreexplorer-prod-secrets` | Prod Groq API key, affiliate IDs |
 
 ---
 
@@ -123,7 +140,12 @@ The workflow creates an ECS task definition that references AWS Secrets Manager:
       --container-definitions "[{
         \"name\": \"backend\",
         \"secrets\": [
-          {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}
+          {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"},
+          {\"name\": \"VIATOR_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:VIATOR_AFFILIATE_ID::\"},
+          {\"name\": \"GETYOURGUIDE_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:GETYOURGUIDE_AFFILIATE_ID::\"},
+          {\"name\": \"KLOOK_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:KLOOK_AFFILIATE_ID::\"},
+          {\"name\": \"TRIPADVISOR_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:TRIPADVISOR_AFFILIATE_ID::\"},
+          {\"name\": \"BOOKING_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:BOOKING_AFFILIATE_ID::\"}
         ],
         \"environment\": [
           {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"shoreexplorer-${ENVIRONMENT}\"},

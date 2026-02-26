@@ -210,22 +210,41 @@ jobs:
         id: secrets
         env:
           GROQ_API_KEY: ${{ secrets.TEST_GROQ_API_KEY }}
+          VIATOR_AFFILIATE_ID: ${{ secrets.TEST_VIATOR_AFFILIATE_ID }}
+          GETYOURGUIDE_AFFILIATE_ID: ${{ secrets.TEST_GETYOURGUIDE_AFFILIATE_ID }}
+          KLOOK_AFFILIATE_ID: ${{ secrets.TEST_KLOOK_AFFILIATE_ID }}
+          TRIPADVISOR_AFFILIATE_ID: ${{ secrets.TEST_TRIPADVISOR_AFFILIATE_ID }}
+          BOOKING_AFFILIATE_ID: ${{ secrets.TEST_BOOKING_AFFILIATE_ID }}
         run: |
           echo "🔐 Ensuring secrets exist..."
           SECRET_NAME="${PROJECT_NAME}-${ENVIRONMENT}-secrets"
 
+          # Build secret JSON with all configured keys
+          SECRET_JSON=$(jq -n \
+            --arg groq "${GROQ_API_KEY:-placeholder}" \
+            --arg viator "${VIATOR_AFFILIATE_ID:-}" \
+            --arg gyg "${GETYOURGUIDE_AFFILIATE_ID:-}" \
+            --arg klook "${KLOOK_AFFILIATE_ID:-}" \
+            --arg tripadvisor "${TRIPADVISOR_AFFILIATE_ID:-}" \
+            --arg booking "${BOOKING_AFFILIATE_ID:-}" \
+            '{
+              GROQ_API_KEY: $groq,
+              VIATOR_AFFILIATE_ID: $viator,
+              GETYOURGUIDE_AFFILIATE_ID: $gyg,
+              KLOOK_AFFILIATE_ID: $klook,
+              TRIPADVISOR_AFFILIATE_ID: $tripadvisor,
+              BOOKING_AFFILIATE_ID: $booking
+            }')
+
           if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$AWS_REGION" &>/dev/null; then
             echo "  ⏭️  Secret exists: $SECRET_NAME"
-            # Update if GROQ_API_KEY is provided
-            if [[ -n "${GROQ_API_KEY:-}" ]]; then
-              aws secretsmanager update-secret --secret-id "$SECRET_NAME" \
-                --secret-string "{\"GROQ_API_KEY\":\"${GROQ_API_KEY}\"}" \
-                --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-            fi
+            aws secretsmanager update-secret --secret-id "$SECRET_NAME" \
+              --secret-string "$SECRET_JSON" \
+              --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
           else
             aws secretsmanager create-secret --name "$SECRET_NAME" \
               --description "ShoreExplorer ${ENVIRONMENT} environment secrets" \
-              --secret-string "{\"GROQ_API_KEY\":\"${GROQ_API_KEY:-placeholder}\"}" \
+              --secret-string "$SECRET_JSON" \
               --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null
             echo "  ✅ Created secret: $SECRET_NAME"
@@ -811,7 +830,9 @@ jobs:
 
           cd frontend
           yarn install --frozen-lockfile
-          REACT_APP_BACKEND_URL="$BACKEND_URL" CI=true yarn build
+          REACT_APP_BACKEND_URL="$BACKEND_URL" \
+          REACT_APP_GA_MEASUREMENT_ID="${{ secrets.TEST_GA_MEASUREMENT_ID }}" \
+          CI=true yarn build
 
       - name: Deploy frontend to S3
         run: |
@@ -872,7 +893,14 @@ jobs:
               \"image\": \"${ECR_BASE}/${BACKEND_ECR_REPO}:${ENVIRONMENT}-latest\",
               \"essential\": true,
               \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
-              \"secrets\": [{\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}],
+              \"secrets\": [
+                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"},
+                {\"name\": \"VIATOR_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:VIATOR_AFFILIATE_ID::\"},
+                {\"name\": \"GETYOURGUIDE_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:GETYOURGUIDE_AFFILIATE_ID::\"},
+                {\"name\": \"KLOOK_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:KLOOK_AFFILIATE_ID::\"},
+                {\"name\": \"TRIPADVISOR_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:TRIPADVISOR_AFFILIATE_ID::\"},
+                {\"name\": \"BOOKING_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:BOOKING_AFFILIATE_ID::\"}
+              ],
               \"environment\": [
                 {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"${PROJECT_NAME}-${ENVIRONMENT}\"},
                 {\"name\": \"AWS_DEFAULT_REGION\", \"value\": \"${AWS_REGION}\"},

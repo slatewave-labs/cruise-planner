@@ -132,7 +132,7 @@ const sections = [
       {
         heading: 'Third-Party Cookies (Affiliate Partners)',
         items: [
-          'When you click an affiliate link to a third-party booking platform (such as Viator, GetYourGuide, or Klook), that platform may set its own cookies on your device.',
+          'When you click an affiliate link to a third-party booking platform (such as Viator, GetYourGuide, Klook, TripAdvisor, or Booking.com), that platform may set its own cookies on your device.',
           'ShoreExplorer has no control over third-party cookies. Please review the cookie policies of any third-party sites you visit through our links.',
         ],
       },
@@ -194,11 +194,18 @@ const sections = [
         linkLabel: 'OpenStreetMap Privacy Policy',
       },
       {
-        heading: 'Affiliate Partners (Viator, GetYourGuide, Klook, etc.)',
+        heading: 'Affiliate Partners (Viator, GetYourGuide, Klook, TripAdvisor, Booking.com)',
         items: [
           'Purpose: Provides links to book tours, activities, and experiences at port destinations.',
           'Data shared: When you click an affiliate link, the third-party platform receives standard HTTP referral data. ShoreExplorer does not transmit your trip data or preferences to affiliate partners.',
           'Each affiliate partner has its own privacy policy and cookie practices. We encourage you to review them before making a purchase.',
+        ],
+        affiliateLinks: [
+          { name: 'Viator', url: 'https://www.viator.com/privacyPolicy' },
+          { name: 'GetYourGuide', url: 'https://www.getyourguide.com/privacy-policy' },
+          { name: 'Klook', url: 'https://www.klook.com/en-GB/policy/' },
+          { name: 'TripAdvisor', url: 'https://www.tripadvisor.com/pages/privacy.html' },
+          { name: 'Booking.com', url: 'https://www.booking.com/content/privacy.html' },
         ],
         url: null,
         linkLabel: null,
@@ -513,6 +520,23 @@ export default function PrivacyPolicy() {
                               />
                               {sub.linkLabel || 'Learn More'}
                             </a>
+                          </div>
+                        )}
+                        {/* Affiliate partner links */}
+                        {sub.affiliateLinks && sub.affiliateLinks.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+                            {sub.affiliateLinks.map((link, aIdx) => (
+                              <a
+                                key={aIdx}
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline min-h-[48px]"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                                {link.name} Privacy Policy
+                              </a>
+                            ))}
                           </div>
                         )}
                       </div>

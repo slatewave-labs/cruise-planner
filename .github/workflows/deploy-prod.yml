@@ -228,6 +228,7 @@ jobs:
         env:
           REACT_APP_BACKEND_URL: ${{ steps.alb.outputs.backend_url }}
           REACT_APP_SITE_URL: ${{ steps.alb.outputs.backend_url }}
+          REACT_APP_GA_MEASUREMENT_ID: ${{ secrets.PROD_GA_MEASUREMENT_ID }}
           CI: true
 
       - name: Deploy frontend to S3
@@ -335,7 +336,12 @@ jobs:
               \"essential\": true,
               \"portMappings\": [{\"containerPort\": 8001, \"protocol\": \"tcp\"}],
               \"secrets\": [
-                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"}
+                {\"name\": \"GROQ_API_KEY\", \"valueFrom\": \"${SECRET_ARN}:GROQ_API_KEY::\"},
+                {\"name\": \"VIATOR_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:VIATOR_AFFILIATE_ID::\"},
+                {\"name\": \"GETYOURGUIDE_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:GETYOURGUIDE_AFFILIATE_ID::\"},
+                {\"name\": \"KLOOK_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:KLOOK_AFFILIATE_ID::\"},
+                {\"name\": \"TRIPADVISOR_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:TRIPADVISOR_AFFILIATE_ID::\"},
+                {\"name\": \"BOOKING_AFFILIATE_ID\", \"valueFrom\": \"${SECRET_ARN}:BOOKING_AFFILIATE_ID::\"}
               ],
               \"environment\": [
                 {\"name\": \"DYNAMODB_TABLE_NAME\", \"value\": \"${PROJECT_NAME}-${ENVIRONMENT}\"},

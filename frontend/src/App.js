@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import Landing from './pages/Landing';
 import TripSetup from './pages/TripSetup';
@@ -9,10 +9,20 @@ import DayPlanView from './pages/DayPlanView';
 import MyTrips from './pages/MyTrips';
 import TermsConditions from './pages/TermsConditions';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import { trackPageView } from './analytics';
+
+function PageViewTracker() {
+  const location = useLocation();
+  useEffect(() => {
+    trackPageView(location.pathname);
+  }, [location.pathname]);
+  return null;
+}
 
 function App() {
   return (
     <Router>
+      <PageViewTracker />
       <Layout>
         <Routes>
           <Route path="/" element={<Landing />} />

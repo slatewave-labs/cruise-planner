@@ -37,6 +37,22 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <!-- Google Analytics (gtag.js) — loaded only when measurement ID is configured -->
+  <script>
+    (function() {
+      var id = '%REACT_APP_GA_MEASUREMENT_ID%';
+      if (!id || id.indexOf('REACT_APP_GA') !== -1) return;
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://www.googletagmanager.com/gtag/js?id=' + id;
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function() { window.dataLayer.push(arguments); };
+      window.gtag('js', new Date());
+      window.gtag('config', id, { send_page_view: false, anonymize_ip: true });
+    })();
+  </script>
 </head>
 <body>
   <noscript>You need to enable JavaScript to run ShoreExplorer.</noscript>

@@ -13,10 +13,11 @@ GitHub Actions workflows use repository secrets to securely store sensitive info
 1. **GitHub Repository Secrets** (this guide)
    - AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
    - Optional domain configuration (`TEST_DOMAIN`, `PROD_DOMAIN`)
+   - Environment-specific API keys (Groq, affiliate IDs, Google Analytics)
    - **Shared across all workflows** (same AWS account for test and prod)
 
 2. **AWS Secrets Manager** (per-environment secrets)
-   - Application secrets (`GROQ_API_KEY`)
+   - Application secrets (`GROQ_API_KEY`, affiliate IDs)
    - **Separate secrets for each environment:**
      - `shoreexplorer-test-secrets` (test environment)
      - `shoreexplorer-prod-secrets` (production environment)
@@ -63,6 +64,45 @@ These secrets configure custom domains for each environment. **Without these sec
 **Effect:** The workflow automatically configures:
 - Frontend `REACT_APP_BACKEND_URL` = `http://shore-explorer.com`
 - Smoke tests run against `http://shore-explorer.com`
+
+---
+
+## 🤝 Affiliate Partner Secrets (Optional)
+
+These secrets provide affiliate IDs for booking platform integrations. They are stored in AWS Secrets Manager and injected into the backend container at runtime.
+
+### Test Environment
+
+| Secret Name | Description | Where to Get It |
+|---|---|---|
+| `TEST_VIATOR_AFFILIATE_ID` | Viator affiliate programme ID | [Viator Partner Portal](https://www.viator.com/partner) |
+| `TEST_GETYOURGUIDE_AFFILIATE_ID` | GetYourGuide partner ID | [GetYourGuide Partner Portal](https://partner.getyourguide.com/) |
+| `TEST_KLOOK_AFFILIATE_ID` | Klook affiliate programme ID | [Klook Affiliate Portal](https://affiliate.klook.com/) |
+| `TEST_TRIPADVISOR_AFFILIATE_ID` | TripAdvisor affiliate programme ID | [TripAdvisor Affiliate Portal](https://www.tripadvisor.com/affiliates) |
+| `TEST_BOOKING_AFFILIATE_ID` | Booking.com affiliate programme ID | [Booking.com Affiliate Portal](https://www.booking.com/affiliate-program/) |
+
+### Production Environment
+
+| Secret Name | Description | Where to Get It |
+|---|---|---|
+| `PROD_VIATOR_AFFILIATE_ID` | Viator affiliate programme ID | Same portals as above |
+| `PROD_GETYOURGUIDE_AFFILIATE_ID` | GetYourGuide partner ID | |
+| `PROD_KLOOK_AFFILIATE_ID` | Klook affiliate programme ID | |
+| `PROD_TRIPADVISOR_AFFILIATE_ID` | TripAdvisor affiliate programme ID | |
+| `PROD_BOOKING_AFFILIATE_ID` | Booking.com affiliate programme ID | |
+
+**How it works:** The setup workflow reads these GitHub secrets (with the `TEST_`/`PROD_` prefix) and stores them in AWS Secrets Manager **without** the prefix (e.g. `VIATOR_AFFILIATE_ID`). The backend container reads them as environment variables at runtime.
+
+---
+
+## 📊 Google Analytics Secrets (Optional)
+
+| Secret Name | Description | Example Value |
+|---|---|---|
+| `TEST_GA_MEASUREMENT_ID` | Google Analytics measurement ID for test | `G-ABC123DEF4` |
+| `PROD_GA_MEASUREMENT_ID` | Google Analytics measurement ID for production | `G-XYZ789GHI0` |
+
+**How it works:** The measurement ID is injected as `REACT_APP_GA_MEASUREMENT_ID` at frontend build time. See [GOOGLE_ANALYTICS_SETUP.md](../../GOOGLE_ANALYTICS_SETUP.md) for setup instructions.
 
 ---
 
