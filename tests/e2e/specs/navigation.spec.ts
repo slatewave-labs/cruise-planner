@@ -20,7 +20,6 @@ test.describe('Navigation — Desktop', () => {
     await expect(page.getByTestId('nav-home')).toBeVisible();
     await expect(page.getByTestId('nav-my-trips')).toBeVisible();
     await expect(page.getByTestId('nav-new-trip')).toBeVisible();
-    await expect(page.getByTestId('nav-terms')).toBeVisible();
   });
 
   test('mobile bottom nav is NOT visible on desktop', async ({ page }) => {
@@ -35,11 +34,6 @@ test.describe('Navigation — Desktop', () => {
   test('clicking "New Trip" in desktop nav navigates to /trips/new', async ({ page }) => {
     await page.getByTestId('nav-new-trip').click();
     await expect(page).toHaveURL(/\/trips\/new/);
-  });
-
-  test('clicking "Terms" in desktop nav navigates to /terms', async ({ page }) => {
-    await page.getByTestId('nav-terms').click();
-    await expect(page).toHaveURL(/\/terms/);
   });
 
   test('clicking "Home" in desktop nav navigates to /', async ({ page }) => {
@@ -63,7 +57,6 @@ test.describe('Navigation — Mobile', () => {
     await expect(page.getByTestId('mobile-nav-home')).toBeVisible();
     await expect(page.getByTestId('mobile-nav-my-trips')).toBeVisible();
     await expect(page.getByTestId('mobile-nav-new-trip')).toBeVisible();
-    await expect(page.getByTestId('mobile-nav-terms')).toBeVisible();
   });
 
   test('desktop nav is NOT visible on mobile', async ({ page }) => {

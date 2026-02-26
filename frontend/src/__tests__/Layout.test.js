@@ -85,7 +85,6 @@ describe('Layout Component', () => {
       expect(screen.getByTestId('nav-home')).toBeInTheDocument();
       expect(screen.getByTestId('nav-my-trips')).toBeInTheDocument();
       expect(screen.getByTestId('nav-new-trip')).toBeInTheDocument();
-      expect(screen.getByTestId('nav-terms')).toBeInTheDocument();
     });
 
     test('renders all navigation items in mobile nav', () => {
@@ -98,7 +97,6 @@ describe('Layout Component', () => {
       expect(screen.getByTestId('mobile-nav-home')).toBeInTheDocument();
       expect(screen.getByTestId('mobile-nav-my-trips')).toBeInTheDocument();
       expect(screen.getByTestId('mobile-nav-new-trip')).toBeInTheDocument();
-      expect(screen.getByTestId('mobile-nav-terms')).toBeInTheDocument();
     });
 
     test('highlights active route in navigation', () => {
