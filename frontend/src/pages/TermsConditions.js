@@ -342,6 +342,7 @@ export default function TermsConditions() {
               target="_blank"
               rel="noopener noreferrer"
               className="text-accent font-semibold hover:underline"
+              aria-label="Slatewave Labs (opens in new tab)"
             >
               Slatewave Labs
             </a>

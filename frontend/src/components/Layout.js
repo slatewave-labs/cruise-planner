@@ -93,19 +93,19 @@ export default function Layout({ children }) {
       {/* Desktop Site Footer — hidden on mobile where bottom nav is shown */}
       <footer className="hidden md:block bg-primary text-white/70 py-6 px-8" data-testid="site-footer">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="font-body text-xs">
+          <p className="font-body text-sm text-white/70">
             &copy; {new Date().getFullYear()} Slatewave Labs
           </p>
           <nav className="flex items-center gap-4" aria-label="Footer navigation">
             <Link
               to="/terms"
-              className="font-body text-xs text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center"
+              className="font-body text-sm text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center"
             >
               Terms
             </Link>
             <Link
               to="/privacy"
-              className="font-body text-xs text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center"
+              className="font-body text-sm text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center"
             >
               Privacy
             </Link>
@@ -113,10 +113,11 @@ export default function Layout({ children }) {
               href="https://slatewave-labs.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-body text-xs text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center gap-1"
+              className="font-body text-sm text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center gap-1"
+              aria-label="Slatewave Labs (opens in new tab)"
             >
               Slatewave Labs
-              <ExternalLink className="w-3 h-3" aria-hidden="true" />
+              <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
             </a>
           </nav>
         </div>
