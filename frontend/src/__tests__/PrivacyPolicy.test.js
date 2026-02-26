@@ -51,10 +51,10 @@ describe('PrivacyPolicy Page Component', () => {
     expect(rightsTexts.length).toBeGreaterThan(0);
   });
 
-  test('mentions GDPR rights', () => {
+  test('mentions privacy rights', () => {
     renderWithRouter(<PrivacyPolicy />);
-    const gdprTexts = screen.getAllByText(/GDPR/i);
-    expect(gdprTexts.length).toBeGreaterThan(0);
+    const rightsTexts = screen.getAllByText(/Privacy Rights/i);
+    expect(rightsTexts.length).toBeGreaterThan(0);
   });
 
   test('mentions third-party services', () => {
@@ -65,7 +65,7 @@ describe('PrivacyPolicy Page Component', () => {
 
   test('includes contact information', () => {
     renderWithRouter(<PrivacyPolicy />);
-    const emailTexts = screen.getAllByText(/support@shoreexplorer\.com/i);
+    const emailTexts = screen.getAllByText(/hello@slatewave-labs\.com/i);
     expect(emailTexts.length).toBeGreaterThan(0);
   });
 

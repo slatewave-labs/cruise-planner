@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Ship, Compass, FileText, Home } from 'lucide-react';
+import { Ship, Compass, FileText, Home, ExternalLink } from 'lucide-react';
 import CookieBanner from './CookieBanner';
 
 function AnchorLogo({ className = 'w-10 h-10' }) {
@@ -89,6 +89,38 @@ export default function Layout({ children }) {
           })}
         </div>
       </nav>
+
+      {/* Desktop Site Footer — hidden on mobile where bottom nav is shown */}
+      <footer className="hidden md:block bg-primary text-white/70 py-6 px-8" data-testid="site-footer">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="font-body text-xs">
+            &copy; {new Date().getFullYear()} Slatewave Labs
+          </p>
+          <nav className="flex items-center gap-4" aria-label="Footer navigation">
+            <Link
+              to="/terms"
+              className="font-body text-xs text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center"
+            >
+              Terms
+            </Link>
+            <Link
+              to="/privacy"
+              className="font-body text-xs text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center"
+            >
+              Privacy
+            </Link>
+            <a
+              href="https://slatewave-labs.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-body text-xs text-white/70 hover:text-white transition-colors min-h-[48px] flex items-center gap-1"
+            >
+              Slatewave Labs
+              <ExternalLink className="w-3 h-3" aria-hidden="true" />
+            </a>
+          </nav>
+        </div>
+      </footer>
 
       {/* GDPR Cookie Consent Banner — renders above mobile nav (z-50) */}
       <CookieBanner />
