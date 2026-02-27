@@ -208,6 +208,7 @@ def generate_booking_search_url(
 
     Returns:
         A search URL with affiliate params, or None if no platform is configured
+        or if activity_name/port_name is empty
     """
     if not activity_name or not port_name:
         return None
@@ -224,7 +225,7 @@ def generate_booking_search_url(
             continue
 
         # Build search query from activity name and port
-        query = quote_plus(f"{activity_name} {port_name}")
+        query = quote_plus(f"{activity_name.strip()} {port_name.strip()}")
         search_url = template.format(query=query)
         # Add affiliate params to the search URL
         return add_affiliate_params(search_url)

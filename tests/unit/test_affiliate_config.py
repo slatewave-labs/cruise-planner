@@ -197,6 +197,7 @@ class TestProcessPlanActivities:
             {
                 "order": 1,
                 "name": "Colosseum Tour",
+                # AI-hallucinated URL that would 404 — gets replaced with search URL
                 "booking_url": "https://www.viator.com/tours/Rome/Fake-Tour/d511-99999",
             },
             {
