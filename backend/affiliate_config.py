@@ -247,7 +247,7 @@ def validate_booking_url(url: str) -> bool:
 
     # Path must be non-trivial (more than just "/")
     path = parsed.path.rstrip("/")
-    if not path or path == "":
+    if not path:
         return False
 
     # Reject if the path looks like a search/listing page
@@ -257,7 +257,7 @@ def validate_booking_url(url: str) -> bool:
     # Path should have at least 1 meaningful segment (e.g. /tours/... or
     # /AttractionProductReview-g187497-d123.html)
     segments = [s for s in path.split("/") if s]
-    if len(segments) < 1:
+    if not segments:
         return False
 
     return True

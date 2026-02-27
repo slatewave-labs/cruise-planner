@@ -525,8 +525,8 @@ class TestValidateBookingUrl:
         url = "https://www.getyourguide.com/s/?q=Rome+tour"
         assert validate_booking_url(url) is False
 
-    def test_rejects_bare_category_path(self):
-        url = "https://www.viator.com/"
+    def test_rejects_klook_search_url(self):
+        url = "https://www.klook.com/search/result/?keyword=Rome+tour"
         assert validate_booking_url(url) is False
 
     def test_rejects_non_string_input(self):
