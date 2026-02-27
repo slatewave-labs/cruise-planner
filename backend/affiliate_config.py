@@ -164,6 +164,13 @@ def add_affiliate_params(url: str) -> str:
 
 # Search URL templates for supported booking platforms.
 # Used to generate valid search URLs instead of relying on AI-hallucinated links.
+#
+# NOTE on affiliate parameter stripping: Some platforms (notably Viator) strip
+# tracking query parameters (e.g. `aid`) from the URL bar via client-side
+# JavaScript after the page loads. This is expected behaviour — the affiliate
+# parameters are captured server-side on the initial HTTP request before any JS
+# runs, so commission tracking still works correctly. The URL cleanup is purely
+# cosmetic on the platform's end.
 SEARCH_URL_TEMPLATES = {
     "viator.com": "https://www.viator.com/searchResults/all?text={query}",
     "getyourguide.com": "https://www.getyourguide.com/s/?q={query}",
