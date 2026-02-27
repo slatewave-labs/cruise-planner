@@ -15,6 +15,7 @@ from backend.affiliate_config import (
     get_configured_platforms,
     get_domain_from_url,
     process_plan_activities,
+    validate_booking_url,
 )
 
 
@@ -192,15 +193,15 @@ class TestProcessPlanActivities:
     """Test processing of plan activities for booking search URLs."""
 
     def test_process_activities_generates_search_urls(self, monkeypatch):
-        """Test that activities get valid search URLs instead of AI-generated ones."""
+        """Test activities get search URLs when AI provides no/invalid URLs."""
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
 
         activities = [
             {
                 "order": 1,
                 "name": "Colosseum Tour",
-                # AI-hallucinated URL that would 404 — gets replaced with search URL
-                "booking_url": "https://www.viator.com/tours/Rome/Fake-Tour/d511-99999",
+                # AI-hallucinated URL on unsupported domain — falls back to search
+                "booking_url": "https://www.example.com/fake-tour/123",
             },
             {
                 "order": 2,
@@ -211,7 +212,7 @@ class TestProcessPlanActivities:
 
         result = process_plan_activities(activities, port_name="Rome")
 
-        # First activity: AI URL replaced with valid search URL
+        # First activity: invalid domain → replaced with search URL
         assert "viator.com/searchResults/all" in result[0]["booking_url"]
         assert "text=Colosseum+Tour+Rome" in result[0]["booking_url"]
         assert "aid=test-123" in result[0]["booking_url"]
@@ -265,8 +266,8 @@ class TestProcessPlanActivities:
 
         # Original should be unchanged
         assert original_activities[0]["booking_url"] == original_url
-        # Result should have a search URL
-        assert "viator.com/searchResults/all" in result[0]["booking_url"]
+        # Result should have affiliate params added (URL is valid)
+        assert "aid=test-456" in result[0]["booking_url"]
 
 
 class TestAffiliateConfig:
@@ -473,3 +474,174 @@ class TestProcessPlanActivitiesDistribution:
             "viator.com",
             "www.viator.com",
         )
+
+
+class TestValidateBookingUrl:
+    """Test validation of AI-provided booking URLs."""
+
+    def test_valid_viator_product_url(self):
+        url = "https://www.viator.com/tours/Rome/Colosseum-Tour/d511-12345"
+        assert validate_booking_url(url) is True
+
+    def test_valid_getyourguide_product_url(self):
+        url = "https://www.getyourguide.com/barcelona-l45/sagrada-familia-t12345/"
+        assert validate_booking_url(url) is True
+
+    def test_valid_klook_product_url(self):
+        url = "https://www.klook.com/activity/12345-singapore-gardens"
+        assert validate_booking_url(url) is True
+
+    def test_valid_tripadvisor_product_url(self):
+        url = "https://www.tripadvisor.com/AttractionProductReview-g187497-d123.html"
+        assert validate_booking_url(url) is True
+
+    def test_valid_booking_com_product_url(self):
+        url = "https://www.booking.com/hotel/it/rome-grand-hotel.html"
+        assert validate_booking_url(url) is True
+
+    def test_rejects_none(self):
+        assert validate_booking_url(None) is False
+
+    def test_rejects_empty_string(self):
+        assert validate_booking_url("") is False
+
+    def test_rejects_http_scheme(self):
+        url = "http://www.viator.com/tours/Rome/Tour/d511-12345"
+        assert validate_booking_url(url) is False
+
+    def test_rejects_unsupported_domain(self):
+        url = "https://www.example.com/tours/Rome/Tour"
+        assert validate_booking_url(url) is False
+
+    def test_rejects_homepage(self):
+        url = "https://www.viator.com/"
+        assert validate_booking_url(url) is False
+
+    def test_rejects_viator_search_url(self):
+        url = "https://www.viator.com/searchResults/all?text=Rome+tour"
+        assert validate_booking_url(url) is False
+
+    def test_rejects_getyourguide_search_url(self):
+        url = "https://www.getyourguide.com/s/?q=Rome+tour"
+        assert validate_booking_url(url) is False
+
+    def test_rejects_klook_search_url(self):
+        url = "https://www.klook.com/search/result/?keyword=Rome+tour"
+        assert validate_booking_url(url) is False
+
+    def test_rejects_non_string_input(self):
+        assert validate_booking_url(123) is False
+
+    def test_valid_url_without_www(self):
+        url = "https://viator.com/tours/Rome/Colosseum-Tour/d511-12345"
+        assert validate_booking_url(url) is True
+
+
+class TestProcessPlanActivitiesWithValidation:
+    """Test that process_plan_activities validates AI URLs and uses search fallback."""
+
+    def test_keeps_valid_ai_url_with_affiliate_params(self, monkeypatch):
+        """Valid AI-provided URLs are kept and get affiliate params added."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-v-123")
+
+        activities = [
+            {
+                "order": 1,
+                "name": "Colosseum Tour",
+                "booking_url": "https://www.viator.com/tours/Rome/Colosseum/d511-12345",
+            }
+        ]
+
+        result = process_plan_activities(activities, port_name="Rome")
+
+        # URL is kept (not replaced with search URL)
+        assert "viator.com/tours/Rome/Colosseum/d511-12345" in result[0]["booking_url"]
+        # Affiliate params are added
+        assert "aid=test-v-123" in result[0]["booking_url"]
+
+    def test_falls_back_to_search_for_invalid_ai_url(self, monkeypatch):
+        """Invalid AI URLs (unsupported domain) fall back to search URL."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-v-123")
+
+        activities = [
+            {
+                "order": 1,
+                "name": "City Walk",
+                "booking_url": "https://www.fakebooking.com/tour/123",
+            }
+        ]
+
+        result = process_plan_activities(activities, port_name="Rome")
+
+        assert "viator.com/searchResults/all" in result[0]["booking_url"]
+        assert "text=City+Walk+Rome" in result[0]["booking_url"]
+
+    def test_uses_booking_search_term_for_fallback(self, monkeypatch):
+        """When AI URL is null, booking_search_term is used for search query."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-v-123")
+
+        activities = [
+            {
+                "order": 1,
+                "name": "Visit Sagrada Familia",
+                "booking_url": None,
+                "booking_search_term": "Skip the Line Sagrada Familia Guided Tour",
+            }
+        ]
+
+        result = process_plan_activities(activities, port_name="Barcelona")
+
+        assert "viator.com/searchResults/all" in result[0]["booking_url"]
+        # Uses booking_search_term, not the activity name
+        assert "Skip+the+Line+Sagrada+Familia+Guided+Tour" in result[0]["booking_url"]
+
+    def test_falls_back_to_name_without_booking_search_term(self, monkeypatch):
+        """Without booking_search_term, activity name is used for search query."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-v-123")
+
+        activities = [
+            {
+                "order": 1,
+                "name": "Colosseum Tour",
+                "booking_url": None,
+            }
+        ]
+
+        result = process_plan_activities(activities, port_name="Rome")
+
+        assert "viator.com/searchResults/all" in result[0]["booking_url"]
+        assert "text=Colosseum+Tour+Rome" in result[0]["booking_url"]
+
+    def test_mixed_valid_and_invalid_urls(self, monkeypatch):
+        """Mix of valid AI URLs and fallback search URLs in the same plan."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-v-123")
+        monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "test-gyg-456")
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        activities = [
+            {
+                "order": 1,
+                "name": "Colosseum Tour",
+                # Valid Viator URL — kept
+                "booking_url": "https://www.viator.com/tours/Rome/Colosseum/d511-12345",
+            },
+            {
+                "order": 2,
+                "name": "Walking Tour",
+                # Null — fallback to search (round-robin index 1 → GYG)
+                "booking_url": None,
+                "booking_search_term": "Rome Free Walking Tour",
+            },
+        ]
+
+        result = process_plan_activities(activities, port_name="Rome")
+
+        # First: valid AI URL kept with affiliate params
+        assert "viator.com/tours/Rome/Colosseum/d511-12345" in result[0]["booking_url"]
+        assert "aid=test-v-123" in result[0]["booking_url"]
+
+        # Second: fallback search URL on GYG (round-robin idx=1)
+        assert "getyourguide.com/s/" in result[1]["booking_url"]
+        assert "q=Rome+Free+Walking+Tour" in result[1]["booking_url"]
