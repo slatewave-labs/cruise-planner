@@ -393,10 +393,22 @@ class TestProcessPlanActivitiesDistribution:
         result = process_plan_activities(activities, port_name="Rome")
 
         # With 2 platforms and 4 activities: round-robin gives alternating
-        assert "viator.com" in result[0]["booking_url"]
-        assert "getyourguide.com" in result[1]["booking_url"]
-        assert "viator.com" in result[2]["booking_url"]
-        assert "getyourguide.com" in result[3]["booking_url"]
+        assert urlparse(result[0]["booking_url"]).hostname in (
+            "viator.com",
+            "www.viator.com",
+        )
+        assert urlparse(result[1]["booking_url"]).hostname in (
+            "getyourguide.com",
+            "www.getyourguide.com",
+        )
+        assert urlparse(result[2]["booking_url"]).hostname in (
+            "viator.com",
+            "www.viator.com",
+        )
+        assert urlparse(result[3]["booking_url"]).hostname in (
+            "getyourguide.com",
+            "www.getyourguide.com",
+        )
 
     def test_distributes_across_three_platforms(self, monkeypatch):
         """Test round-robin with three configured platforms."""
@@ -413,12 +425,30 @@ class TestProcessPlanActivitiesDistribution:
 
         result = process_plan_activities(activities, port_name="Barcelona")
 
-        assert "viator.com" in result[0]["booking_url"]
-        assert "getyourguide.com" in result[1]["booking_url"]
-        assert "klook.com" in result[2]["booking_url"]
-        assert "viator.com" in result[3]["booking_url"]
-        assert "getyourguide.com" in result[4]["booking_url"]
-        assert "klook.com" in result[5]["booking_url"]
+        assert urlparse(result[0]["booking_url"]).hostname in (
+            "viator.com",
+            "www.viator.com",
+        )
+        assert urlparse(result[1]["booking_url"]).hostname in (
+            "getyourguide.com",
+            "www.getyourguide.com",
+        )
+        assert urlparse(result[2]["booking_url"]).hostname in (
+            "klook.com",
+            "www.klook.com",
+        )
+        assert urlparse(result[3]["booking_url"]).hostname in (
+            "viator.com",
+            "www.viator.com",
+        )
+        assert urlparse(result[4]["booking_url"]).hostname in (
+            "getyourguide.com",
+            "www.getyourguide.com",
+        )
+        assert urlparse(result[5]["booking_url"]).hostname in (
+            "klook.com",
+            "www.klook.com",
+        )
 
     def test_single_platform_still_works(self, monkeypatch):
         """Test that a single configured platform still works for all activities."""
@@ -435,5 +465,11 @@ class TestProcessPlanActivitiesDistribution:
 
         result = process_plan_activities(activities, port_name="Rome")
 
-        assert "viator.com" in result[0]["booking_url"]
-        assert "viator.com" in result[1]["booking_url"]
+        assert urlparse(result[0]["booking_url"]).hostname in (
+            "viator.com",
+            "www.viator.com",
+        )
+        assert urlparse(result[1]["booking_url"]).hostname in (
+            "viator.com",
+            "www.viator.com",
+        )
