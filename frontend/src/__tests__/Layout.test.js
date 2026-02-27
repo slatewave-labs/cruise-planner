@@ -227,6 +227,56 @@ describe('Layout Component', () => {
     });
   });
 
+  describe('Site Footer', () => {
+    test('renders site footer on all viewports', () => {
+      renderWithRouter(
+        <Layout>
+          <div>Content</div>
+        </Layout>
+      );
+
+      expect(screen.getByTestId('site-footer')).toBeInTheDocument();
+    });
+
+    test('site footer is NOT hidden via hidden class', () => {
+      const { container } = renderWithRouter(
+        <Layout>
+          <div>Content</div>
+        </Layout>
+      );
+
+      const footer = container.querySelector('[data-testid="site-footer"]');
+      expect(footer).toBeInTheDocument();
+      // Must not use Tailwind's hidden class (which applies display:none)
+      expect(footer.className).not.toMatch(/\bhidden\b/);
+    });
+
+    test('site footer contains Terms, Privacy and Slatewave Labs links', () => {
+      renderWithRouter(
+        <Layout>
+          <div>Content</div>
+        </Layout>
+      );
+
+      const footer = screen.getByTestId('site-footer');
+      expect(footer).toHaveTextContent('Terms');
+      expect(footer).toHaveTextContent('Privacy');
+      expect(footer).toHaveTextContent('Slatewave Labs');
+    });
+
+    test('site footer has extra bottom padding class for mobile nav clearance', () => {
+      const { container } = renderWithRouter(
+        <Layout>
+          <div>Content</div>
+        </Layout>
+      );
+
+      const footer = container.querySelector('[data-testid="site-footer"]');
+      // pb-20 ensures the footer content clears the fixed 64px mobile bottom nav
+      expect(footer.className).toMatch(/\bpb-20\b/);
+    });
+  });
+
   describe('Accessibility', () => {
     test('main content area has semantic main element', () => {
       const { container } = renderWithRouter(

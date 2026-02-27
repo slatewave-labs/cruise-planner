@@ -77,4 +77,17 @@ test.describe('Navigation — Mobile', () => {
     await page.getByTestId('mobile-nav-new-trip').click();
     await expect(page).toHaveURL(/\/trips\/new/);
   });
+
+  test('site footer is visible after scrolling to the bottom of the page', async ({ page }) => {
+    // Scroll to the very bottom so the footer is in view
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+    const footer = page.getByTestId('site-footer');
+    await expect(footer).toBeVisible();
+
+    // Verify footer content is accessible
+    await expect(footer).toContainText('Slatewave Labs');
+    await expect(footer).toContainText('Terms');
+    await expect(footer).toContainText('Privacy');
+  });
 });
