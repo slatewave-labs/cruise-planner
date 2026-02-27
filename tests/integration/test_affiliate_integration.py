@@ -4,7 +4,6 @@ Integration tests for affiliate link functionality in plan generation.
 
 import os
 import sys
-from urllib.parse import urlparse
 
 import pytest
 from unittest.mock import Mock, patch
@@ -14,7 +13,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../backend"))
 
 from server import app
 
-from affiliate_config import add_affiliate_params
 from fastapi.testclient import TestClient
 
 
@@ -28,40 +26,41 @@ class TestAffiliateLinksInPlanGeneration:
     """Test affiliate link integration in plan generation."""
 
     def test_affiliate_params_added_to_viator_urls(self, monkeypatch):
-        """Test that Viator URLs get affiliate parameters when ID is configured."""
+        """Test that Viator search URLs get affiliate parameters when ID is configured."""
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-affiliate-123")
-        
-        original_url = "https://www.viator.com/tours/Barcelona/Sagrada-Familia-Tour/d562-12345"
-        result_url = add_affiliate_params(original_url)
-        
+
+        from affiliate_config import generate_booking_search_url
+
+        result_url = generate_booking_search_url("Sagrada Familia Tour", "Barcelona")
+
+        assert result_url is not None
         assert "aid=test-affiliate-123" in result_url
         assert "mcid=cruise-planner-app" in result_url
-        assert urlparse(result_url).hostname in ("viator.com", "www.viator.com")
+        assert "viator.com/searchResults/all" in result_url
+        assert "text=Sagrada+Familia+Tour+Barcelona" in result_url
 
-    def test_affiliate_params_not_added_without_config(self):
-        """Test that URLs remain unchanged when affiliate ID is not configured."""
-        # Make sure env var is not set
-        if "VIATOR_AFFILIATE_ID" in os.environ:
-            del os.environ["VIATOR_AFFILIATE_ID"]
-        
-        original_url = "https://www.viator.com/tours/Barcelona/Sagrada-Familia-Tour/d562-12345"
-        result_url = add_affiliate_params(original_url)
-        
-        # URL should not have affiliate ID param when not configured
-        assert "aid=" not in result_url
-        # May have static tracking param or be unchanged
-        assert "mcid=cruise-planner-app" in result_url or result_url == original_url
+    def test_affiliate_params_not_added_without_config(self, monkeypatch):
+        """Test that no search URL is generated when affiliate ID is not configured."""
+        monkeypatch.delenv("VIATOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("GETYOURGUIDE_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        from affiliate_config import generate_booking_search_url
+
+        result_url = generate_booking_search_url("Sagrada Familia Tour", "Barcelona")
+        assert result_url is None
 
     @patch("server.LLMClient")
     def test_plan_generation_processes_affiliate_links(
         self, mock_llm_client_class, test_client, monkeypatch
     ):
-        """Test that generated plans have affiliate parameters added to booking URLs."""
+        """Test that generated plans have valid search URLs instead of AI-hallucinated ones."""
         monkeypatch.setenv("GROQ_API_KEY", "test-key")
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-viator-affiliate")
-        monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "test-gyg-affiliate")
         
-        # Mock LLM API response with booking URLs
+        # Mock LLM API response — AI sets booking_url to null as instructed
         plan_json = """{
             "plan_title": "Barcelona Highlights",
             "summary": "Explore the best of Barcelona in one day",
@@ -79,7 +78,7 @@ class TestAffiliateLinksInPlanGeneration:
                     "end_time": "11:00",
                     "duration_minutes": 120,
                     "cost_estimate": "€30",
-                    "booking_url": "https://www.viator.com/tours/Barcelona/Sagrada-Familia/d562-12345",
+                    "booking_url": null,
                     "transport_to_next": "Metro L2",
                     "travel_time_to_next": "15 min",
                     "tips": "Book tickets in advance"
@@ -95,7 +94,7 @@ class TestAffiliateLinksInPlanGeneration:
                     "end_time": "14:00",
                     "duration_minutes": 120,
                     "cost_estimate": "€25",
-                    "booking_url": "https://www.getyourguide.com/barcelona-l45/park-guell-t123/56789",
+                    "booking_url": null,
                     "transport_to_next": "Walk",
                     "travel_time_to_next": "20 min",
                     "tips": "Great views of the city"
@@ -146,32 +145,39 @@ class TestAffiliateLinksInPlanGeneration:
         activities = plan_data["plan"]["activities"]
         assert len(activities) == 2
         
-        # Verify first activity (Viator) has affiliate params
+        # Verify first activity has a valid Viator search URL (not a hallucinated one)
         viator_url = activities[0]["booking_url"]
-        assert urlparse(viator_url).hostname in ("viator.com", "www.viator.com")
+        assert "viator.com/searchResults/all" in viator_url
+        assert "text=Sagrada+Familia+Barcelona" in viator_url
         assert "aid=test-viator-affiliate" in viator_url
         assert "mcid=cruise-planner-app" in viator_url
         
-        # Verify second activity (GetYourGuide) has affiliate params
+        # Verify second activity also has a valid search URL
         gyg_url = activities[1]["booking_url"]
-        assert urlparse(gyg_url).hostname in ("getyourguide.com", "www.getyourguide.com")
-        assert "partner_id=test-gyg-affiliate" in gyg_url
-        assert "utm_source=cruise-planner" in gyg_url
+        assert "viator.com/searchResults/all" in gyg_url
+        assert "text=Park+Guell+Barcelona" in gyg_url
 
     def test_multiple_booking_platforms_supported(self, monkeypatch):
-        """Test that multiple booking platforms are supported."""
+        """Test that multiple booking platforms generate valid search URLs."""
+        from affiliate_config import generate_booking_search_url
+
+        # Test Klook as primary platform
+        monkeypatch.delenv("VIATOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("GETYOURGUIDE_AFFILIATE_ID", raising=False)
         monkeypatch.setenv("KLOOK_AFFILIATE_ID", "klook-123")
-        monkeypatch.setenv("BOOKING_AFFILIATE_ID", "booking-456")
-        monkeypatch.setenv("TRIPADVISOR_AFFILIATE_ID", "tripadvisor-789")
-        
-        # Test Klook
-        klook_url = add_affiliate_params("https://www.klook.com/activity/12345-singapore-tour")
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        klook_url = generate_booking_search_url("Gardens by the Bay", "Singapore")
+        assert klook_url is not None
+        assert "klook.com/search/result" in klook_url
         assert "affiliate_id=klook-123" in klook_url
-        
-        # Test Booking.com
-        booking_url = add_affiliate_params("https://www.booking.com/hotel/sg/hotel.html")
-        assert "aid=booking-456" in booking_url
-        
-        # Test TripAdvisor
-        ta_url = add_affiliate_params("https://www.tripadvisor.com/Attraction_Review-g60763-d104236")
+
+        # Test TripAdvisor as primary platform
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.setenv("TRIPADVISOR_AFFILIATE_ID", "tripadvisor-789")
+
+        ta_url = generate_booking_search_url("Colosseum Tour", "Rome")
+        assert ta_url is not None
+        assert "tripadvisor.com/Search" in ta_url
         assert "pid=tripadvisor-789" in ta_url

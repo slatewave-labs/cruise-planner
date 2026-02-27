@@ -9,6 +9,7 @@ import pytest
 
 from backend.affiliate_config import (
     add_affiliate_params,
+    generate_booking_search_url,
     get_affiliate_config,
     get_domain_from_url,
     process_plan_activities,
@@ -140,41 +141,81 @@ class TestAddAffiliateParams:
         assert "aid=test-123" in result2
 
 
-class TestProcessPlanActivities:
-    """Test processing of plan activities for affiliate links."""
+class TestGenerateBookingSearchUrl:
+    """Test search URL generation for booking platforms."""
 
-    def test_process_activities_with_booking_urls(self, monkeypatch):
-        """Test processing activities with booking URLs."""
+    def test_generates_viator_search_url_when_configured(self, monkeypatch):
+        """Test Viator search URL is generated when affiliate ID is set."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
+        result = generate_booking_search_url("Colosseum Tour", "Rome")
+
+        assert result is not None
+        assert "viator.com/searchResults/all" in result
+        assert "text=Colosseum+Tour+Rome" in result
+        assert "aid=test-123" in result
+
+    def test_falls_back_to_getyourguide(self, monkeypatch):
+        """Test fallback to GetYourGuide when Viator is not configured."""
+        monkeypatch.delenv("VIATOR_AFFILIATE_ID", raising=False)
+        monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "test-gyg-456")
+        result = generate_booking_search_url("Park Guell", "Barcelona")
+
+        assert result is not None
+        assert "getyourguide.com/s/" in result
+        assert "q=Park+Guell+Barcelona" in result
+        assert "partner_id=test-gyg-456" in result
+
+    def test_returns_none_when_no_platform_configured(self, monkeypatch):
+        """Test returns None when no affiliate platform is configured."""
+        monkeypatch.delenv("VIATOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("GETYOURGUIDE_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+        result = generate_booking_search_url("Tour", "City")
+        assert result is None
+
+    def test_returns_none_for_empty_activity_name(self, monkeypatch):
+        """Test returns None when activity name is empty."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
+        assert generate_booking_search_url("", "Rome") is None
+
+    def test_returns_none_for_empty_port_name(self, monkeypatch):
+        """Test returns None when port name is empty."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
+        assert generate_booking_search_url("Tour", "") is None
+
+
+class TestProcessPlanActivities:
+    """Test processing of plan activities for booking search URLs."""
+
+    def test_process_activities_generates_search_urls(self, monkeypatch):
+        """Test that activities get valid search URLs instead of AI-generated ones."""
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
 
         activities = [
             {
                 "order": 1,
                 "name": "Colosseum Tour",
-                "booking_url": "https://www.viator.com/tours/Rome/tour/123",
+                "booking_url": "https://www.viator.com/tours/Rome/Fake-Tour/d511-99999",
             },
             {
                 "order": 2,
                 "name": "Free Walking Tour",
                 "booking_url": None,
             },
-            {
-                "order": 3,
-                "name": "Vatican Museums",
-                "booking_url": "https://example.com/vatican",
-            },
         ]
 
-        result = process_plan_activities(activities)
+        result = process_plan_activities(activities, port_name="Rome")
 
-        # First activity should have affiliate params
+        # First activity: AI URL replaced with valid search URL
+        assert "viator.com/searchResults/all" in result[0]["booking_url"]
+        assert "text=Colosseum+Tour+Rome" in result[0]["booking_url"]
         assert "aid=test-123" in result[0]["booking_url"]
 
-        # Second activity has no URL
-        assert result[1]["booking_url"] is None
-
-        # Third activity has no affiliate program
-        assert result[2]["booking_url"] == "https://example.com/vatican"
+        # Second activity also gets a search URL (has a name)
+        assert "viator.com/searchResults/all" in result[1]["booking_url"]
+        assert "text=Free+Walking+Tour+Rome" in result[1]["booking_url"]
 
     def test_process_empty_activities(self):
         """Test processing empty activities list."""
@@ -186,17 +227,23 @@ class TestProcessPlanActivities:
         result = process_plan_activities(None)
         assert result is None
 
-    def test_process_activities_without_booking_url_field(self):
-        """Test activities without booking_url field are handled."""
+    def test_process_activities_without_name(self, monkeypatch):
+        """Test activities without name field don't get search URLs."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
         activities = [
-            {"order": 1, "name": "Activity 1"},
-            {"order": 2, "name": "Activity 2"},
+            {"order": 1, "booking_url": None},
         ]
-        result = process_plan_activities(activities)
+        result = process_plan_activities(activities, port_name="Rome")
+        assert result[0].get("booking_url") is None
 
-        assert len(result) == 2
-        assert result[0]["name"] == "Activity 1"
-        assert result[1]["name"] == "Activity 2"
+    def test_process_activities_without_port_name(self, monkeypatch):
+        """Test activities without port_name don't get search URLs."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
+        activities = [
+            {"order": 1, "name": "Tour", "booking_url": None},
+        ]
+        result = process_plan_activities(activities, port_name="")
+        assert result[0].get("booking_url") is None
 
     def test_original_activities_not_modified(self, monkeypatch):
         """Test that original activities list is not modified."""
@@ -211,12 +258,12 @@ class TestProcessPlanActivities:
         ]
 
         original_url = original_activities[0]["booking_url"]
-        result = process_plan_activities(original_activities)
+        result = process_plan_activities(original_activities, port_name="Rome")
 
         # Original should be unchanged
         assert original_activities[0]["booking_url"] == original_url
-        # Result should have affiliate params
-        assert result[0]["booking_url"] != original_url
+        # Result should have a search URL
+        assert "viator.com/searchResults/all" in result[0]["booking_url"]
 
 
 class TestAffiliateConfig:
