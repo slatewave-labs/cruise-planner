@@ -462,7 +462,13 @@ IMPORTANT RULES:
 6. ALL cost estimates must be shown in {currency} — use the {currency} symbol/code
 7. The "total_estimated_cost" must also be in {currency}
 8. Include 5-8 activities appropriate for the preferences
-9. Set "booking_url" to null for every activity — booking links are handled separately
+9. For each bookable activity, set "booking_url" to a REAL product-page URL on \
+one of these platforms: viator.com, getyourguide.com, klook.com, tripadvisor.com, \
+or booking.com. Only include a URL you are confident actually exists — do NOT \
+invent or guess URLs. If you are unsure, set "booking_url" to null.
+10. For each activity, set "booking_search_term" to a short search phrase a tourist \
+would type on a booking platform to find this exact experience (e.g. \
+"Skip the Line Sagrada Familia Guided Tour"). Keep it concise and specific.
 
 Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {{
@@ -482,7 +488,8 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
       "end_time": "string - HH:MM format",
       "duration_minutes": number,
       "cost_estimate": "string - e.g. Free, ~{currency} 8",
-      "booking_url": "string or null - URL for booking/info",
+      "booking_url": "string or null - real URL on a supported booking platform",
+      "booking_search_term": "string - short search phrase for booking platforms",
       "transport_to_next": "string - how to get to next activity",
       "travel_time_to_next": "string - estimated travel time",
       "tips": "string - useful tips for this activity"
@@ -603,7 +610,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
             plan_data["activities"] = process_plan_activities(
                 plan_data["activities"], port_name=port_name
             )
-            logger.info("Processed activities with booking search URLs")
+            logger.info("Processed activities with booking URLs")
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
         logger.debug(f"Raw response: {response_text[:500]}")  # Log first 500 chars

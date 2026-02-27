@@ -8,6 +8,7 @@ the application owner receives commission.
 
 import logging
 import os
+import re
 from typing import Optional
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
@@ -199,6 +200,69 @@ AFFILIATE_ENV_VARS = {
 }
 
 
+# URL path patterns that indicate a search/listing page rather than a product page.
+# Used to reject AI-provided URLs that are just search links.
+_SEARCH_PATH_PATTERNS = re.compile(
+    r"(/search|/searchResults|/s/?\?|/searchresults)", re.IGNORECASE
+)
+
+
+def validate_booking_url(url: str) -> bool:
+    """
+    Validate that an AI-provided booking URL looks like a real product page.
+
+    Checks:
+    - URL is well-formed with https scheme
+    - Domain belongs to a supported affiliate platform
+    - Path is non-trivial (not just "/" or a search/listing page)
+
+    Args:
+        url: The booking URL to validate
+
+    Returns:
+        True if the URL appears to be a valid product page on a supported platform
+    """
+    if not url or not isinstance(url, str):
+        return False
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    # Must be https
+    if parsed.scheme != "https":
+        return False
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return False
+
+    # Strip www. for comparison
+    bare_host = hostname[4:] if hostname.startswith("www.") else hostname
+
+    # Must be a supported affiliate platform
+    if bare_host not in SEARCH_URL_TEMPLATES:
+        return False
+
+    # Path must be non-trivial (more than just "/")
+    path = parsed.path.rstrip("/")
+    if not path or path == "":
+        return False
+
+    # Reject if the path looks like a search/listing page
+    if _SEARCH_PATH_PATTERNS.search(parsed.path + "?" + (parsed.query or "")):
+        return False
+
+    # Path should have at least 1 meaningful segment (e.g. /tours/... or
+    # /AttractionProductReview-g187497-d123.html)
+    segments = [s for s in path.split("/") if s]
+    if len(segments) < 1:
+        return False
+
+    return True
+
+
 def get_configured_platforms() -> list:
     """
     Get list of affiliate platforms that have their ID configured.
@@ -270,21 +334,23 @@ def generate_booking_search_url(activity_name: str, port_name: str) -> Optional[
 
 def process_plan_activities(activities: list, port_name: str = "") -> list:
     """
-    Process all activities in a plan to generate valid booking search URLs.
+    Process all activities in a plan to ensure valid booking URLs.
 
-    AI models hallucinate specific booking URLs that always 404. Instead, this
-    function generates search URLs on real booking platforms based on the
-    activity name and port, then adds affiliate tracking parameters.
+    For each activity:
+    1. If the AI provided a booking_url that passes validation (real product page
+       on a supported affiliate platform), add affiliate params and keep it.
+    2. Otherwise, generate a search URL on a booking platform using the
+       ``booking_search_term`` (preferred) or the activity name as query.
 
-    Activities are distributed evenly across all configured affiliate platforms
-    using round-robin, rather than sending all traffic to a single platform.
+    Fallback search URLs are distributed evenly across all configured affiliate
+    platforms using round-robin.
 
     Args:
         activities: List of activity dictionaries from AI-generated plan
         port_name: Name of the port/city for building search URLs
 
     Returns:
-        Activities with valid booking search URLs
+        Activities with valid booking URLs
     """
     if not activities or not isinstance(activities, list):
         return activities
@@ -296,15 +362,22 @@ def process_plan_activities(activities: list, port_name: str = "") -> list:
         # Create a copy to avoid modifying the original
         processed_activity = activity.copy()
 
-        # Replace any AI-generated booking_url with a valid search URL
-        activity_name = processed_activity.get("name", "")
-        if activity_name and port_name and configured_platforms:
-            # Round-robin across configured platforms for even distribution
-            platform = configured_platforms[idx % len(configured_platforms)]
-            search_url = generate_booking_search_url_for_platform(
-                activity_name, port_name, platform
-            )
-            processed_activity["booking_url"] = search_url
+        ai_url = processed_activity.get("booking_url")
+
+        if ai_url and validate_booking_url(ai_url):
+            # AI provided a valid product-page URL — add affiliate params
+            processed_activity["booking_url"] = add_affiliate_params(ai_url)
+        else:
+            # Fallback: generate a search URL with round-robin distribution
+            search_term = processed_activity.get(
+                "booking_search_term", ""
+            ) or processed_activity.get("name", "")
+            if search_term and port_name and configured_platforms:
+                platform = configured_platforms[idx % len(configured_platforms)]
+                search_url = generate_booking_search_url_for_platform(
+                    search_term, port_name, platform
+                )
+                processed_activity["booking_url"] = search_url
 
         processed_activities.append(processed_activity)
 
