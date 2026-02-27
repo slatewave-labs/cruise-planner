@@ -71,4 +71,16 @@ describe('Layout Component - Animation Regression Prevention', () => {
     expect(layoutSource).toMatch(/export default function Layout/);
     expect(layoutSource).toMatch(/function Layout\s*\(\s*{\s*children\s*}\s*\)/);
   });
+
+  test('Layout.js site-footer is NOT hidden on mobile (no hidden md:block)', () => {
+    // The footer must be visible on mobile — using hidden md:block hides it on small screens
+    expect(layoutSource).not.toMatch(/hidden\s+md:block[^"]*site-footer/);
+    // Confirm site-footer testid is present
+    expect(layoutSource).toMatch(/data-testid="site-footer"/);
+  });
+
+  test('Layout.js site-footer has mobile bottom padding to clear fixed nav', () => {
+    // pb-20 on mobile ensures footer content is not obscured by the 64px fixed bottom nav
+    expect(layoutSource).toMatch(/pb-20/);
+  });
 });

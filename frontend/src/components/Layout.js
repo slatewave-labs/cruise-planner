@@ -89,8 +89,8 @@ export default function Layout({ children }) {
         </div>
       </nav>
 
-      {/* Desktop Site Footer — hidden on mobile where bottom nav is shown */}
-      <footer className="hidden md:block bg-primary text-white/70 py-6 px-8" data-testid="site-footer">
+      {/* Site Footer — visible on all viewports; extra bottom padding on mobile clears the fixed bottom nav */}
+      <footer className="bg-primary text-white/70 pt-6 pb-20 px-8 md:py-6" data-testid="site-footer">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="font-body text-sm text-white/70">Created by Slatewave Labs</p>
           <nav className="flex items-center gap-4" aria-label="Footer navigation">
