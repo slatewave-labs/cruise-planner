@@ -162,7 +162,6 @@ def add_affiliate_params(url: str) -> str:
         return url
 
 
-
 # Search URL templates for supported booking platforms.
 # Used to generate valid search URLs instead of relying on AI-hallucinated links.
 SEARCH_URL_TEMPLATES = {
@@ -193,9 +192,7 @@ AFFILIATE_ENV_VARS = {
 }
 
 
-def generate_booking_search_url(
-    activity_name: str, port_name: str
-) -> Optional[str]:
+def generate_booking_search_url(activity_name: str, port_name: str) -> Optional[str]:
     """
     Generate a valid search URL on the first configured booking platform.
 
