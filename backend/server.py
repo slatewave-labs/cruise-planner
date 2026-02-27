@@ -462,9 +462,7 @@ IMPORTANT RULES:
 6. ALL cost estimates must be shown in {currency} — use the {currency} symbol/code
 7. The "total_estimated_cost" must also be in {currency}
 8. Include 5-8 activities appropriate for the preferences
-9. For each activity with costs, include a relevant booking/info URL if known
-10. When suggesting bookable activities, prefer established booking platforms like \
-Viator, GetYourGuide, Klook, TripAdvisor Experiences, or Booking.com when available
+9. Set "booking_url" to null for every activity — booking links are handled separately
 
 Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {{
@@ -600,10 +598,12 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         plan_data = llm_client.parse_json_response(response_text)
         logger.info("Successfully parsed LLM response as JSON")
 
-        # Process activities to add affiliate tracking parameters
+        # Generate valid booking search URLs (AI-generated URLs are hallucinated)
         if "activities" in plan_data and isinstance(plan_data["activities"], list):
-            plan_data["activities"] = process_plan_activities(plan_data["activities"])
-            logger.info("Processed activities for affiliate links")
+            plan_data["activities"] = process_plan_activities(
+                plan_data["activities"], port_name=port_name
+            )
+            logger.info("Processed activities with booking search URLs")
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
         logger.debug(f"Raw response: {response_text[:500]}")  # Log first 500 chars
