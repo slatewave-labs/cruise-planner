@@ -4,16 +4,15 @@ Integration tests for affiliate link functionality in plan generation.
 
 import os
 import sys
+from unittest.mock import Mock, patch
 
 import pytest
-from unittest.mock import Mock, patch
 
 # Add backend directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../backend"))
 
-from server import app
-
 from fastapi.testclient import TestClient
+from server import app
 
 
 @pytest.fixture
@@ -59,7 +58,11 @@ class TestAffiliateLinksInPlanGeneration:
         """Test that generated plans have valid search URLs instead of AI-hallucinated ones."""
         monkeypatch.setenv("GROQ_API_KEY", "test-key")
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-viator-affiliate")
-        
+        monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "test-gyg-affiliate")
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
         # Mock LLM API response — AI sets booking_url to null as instructed
         plan_json = """{
             "plan_title": "Barcelona Highlights",
@@ -103,14 +106,14 @@ class TestAffiliateLinksInPlanGeneration:
             "packing_suggestions": ["Comfortable shoes", "Water bottle"],
             "safety_tips": ["Watch for pickpockets"]
         }"""
-        
+
         import json
-        
+
         mock_llm_instance = Mock()
         mock_llm_instance.generate_day_plan.return_value = plan_json
         mock_llm_instance.parse_json_response.return_value = json.loads(plan_json)
         mock_llm_client_class.return_value = mock_llm_instance
-        
+
         # Make request to generate plan
         response = test_client.post(
             "/api/plans/generate",
@@ -134,28 +137,29 @@ class TestAffiliateLinksInPlanGeneration:
             },
             headers={"X-Device-ID": "test-device"},
         )
-        
+
         assert response.status_code == 200
         plan_data = response.json()
-        
+
         # Verify plan structure
         assert "plan" in plan_data
         assert "activities" in plan_data["plan"]
-        
+
         activities = plan_data["plan"]["activities"]
         assert len(activities) == 2
-        
-        # Verify first activity has a valid Viator search URL (not a hallucinated one)
+
+        # Verify first activity has a valid Viator search URL (round-robin index 0)
         viator_url = activities[0]["booking_url"]
         assert "viator.com/searchResults/all" in viator_url
         assert "text=Sagrada+Familia+Barcelona" in viator_url
         assert "aid=test-viator-affiliate" in viator_url
         assert "mcid=cruise-planner-app" in viator_url
-        
-        # Verify second activity also has a valid search URL
+
+        # Verify second activity gets GetYourGuide (round-robin index 1)
         gyg_url = activities[1]["booking_url"]
-        assert "viator.com/searchResults/all" in gyg_url
-        assert "text=Park+Guell+Barcelona" in gyg_url
+        assert "getyourguide.com/s/" in gyg_url
+        assert "q=Park+Guell+Barcelona" in gyg_url
+        assert "partner_id=test-gyg-affiliate" in gyg_url
 
     def test_multiple_booking_platforms_supported(self, monkeypatch):
         """Test that multiple booking platforms generate valid search URLs."""

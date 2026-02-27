@@ -10,7 +10,9 @@ import pytest
 from backend.affiliate_config import (
     add_affiliate_params,
     generate_booking_search_url,
+    generate_booking_search_url_for_platform,
     get_affiliate_config,
+    get_configured_platforms,
     get_domain_from_url,
     process_plan_activities,
 )
@@ -129,12 +131,12 @@ class TestAddAffiliateParams:
     def test_subdomain_support(self, monkeypatch):
         """Test that legitimate subdomains are supported."""
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
-        
+
         # www.viator.com should work
         url1 = "https://www.viator.com/tour/123"
         result1 = add_affiliate_params(url1)
         assert "aid=test-123" in result1
-        
+
         # Direct viator.com should also work
         url2 = "https://viator.com/tour/123"
         result2 = add_affiliate_params(url2)
@@ -274,7 +276,7 @@ class TestAffiliateConfig:
         """Test Viator affiliate configuration."""
         monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-123")
         config = get_affiliate_config("viator.com")
-        
+
         assert config is not None
         assert config["aid"] == "test-123"
         assert config["mcid"] == "cruise-planner-app"
@@ -283,7 +285,7 @@ class TestAffiliateConfig:
         """Test GetYourGuide affiliate configuration."""
         monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "test-456")
         config = get_affiliate_config("getyourguide.com")
-        
+
         assert config is not None
         assert config["partner_id"] == "test-456"
         assert config["utm_source"] == "cruise-planner"
@@ -292,3 +294,146 @@ class TestAffiliateConfig:
         """Test unknown domain returns None."""
         config = get_affiliate_config("unknown.com")
         assert config is None
+
+
+class TestGetConfiguredPlatforms:
+    """Test discovery of configured affiliate platforms."""
+
+    def test_returns_configured_platforms(self, monkeypatch):
+        """Test that only platforms with configured IDs are returned."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "v-123")
+        monkeypatch.setenv("KLOOK_AFFILIATE_ID", "k-456")
+        monkeypatch.delenv("GETYOURGUIDE_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        platforms = get_configured_platforms()
+        assert platforms == ["viator.com", "klook.com"]
+
+    def test_returns_empty_when_none_configured(self, monkeypatch):
+        """Test empty list when no affiliate IDs are set."""
+        monkeypatch.delenv("VIATOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("GETYOURGUIDE_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        assert get_configured_platforms() == []
+
+    def test_respects_priority_order(self, monkeypatch):
+        """Test that platforms are returned in PLATFORM_PRIORITY order."""
+        monkeypatch.setenv("BOOKING_AFFILIATE_ID", "b-111")
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "v-222")
+        monkeypatch.delenv("GETYOURGUIDE_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+
+        platforms = get_configured_platforms()
+        assert platforms == ["viator.com", "booking.com"]
+
+
+class TestGenerateBookingSearchUrlForPlatform:
+    """Test platform-specific search URL generation."""
+
+    def test_generates_viator_url(self, monkeypatch):
+        """Test generating a Viator search URL."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "test-v")
+        result = generate_booking_search_url_for_platform(
+            "Colosseum Tour", "Rome", "viator.com"
+        )
+        assert result is not None
+        assert "viator.com/searchResults/all" in result
+        assert "aid=test-v" in result
+
+    def test_generates_getyourguide_url(self, monkeypatch):
+        """Test generating a GetYourGuide search URL."""
+        monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "test-gyg")
+        result = generate_booking_search_url_for_platform(
+            "Park Guell", "Barcelona", "getyourguide.com"
+        )
+        assert result is not None
+        assert "getyourguide.com/s/" in result
+        assert "partner_id=test-gyg" in result
+
+    def test_returns_none_for_empty_inputs(self):
+        """Test returns None when activity name or port is empty."""
+        assert (
+            generate_booking_search_url_for_platform("", "Rome", "viator.com") is None
+        )
+        assert (
+            generate_booking_search_url_for_platform("Tour", "", "viator.com") is None
+        )
+
+    def test_returns_none_for_unknown_platform(self):
+        """Test returns None for an unsupported platform domain."""
+        assert (
+            generate_booking_search_url_for_platform("Tour", "Rome", "unknown.com")
+            is None
+        )
+
+
+class TestProcessPlanActivitiesDistribution:
+    """Test even distribution of affiliate links across platforms."""
+
+    def test_distributes_across_multiple_platforms(self, monkeypatch):
+        """Test that activities are spread evenly across configured platforms."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "v-123")
+        monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "gyg-456")
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        activities = [
+            {"order": 1, "name": "Activity A", "booking_url": None},
+            {"order": 2, "name": "Activity B", "booking_url": None},
+            {"order": 3, "name": "Activity C", "booking_url": None},
+            {"order": 4, "name": "Activity D", "booking_url": None},
+        ]
+
+        result = process_plan_activities(activities, port_name="Rome")
+
+        # With 2 platforms and 4 activities: round-robin gives alternating
+        assert "viator.com" in result[0]["booking_url"]
+        assert "getyourguide.com" in result[1]["booking_url"]
+        assert "viator.com" in result[2]["booking_url"]
+        assert "getyourguide.com" in result[3]["booking_url"]
+
+    def test_distributes_across_three_platforms(self, monkeypatch):
+        """Test round-robin with three configured platforms."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "v-1")
+        monkeypatch.setenv("GETYOURGUIDE_AFFILIATE_ID", "gyg-2")
+        monkeypatch.setenv("KLOOK_AFFILIATE_ID", "k-3")
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        activities = [
+            {"order": i, "name": f"Activity {i}", "booking_url": None}
+            for i in range(1, 7)
+        ]
+
+        result = process_plan_activities(activities, port_name="Barcelona")
+
+        assert "viator.com" in result[0]["booking_url"]
+        assert "getyourguide.com" in result[1]["booking_url"]
+        assert "klook.com" in result[2]["booking_url"]
+        assert "viator.com" in result[3]["booking_url"]
+        assert "getyourguide.com" in result[4]["booking_url"]
+        assert "klook.com" in result[5]["booking_url"]
+
+    def test_single_platform_still_works(self, monkeypatch):
+        """Test that a single configured platform still works for all activities."""
+        monkeypatch.setenv("VIATOR_AFFILIATE_ID", "v-only")
+        monkeypatch.delenv("GETYOURGUIDE_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("KLOOK_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("TRIPADVISOR_AFFILIATE_ID", raising=False)
+        monkeypatch.delenv("BOOKING_AFFILIATE_ID", raising=False)
+
+        activities = [
+            {"order": 1, "name": "Tour A", "booking_url": None},
+            {"order": 2, "name": "Tour B", "booking_url": None},
+        ]
+
+        result = process_plan_activities(activities, port_name="Rome")
+
+        assert "viator.com" in result[0]["booking_url"]
+        assert "viator.com" in result[1]["booking_url"]

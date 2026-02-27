@@ -192,6 +192,48 @@ AFFILIATE_ENV_VARS = {
 }
 
 
+def get_configured_platforms() -> list:
+    """
+    Get list of affiliate platforms that have their ID configured.
+
+    Returns:
+        List of domain strings for configured platforms, in priority order
+    """
+    platforms = []
+    for domain in PLATFORM_PRIORITY:
+        env_var = AFFILIATE_ENV_VARS.get(domain, "")
+        affiliate_id = os.environ.get(env_var, "").strip() if env_var else ""
+        if affiliate_id and SEARCH_URL_TEMPLATES.get(domain):
+            platforms.append(domain)
+    return platforms
+
+
+def generate_booking_search_url_for_platform(
+    activity_name: str, port_name: str, domain: str
+) -> Optional[str]:
+    """
+    Generate a valid search URL on a specific booking platform.
+
+    Args:
+        activity_name: Name of the activity to search for
+        port_name: Name of the port/city for search context
+        domain: The affiliate platform domain to generate the URL for
+
+    Returns:
+        A search URL with affiliate params, or None if inputs are empty
+    """
+    if not activity_name or not port_name:
+        return None
+
+    template = SEARCH_URL_TEMPLATES.get(domain)
+    if not template:
+        return None
+
+    query = quote_plus(f"{activity_name.strip()} {port_name.strip()}")
+    search_url = template.format(query=query)
+    return add_affiliate_params(search_url)
+
+
 def generate_booking_search_url(activity_name: str, port_name: str) -> Optional[str]:
     """
     Generate a valid search URL on the first configured booking platform.
@@ -210,24 +252,13 @@ def generate_booking_search_url(activity_name: str, port_name: str) -> Optional[
     if not activity_name or not port_name:
         return None
 
-    for domain in PLATFORM_PRIORITY:
-        # Only use platforms where the affiliate ID env var is actually set
-        env_var = AFFILIATE_ENV_VARS.get(domain, "")
-        affiliate_id = os.environ.get(env_var, "").strip() if env_var else ""
-        if not affiliate_id:
-            continue
+    platforms = get_configured_platforms()
+    if not platforms:
+        return None
 
-        template = SEARCH_URL_TEMPLATES.get(domain)
-        if not template:
-            continue
-
-        # Build search query from activity name and port
-        query = quote_plus(f"{activity_name.strip()} {port_name.strip()}")
-        search_url = template.format(query=query)
-        # Add affiliate params to the search URL
-        return add_affiliate_params(search_url)
-
-    return None
+    return generate_booking_search_url_for_platform(
+        activity_name, port_name, platforms[0]
+    )
 
 
 def process_plan_activities(activities: list, port_name: str = "") -> list:
@@ -237,6 +268,9 @@ def process_plan_activities(activities: list, port_name: str = "") -> list:
     AI models hallucinate specific booking URLs that always 404. Instead, this
     function generates search URLs on real booking platforms based on the
     activity name and port, then adds affiliate tracking parameters.
+
+    Activities are distributed evenly across all configured affiliate platforms
+    using round-robin, rather than sending all traffic to a single platform.
 
     Args:
         activities: List of activity dictionaries from AI-generated plan
@@ -248,15 +282,21 @@ def process_plan_activities(activities: list, port_name: str = "") -> list:
     if not activities or not isinstance(activities, list):
         return activities
 
+    configured_platforms = get_configured_platforms()
+
     processed_activities = []
-    for activity in activities:
+    for idx, activity in enumerate(activities):
         # Create a copy to avoid modifying the original
         processed_activity = activity.copy()
 
         # Replace any AI-generated booking_url with a valid search URL
         activity_name = processed_activity.get("name", "")
-        if activity_name and port_name:
-            search_url = generate_booking_search_url(activity_name, port_name)
+        if activity_name and port_name and configured_platforms:
+            # Round-robin across configured platforms for even distribution
+            platform = configured_platforms[idx % len(configured_platforms)]
+            search_url = generate_booking_search_url_for_platform(
+                activity_name, port_name, platform
+            )
             processed_activity["booking_url"] = search_url
 
         processed_activities.append(processed_activity)
