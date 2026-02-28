@@ -18,8 +18,7 @@ export default function Landing() {
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: `url(https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1400&q=80)` }}
-          role="img"
-          aria-label="Cruise ship at a tropical port of call"
+          aria-hidden="true"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-primary/80 via-primary/60 to-primary/90" />
         <div className="relative px-6 py-20 md:py-32 max-w-5xl mx-auto text-center text-white">

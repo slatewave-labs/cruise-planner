@@ -310,7 +310,7 @@ jobs:
           SITEMAP_EOF
 
           # Remove leading whitespace from here-doc indentation
-          sed -i 's/^          //' /tmp/sitemap-prod.xml
+          sed -i 's/^[[:space:]]*//' /tmp/sitemap-prod.xml
 
           aws s3 cp /tmp/sitemap-prod.xml "s3://${S3_BUCKET}/sitemap.xml" \
             --cache-control "no-cache, no-store, must-revalidate" \

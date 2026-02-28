@@ -5,4 +5,4 @@
 User-agent: *
 Disallow: /
 
-Sitemap: https://shoreexplorer.com/sitemap.xml
+Sitemap: https://DOMAIN_REPLACED_DURING_DEPLOYMENT/sitemap.xml
