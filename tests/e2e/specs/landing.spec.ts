@@ -15,8 +15,10 @@ test.describe('Landing Page', () => {
 
   test('displays the hero section with headline and tagline', async ({ page }) => {
     await expect(page.getByTestId('landing-page')).toBeVisible();
-    await expect(page.getByRole('heading', { name: /make every port/i })).toBeVisible();
-    await expect(page.getByText(/personalised day plans/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /plan your perfect day/i })).toBeVisible();
+    await expect(
+      page.getByText(/shore excursion itineraries/i).first(),
+    ).toBeVisible();
   });
 
   test('"Start Planning" button navigates to /trips/new', async ({ page }) => {

@@ -352,7 +352,7 @@ You can now view shoreexplorer in the browser.
 
 **Your browser should automatically open to `http://localhost:3000`.** If it doesn't, open your browser and go to that address manually.
 
-You should now see the ShoreExplorer landing page with the headline "Make Every Port an Adventure".
+You should now see the ShoreExplorer landing page with the headline "Plan Your Perfect Day at Every Cruise Port".
 
 ---
 
