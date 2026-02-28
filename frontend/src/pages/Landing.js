@@ -4,20 +4,22 @@ import { Compass, Ship, Sun, MapPin, ArrowRight, Anchor } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const features = [
-  { icon: Ship, title: 'Your Cruise, Your Plan', desc: 'Enter your ship and port schedule, and we handle the rest.' },
-  { icon: Sun, title: 'Weather-Smart', desc: 'Real-time weather data ensures your day plan suits the conditions.' },
-  { icon: MapPin, title: 'Circular Routes', desc: 'Adventures that start and end at your ship, with time to spare.' },
-  { icon: Compass, title: 'Personalised Plans', desc: 'Tailored itineraries crafted around your preferences, schedule, and style.' },
+  { icon: Ship, title: 'Your Cruise, Your Plan', desc: 'Enter your cruise ship and port schedule, and we build a personalised shore excursion itinerary for each stop.' },
+  { icon: Sun, title: 'Weather-Smart Excursions', desc: 'Real-time weather forecasts ensure your cruise port day plan suits the conditions ashore.' },
+  { icon: MapPin, title: 'Circular Walking Routes', desc: 'Shore excursion routes that start and end at your cruise ship, with time to spare before sailing.' },
+  { icon: Compass, title: 'Personalised Day Plans', desc: 'AI-tailored port of call itineraries crafted around your preferences, schedule, and travel style.' },
 ];
 
 export default function Landing() {
   return (
     <div data-testid="landing-page">
       {/* Hero */}
-      <section className="relative overflow-hidden">
+      <section className="relative overflow-hidden" aria-label="Cruise port day planner hero">
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: `url(https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1400&q=80)` }}
+          role="img"
+          aria-label="Cruise ship at a tropical port of call"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-primary/80 via-primary/60 to-primary/90" />
         <div className="relative px-6 py-20 md:py-32 max-w-5xl mx-auto text-center text-white">
@@ -31,10 +33,10 @@ export default function Landing() {
               Cruise Port Day Planner
             </div>
             <h1 className="font-heading text-4xl md:text-6xl font-bold mb-6 leading-tight text-balance">
-              Make Every Port<br />an Adventure
+              Plan Your Perfect Day<br />at Every Cruise Port
             </h1>
             <p className="text-lg md:text-xl text-white/80 max-w-2xl mx-auto mb-10 leading-relaxed">
-              Personalised day plans for every cruise port of call. Smart routes, real-time weather, and activities tailored to your style.
+              AI-powered shore excursion itineraries for every port of call. Smart walking routes, real-time weather, and activities tailored to your style — all free.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
@@ -58,12 +60,12 @@ export default function Landing() {
       </section>
 
       {/* Features */}
-      <section className="px-6 py-16 md:py-24 max-w-6xl mx-auto">
+      <section className="px-6 py-16 md:py-24 max-w-6xl mx-auto" aria-label="How ShoreExplorer cruise day planner works">
         <h2 className="font-heading text-3xl md:text-4xl font-bold text-center text-primary mb-4">
           How It Works
         </h2>
         <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-          From ship to shore and back again, ShoreExplorer plans your perfect day.
+          From ship to shore and back again, ShoreExplorer plans your perfect cruise port day.
         </p>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((f, i) => {
@@ -90,13 +92,13 @@ export default function Landing() {
       </section>
 
       {/* CTA */}
-      <section className="px-6 py-16 md:py-20">
+      <section className="px-6 py-16 md:py-20" aria-label="Start planning your cruise shore excursions">
         <div className="max-w-3xl mx-auto bg-primary rounded-3xl p-8 md:p-12 text-center text-white">
           <h2 className="font-heading text-2xl md:text-3xl font-bold mb-4">
-            Ready to Explore?
+            Ready to Plan Your Days Ashore?
           </h2>
           <p className="text-white/70 mb-8 max-w-md mx-auto">
-            Create your first trip and get the perfect day planned at each port of call.
+            Create your cruise trip and get AI-powered shore excursion itineraries for every port of call.
           </p>
           <Link
             to="/trips/new"

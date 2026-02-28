@@ -11,26 +11,69 @@
   <meta name="theme-color" content="#0F172A" />
 
   <!-- Primary SEO meta -->
-  <title>ShoreExplorer — AI Cruise Port Day Planner</title>
-  <meta name="description" content="ShoreExplorer uses AI to build a personalised day itinerary for every cruise port you visit — weather, maps, and timings included. Free to use." />
-  <meta name="robots" content="index, follow" />
+  <title>ShoreExplorer — AI Cruise Port Day Planner | Shore Excursion Itineraries</title>
+  <meta name="description" content="Plan your perfect cruise port day with ShoreExplorer. AI-powered shore excursion itineraries for every port of call — personalised activities, real-time weather, interactive maps, and walking routes. Free cruise day planner." />
+  <meta name="keywords" content="cruise port planner, shore excursion planner, cruise day plan, port of call itinerary, cruise excursion ideas, days ashore planner, cruise port activities, cruise ship port guide, AI cruise planner, cruise port day trip, cruise shore day, cruise port walking tour, Mediterranean cruise ports, Caribbean cruise excursions" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+  <link rel="canonical" href="%REACT_APP_SITE_URL%/" />
 
   <!-- Open Graph (Facebook, WhatsApp, Slack previews) -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="ShoreExplorer" />
-  <meta property="og:title" content="ShoreExplorer — Plan Your Perfect Day Ashore" />
-  <meta property="og:description" content="AI-powered cruise port day planner. Get a personalised itinerary for every port of call — with live weather, interactive maps, and exportable routes." />
+  <meta property="og:title" content="ShoreExplorer — AI Cruise Port Day Planner | Plan Your Shore Excursions" />
+  <meta property="og:description" content="AI-powered cruise port day planner. Get a personalised shore excursion itinerary for every port of call — with real-time weather, interactive maps, and exportable walking routes." />
   <meta property="og:image" content="%REACT_APP_SITE_URL%/icon-512.png" />
   <meta property="og:image:width" content="512" />
   <meta property="og:image:height" content="512" />
   <meta property="og:image:alt" content="ShoreExplorer logo — anchor icon on coral background" />
   <meta property="og:url" content="%REACT_APP_SITE_URL%" />
+  <meta property="og:locale" content="en_GB" />
 
   <!-- Twitter / X Card -->
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="ShoreExplorer — Plan Your Perfect Day Ashore" />
-  <meta name="twitter:description" content="AI-powered cruise port day planner. Personalised itineraries with live weather and interactive maps." />
+  <meta name="twitter:title" content="ShoreExplorer — AI Cruise Port Day Planner" />
+  <meta name="twitter:description" content="Plan your perfect day ashore. AI-powered cruise port itineraries with weather, maps, and personalised shore excursion routes." />
   <meta name="twitter:image" content="%REACT_APP_SITE_URL%/icon-512.png" />
+
+  <!-- Structured Data: WebSite + Organization (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "name": "ShoreExplorer",
+        "alternateName": "Shore Explorer Cruise Day Planner",
+        "url": "%REACT_APP_SITE_URL%/",
+        "description": "AI-powered cruise port day planner that creates personalised shore excursion itineraries with real-time weather and interactive maps.",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "%REACT_APP_SITE_URL%/trips/new",
+          "name": "Plan a cruise port day"
+        }
+      },
+      {
+        "@type": "Organization",
+        "name": "Slatewave Labs",
+        "url": "https://slatewave-labs.com",
+        "logo": "%REACT_APP_SITE_URL%/icon-512.png"
+      },
+      {
+        "@type": "WebApplication",
+        "name": "ShoreExplorer",
+        "url": "%REACT_APP_SITE_URL%/",
+        "applicationCategory": "TravelApplication",
+        "operatingSystem": "Any",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "description": "Free AI-powered cruise port day planner. Create personalised shore excursion itineraries with weather forecasts, interactive maps, and optimised walking routes for every port of call."
+      }
+    ]
+  }
+  </script>
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -55,7 +98,7 @@
   </script>
 </head>
 <body>
-  <noscript>You need to enable JavaScript to run ShoreExplorer.</noscript>
+  <noscript>ShoreExplorer is an AI-powered cruise port day planner. Plan personalised shore excursion itineraries for every port of call with real-time weather, interactive maps, and optimised walking routes. Enable JavaScript for the full experience.</noscript>
   <div id="root"></div>
 </body>
 </html>
