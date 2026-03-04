@@ -954,6 +954,10 @@ jobs:
 
               if [[ "$CONTROLLER" == "CODE_DEPLOY" ]]; then
                 echo "  ⏭️  ${SVC_NAME} already uses CODE_DEPLOY controller"
+                aws ecs update-service --cluster "$CLUSTER" --service "$SVC_NAME" \
+                  --desired-count "$DESIRED_COUNT" \
+                  --region "$AWS_REGION" --no-cli-pager
+                echo "  ✅ Updated ${SVC_NAME} desired count to ${DESIRED_COUNT}"
                 return 0
               fi
 
