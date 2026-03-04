@@ -295,7 +295,7 @@ GitHub environments are used for additional protection:
 ### Production Environment (`production`)
 - Optional: Configure manual approval in repository settings
 - Deploys on version tags or manual trigger
-- Uses production resources (higher CPU/memory, 2+ replicas)
+- Uses production resources (higher CPU/memory, backend autoscales between 1 and 3 replicas)
 - Runs full CI validation before deployment
 - Automatic rollback on failure
 
@@ -348,4 +348,3 @@ GitHub environments are used for additional protection:
 **Cost:** $0 (uses GitHub-hosted runners)
 
 **Warning:** This is a destructive operation. All test environment data and infrastructure will be permanently deleted. Use with caution.
-

@@ -987,6 +987,13 @@ jobs:
           CLUSTER="${APP_NAME}-cluster"
           SERVICE="${APP_NAME}-backend"
           RESOURCE_ID="service/${CLUSTER}/${SERVICE}"
+          TARGET_CPU=60.0
+          SCALE_IN_COOLDOWN=300
+          SCALE_OUT_COOLDOWN=120
+          POLICY_CONFIG=$(cat <<EOF
+          {"TargetValue":${TARGET_CPU},"PredefinedMetricSpecification":{"PredefinedMetricType":"ECSServiceAverageCPUUtilization"},"ScaleInCooldown":${SCALE_IN_COOLDOWN},"ScaleOutCooldown":${SCALE_OUT_COOLDOWN}}
+          EOF
+          )
 
           aws application-autoscaling register-scalable-target \
             --service-namespace ecs \
@@ -1002,7 +1009,7 @@ jobs:
             --scalable-dimension ecs:service:DesiredCount \
             --policy-name "${SERVICE}-cpu-target-tracking" \
             --policy-type TargetTrackingScaling \
-            --target-tracking-scaling-policy-configuration '{"TargetValue":60.0,"PredefinedMetricSpecification":{"PredefinedMetricType":"ECSServiceAverageCPUUtilization"},"ScaleInCooldown":300,"ScaleOutCooldown":120}' \
+            --target-tracking-scaling-policy-configuration "$POLICY_CONFIG" \
             --region "$AWS_REGION" --no-cli-pager >/dev/null
 
           echo "✅ Configured backend ECS autoscaling (min=1, max=3)"
