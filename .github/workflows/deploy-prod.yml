@@ -80,7 +80,6 @@ jobs:
   check-env:
     name: Check Production Environment is Deployed
     runs-on: ubuntu-latest
-    environment: production
     outputs:
       deployed: ${{ steps.check.outputs.deployed }}
 
