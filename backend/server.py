@@ -255,7 +255,7 @@ def health():
 def search_ports(
     q: str = Query("", min_length=0),
     region: Optional[str] = None,
-    limit: int = Query(20, le=50),
+    limit: int = Query(20, le=500),
 ):
     query = q.lower().strip()
     results = []

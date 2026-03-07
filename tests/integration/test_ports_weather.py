@@ -74,16 +74,16 @@ class TestPortSearch:
         assert len(results) <= 5
     
     def test_search_ports_max_limit_enforced(self):
-        """Test that max limit is enforced"""
-        response = client.get("/api/ports/search?limit=1000")
-        
-        # The endpoint accepts up to 50, but pydantic might reject > 50
-        # If validation fails, expect 422. If it accepts and clamps, expect 200.
-        assert response.status_code in [200, 422]
-        
-        if response.status_code == 200:
-            results = response.json()
-            assert len(results) <= 50
+        """Test that max limit of 500 is enforced"""
+        # limit=500 is valid (used by the offline prefetch cache)
+        response = client.get("/api/ports/search?limit=500")
+        assert response.status_code == 200
+        results = response.json()
+        assert len(results) <= 500
+
+        # limit > 500 should be rejected
+        response = client.get("/api/ports/search?limit=501")
+        assert response.status_code == 422
     
     def test_search_ports_case_insensitive(self):
         """Test that search is case-insensitive"""
