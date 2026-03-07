@@ -425,11 +425,24 @@ jobs:
               --query "Listeners[0].ListenerArn" --output text --region "$AWS_REGION")
             echo "  ✅ Created HTTP listener (default → backend)"
           else
-            # Ensure default action points to backend (may have been frontend previously)
+            # When the service is already running via CODE_DEPLOY the primary task
+            # set may point to the green TG (after a successful Blue/Green deploy).
+            # Blindly resetting the listener to backend-tg would break the next
+            # CodeDeploy deploy with "Primary taskset target group must be behind
+            # listener". Use the service's active primary TG when available.
+            ACTIVE_TG=$(aws ecs describe-services \
+              --cluster "${APP_NAME}-cluster" --services "${APP_NAME}-backend" \
+              --query "services[0].taskSets[?status=='PRIMARY'][0].loadBalancers[0].targetGroupArn" \
+              --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            TARGET_TG="$BACKEND_TG_ARN"
+            if [[ -n "$ACTIVE_TG" && "$ACTIVE_TG" != "None" ]]; then
+              TARGET_TG="$ACTIVE_TG"
+            fi
             aws elbv2 modify-listener --listener-arn "$LISTENER_ARN" \
-              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
+              --default-actions Type=forward,TargetGroupArn="$TARGET_TG" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
-            echo "  ⏭️  HTTP listener exists (updated default → backend)"
+            echo "  ⏭️  HTTP listener exists (updated default → ${TARGET_TG})"
           fi
 
           # Listener rule: /api/* → backend (keep for compatibility)

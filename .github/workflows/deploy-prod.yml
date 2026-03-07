@@ -418,6 +418,50 @@ jobs:
             --tags "key=Project,value=${PROJECT_NAME}" "key=Environment,value=${ENVIRONMENT}" \
             --region "$AWS_REGION"
 
+      # ── Sync ALB listener with ECS primary task set ───────────────
+      # CodeDeploy requires the ECS service's primary task set TG to be a
+      # forward target on the prodTrafficRoute listener before it will start
+      # a Blue/Green deployment. This step aligns the listener with the
+      # service's actual primary TG, guarding against drift caused by
+      # setup workflow re-runs that blindly reset the listener to the blue TG.
+      - name: Sync ALB listener with ECS primary task set
+        run: |
+          APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+
+          # Get the prodTrafficRoute listener ARN from the CodeDeploy deployment group
+          LISTENER_ARN=$(aws deploy get-deployment-group \
+            --application-name "${APP_NAME}-codedeploy" \
+            --deployment-group-name "${APP_NAME}-backend-dg" \
+            --query "deploymentGroupInfo.loadBalancerInfo.targetGroupPairInfoList[0].prodTrafficRoute.listenerArns[0]" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -z "$LISTENER_ARN" || "$LISTENER_ARN" == "None" ]]; then
+            echo "⚠️  Could not retrieve CodeDeploy listener ARN — skipping sync"
+            exit 0
+          fi
+
+          # Get the ECS service's current primary task set target group ARN.
+          # After a successful Blue/Green deployment this will be the green TG,
+          # not the original blue TG.
+          PRIMARY_TG_ARN=$(aws ecs describe-services \
+            --cluster "${APP_NAME}-cluster" --services "${APP_NAME}-backend" \
+            --query "services[0].taskSets[?status=='PRIMARY'][0].loadBalancers[0].targetGroupArn" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          if [[ -z "$PRIMARY_TG_ARN" || "$PRIMARY_TG_ARN" == "None" ]]; then
+            echo "⚠️  Could not retrieve primary task set TG ARN — skipping sync"
+            exit 0
+          fi
+
+          echo "ECS primary task set TG: ${PRIMARY_TG_ARN}"
+          echo "CodeDeploy prodTrafficRoute listener: ${LISTENER_ARN}"
+
+          aws elbv2 modify-listener \
+            --listener-arn "$LISTENER_ARN" \
+            --default-actions "Type=forward,TargetGroupArn=${PRIMARY_TG_ARN}" \
+            --region "$AWS_REGION" --no-cli-pager >/dev/null
+          echo "✅ ALB listener default action aligned with ECS primary task set TG"
+
       # ── Deploy backend via CodeDeploy Blue/Green ─────────────────
       - name: Deploy backend via CodeDeploy
         id: deploy-backend
