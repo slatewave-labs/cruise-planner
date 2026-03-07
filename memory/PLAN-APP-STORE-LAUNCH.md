@@ -318,8 +318,9 @@ npx cap open ios
 For Android, use the Google Play Billing Library for premium subscriptions:
 
 ```javascript
-// Use the @nicolo-ribaudo/nicolo-nicolo pattern or a Capacitor plugin
-// e.g., @nicolo-nicolo/capacitor-purchases (RevenueCat)
+// Use a Capacitor plugin for Google Play Billing
+// e.g., @revenuecat/purchases-capacitor (RevenueCat — recommended)
+// or @capacitor-community/in-app-purchases
 ```
 
 ### Apple StoreKit

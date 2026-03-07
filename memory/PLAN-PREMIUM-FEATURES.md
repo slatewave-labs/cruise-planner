@@ -43,7 +43,9 @@ Introduce a freemium model where the core ShoreExplorer experience remains free,
 | Free | £0 | — |
 | Premium Monthly | £2.99/month | Recurring |
 | Premium Annual | £19.99/year (£1.67/month) | Recurring, 44% savings |
-| Lifetime | £39.99 one-off | One-time purchase |
+| Lifetime | £39.99 one-off | One-time purchase (web only) |
+
+**Important note on lifetime purchases:** Apple strongly discourages non-consumable lifetime purchases in favour of subscriptions. The lifetime tier should only be offered on the web version (via Stripe). For app store versions, offer monthly and annual subscriptions only. This avoids App Store review issues and aligns with Apple's preferred monetization model.
 
 **Why these prices:**
 - £2.99/month is below the "impulse buy" threshold

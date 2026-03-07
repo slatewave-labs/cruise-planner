@@ -123,18 +123,23 @@ export default AdUnit;
 
 ### Step 3: Add AdSense Script to index.html
 
+**Note:** Create React App substitutes `%REACT_APP_*%` in `public/index.html` at **build time**, so this approach works correctly. The substitution happens during `yarn build` (or `react-scripts build`), not at runtime.
+
 ```html
 <!-- In frontend/public/index.html, add before </head> -->
-<!-- Only load if configured -->
+<!-- Only load if configured — CRA substitutes env vars at build time -->
 <script>
-  if ('%REACT_APP_ADSENSE_CLIENT_ID%' !== '' && 
-      '%REACT_APP_ADSENSE_CLIENT_ID%'.indexOf('REACT_APP') === -1) {
-    var script = document.createElement('script');
-    script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=%REACT_APP_ADSENSE_CLIENT_ID%';
-    script.async = true;
-    script.crossOrigin = 'anonymous';
-    document.head.appendChild(script);
-  }
+  (function() {
+    var clientId = '%REACT_APP_ADSENSE_CLIENT_ID%';
+    // After CRA build substitution, check it's a real value
+    if (clientId && clientId.indexOf('REACT_APP') === -1 && clientId.length > 5) {
+      var script = document.createElement('script');
+      script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + clientId;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      document.head.appendChild(script);
+    }
+  })();
 </script>
 ```
 
