@@ -15,10 +15,14 @@ export default function Landing() {
     <div data-testid="landing-page">
       {/* Hero */}
       <section className="relative overflow-hidden" aria-label="Cruise port day planner hero">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1400&q=80)` }}
+        <img
+          src="https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1400&q=80"
+          alt=""
           aria-hidden="true"
+          fetchPriority="high"
+          loading="eager"
+          decoding="async"
+          className="absolute inset-0 w-full h-full object-cover object-center"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-primary/80 via-primary/60 to-primary/90" />
         <div className="relative px-6 py-20 md:py-32 max-w-5xl mx-auto text-center text-white">
