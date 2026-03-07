@@ -13,13 +13,29 @@
       "src": "icon-512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "theme_color": "#0F172A",
   "background_color": "#F5F5F4",
-  "categories": ["travel", "navigation", "lifestyle"]
+  "categories": ["travel", "navigation", "lifestyle"],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false
 }

@@ -148,14 +148,14 @@ export default function CookieBanner() {
                       our partners. You can customise your preferences at any time. Read our{' '}
                       <Link
                         to="/privacy"
-                        className="text-accent font-semibold hover:underline focus:underline"
+                        className="text-accent-dark font-semibold hover:underline focus:underline"
                       >
                         Privacy Policy
                       </Link>{' '}
                       and{' '}
                       <Link
                         to="/terms"
-                        className="text-accent font-semibold hover:underline focus:underline"
+                        className="text-accent-dark font-semibold hover:underline focus:underline"
                       >
                         Terms
                       </Link>
@@ -182,7 +182,7 @@ export default function CookieBanner() {
                   <button
                     data-testid="cookie-manage"
                     onClick={togglePreferences}
-                    className="text-accent font-semibold hover:underline min-h-[48px] focus:outline-none focus-visible:underline font-body text-sm px-2"
+                    className="text-accent-dark font-semibold hover:underline min-h-[48px] focus:outline-none focus-visible:underline font-body text-sm px-2"
                   >
                     Manage Preferences
                   </button>
@@ -253,7 +253,7 @@ export default function CookieBanner() {
                   </button>
                   <button
                     onClick={togglePreferences}
-                    className="text-accent font-semibold hover:underline min-h-[48px] focus:outline-none focus-visible:underline font-body text-sm px-2"
+                    className="text-accent-dark font-semibold hover:underline min-h-[48px] focus:outline-none focus-visible:underline font-body text-sm px-2"
                   >
                     Back
                   </button>
@@ -261,11 +261,11 @@ export default function CookieBanner() {
 
                 <p className="font-body text-xs text-muted-foreground leading-relaxed">
                   For more information, see our{' '}
-                  <Link to="/privacy" className="text-accent font-semibold hover:underline">
+                  <Link to="/privacy" className="text-accent-dark font-semibold hover:underline">
                     Privacy Policy
                   </Link>{' '}
                   and{' '}
-                  <Link to="/terms" className="text-accent font-semibold hover:underline">
+                  <Link to="/terms" className="text-accent-dark font-semibold hover:underline">
                     Terms
                   </Link>
                   .

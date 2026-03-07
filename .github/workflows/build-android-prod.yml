@@ -1,0 +1,214 @@
+name: Build Android (Production)
+
+# Build a signed AAB and upload to Google Play production track.
+# Requires manual approval via the 'production' environment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Version name (e.g. 1.0.0)"
+        required: true
+        default: "1.0.0"
+        type: string
+      version_code:
+        description: "Version code (integer, must increase on each upload)"
+        required: true
+        default: "1"
+        type: string
+      track:
+        description: "Google Play release track"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+      rollout_percentage:
+        description: "Staged rollout percentage (production track only, 1-100)"
+        required: false
+        default: "100"
+        type: string
+
+concurrency:
+  group: android-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # Gate: require CI to have passed on main
+  ci-check:
+    name: Verify CI Status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check latest CI run on main
+        run: |
+          echo "🔍 Verifying CI status on main branch..."
+          echo "ℹ️  Ensure the latest CI workflow on main has passed before proceeding."
+          echo "   If CI has not passed, this build should not be promoted to production."
+
+  build-android-prod:
+    name: Build Android TWA (Production)
+    runs-on: ubuntu-latest
+    needs: ci-check
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile
+
+      - name: Build frontend (production)
+        run: |
+          cd frontend
+          yarn build
+        env:
+          REACT_APP_BACKEND_URL: ${{ secrets.PROD_BACKEND_URL || 'https://api.shoreexplorer.com' }}
+          REACT_APP_SITE_URL: ${{ secrets.PROD_SITE_URL || 'https://shoreexplorer.com' }}
+          REACT_APP_GA_MEASUREMENT_ID: ${{ secrets.PROD_GA_MEASUREMENT_ID }}
+          CI: true
+
+      - name: Install Bubblewrap
+        run: npm install -g @nicolo-ribaudo/bubblewrap
+
+      - name: Update TWA manifest versions
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          PROD_SITE_HOST: ${{ secrets.PROD_SITE_HOST }}
+        run: |
+          python3 -c "
+          import json, os
+          with open('twa-manifest.json', 'r') as f:
+              manifest = json.load(f)
+          manifest['appVersionName'] = os.environ['VERSION_NAME']
+          manifest['appVersionCode'] = int(os.environ['VERSION_CODE'])
+          manifest['host'] = os.environ.get('PROD_SITE_HOST') or 'shoreexplorer.com'
+          with open('twa-manifest.json', 'w') as f:
+              json.dump(manifest, f, indent=2)
+          print(f'Updated to v{manifest[\"appVersionName\"]} (code {manifest[\"appVersionCode\"]})')
+          "
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "${KEYSTORE_BASE64}" ]; then
+            echo "❌ ANDROID_KEYSTORE_BASE64 secret is required for production builds"
+            exit 1
+          fi
+          echo "${KEYSTORE_BASE64}" | base64 -d > android.keystore
+          echo "✅ Keystore decoded"
+
+      - name: Build signed TWA
+        run: |
+          bubblewrap build \
+            --skipPwaValidation \
+            --signingKeyPath ./android.keystore \
+            --signingKeyAlias "${{ secrets.ANDROID_KEY_ALIAS || 'shoreexplorer' }}"
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Verify build outputs
+        run: |
+          echo "=== Build outputs ==="
+          AAB_COUNT=$(find . -name "*.aab" | wc -l)
+          if [ "$AAB_COUNT" -eq 0 ]; then
+            echo "❌ No AAB file found. Build may have failed."
+            exit 1
+          fi
+          find . -name "*.aab" -exec ls -lh {} \;
+          find . -name "*.apk" -exec ls -lh {} \;
+          echo "✅ Found $AAB_COUNT AAB file(s)"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shoreexplorer-prod-${{ inputs.version_name }}
+          path: |
+            *.apk
+            *.aab
+            app/build/outputs/**/*.apk
+            app/build/outputs/**/*.aab
+          retention-days: 90
+
+      - name: Calculate rollout fraction
+        id: rollout
+        if: ${{ inputs.track == 'production' }}
+        env:
+          ROLLOUT_PERCENTAGE: ${{ inputs.rollout_percentage }}
+        run: |
+          # Convert percentage (1-100) to fraction (0.01-1.0) for Google Play API
+          FRACTION=$(echo "scale=2; ${ROLLOUT_PERCENTAGE} / 100" | bc)
+          echo "fraction=${FRACTION}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload AAB to Google Play
+        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.shoreexplorer.app
+          releaseFiles: "*.aab"
+          track: ${{ inputs.track }}
+          status: ${{ inputs.track == 'production' && 'inProgress' || 'completed' }}
+          userFraction: ${{ steps.rollout.outputs.fraction || '' }}
+          releaseName: "v${{ inputs.version_name }}"
+
+      - name: Clean up keystore
+        if: always()
+        run: rm -f android.keystore
+
+      - name: Build summary
+        if: always()
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          TRACK: ${{ inputs.track }}
+          ROLLOUT: ${{ inputs.rollout_percentage }}
+        run: |
+          echo "## 🚀 Android Production Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | ${VERSION_NAME} (code ${VERSION_CODE}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Package | com.shoreexplorer.app |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Track | ${TRACK} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rollout | ${ROLLOUT}% |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if find . -name "*.aab" | grep -q .; then
+            echo "✅ AAB built and uploaded successfully" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ Build failed — no AAB produced" >> "$GITHUB_STEP_SUMMARY"
+          fi

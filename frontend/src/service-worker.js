@@ -2,7 +2,7 @@
 
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
-import { registerRoute, NavigationRoute } from 'workbox-routing';
+import { registerRoute, NavigationRoute, setCatchHandler } from 'workbox-routing';
 import { StaleWhileRevalidate, CacheFirst, NetworkFirst } from 'workbox-strategies';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { ExpirationPlugin } from 'workbox-expiration';
@@ -102,6 +102,20 @@ registerRoute(
     new ExpirationPlugin({ maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 }),
   ]})
 );
+
+// Offline fallback: serve /offline.html only when navigation fails AND the
+// cached index.html (from precache) is also unavailable — e.g. if the cache
+// was cleared between visits. The full React SPA (via NavigationRoute above)
+// remains the primary offline experience from PR #99; this is a last-resort
+// safety net. setCatchHandler fires only when a route handler rejects, so it
+// never conflicts with the NavigationRoute that handles the normal offline path.
+setCatchHandler(async ({ event }) => {
+  if (event.request.mode === 'navigate') {
+    const cached = await caches.match(process.env.PUBLIC_URL + '/offline.html');
+    return cached || Response.error();
+  }
+  return Response.error();
+});
 
 // Listen for skip-waiting message from the app
 self.addEventListener('message', (event) => {
