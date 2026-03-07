@@ -76,16 +76,20 @@ jobs:
         run: npm install -g @nicolo-ribaudo/bubblewrap
 
       - name: Update TWA manifest versions
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          TEST_SITE_HOST: ${{ secrets.TEST_SITE_HOST }}
         run: |
           # Update version in twa-manifest.json
           python3 -c "
-          import json
+          import json, os
           with open('twa-manifest.json', 'r') as f:
               manifest = json.load(f)
-          manifest['appVersionName'] = '${{ inputs.version_name }}'
-          manifest['appVersionCode'] = int('${{ inputs.version_code }}')
+          manifest['appVersionName'] = os.environ['VERSION_NAME']
+          manifest['appVersionCode'] = int(os.environ['VERSION_CODE'])
           # Use test host if available
-          test_host = '${{ secrets.TEST_SITE_HOST }}'
+          test_host = os.environ.get('TEST_SITE_HOST', '')
           if test_host:
               manifest['host'] = test_host
           with open('twa-manifest.json', 'w') as f:
@@ -147,15 +151,19 @@ jobs:
 
       - name: Build summary
         if: always()
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          UPLOAD_TO_PLAY: ${{ inputs.upload_to_play }}
         run: |
           echo "## 🤖 Android Beta Build Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | ${{ inputs.version_name }} (code ${{ inputs.version_code }}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | ${VERSION_NAME} (code ${VERSION_CODE}) |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Package | com.shoreexplorer.app |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Track | Internal test |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Upload to Play | ${{ inputs.upload_to_play }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Upload to Play | ${UPLOAD_TO_PLAY} |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           if ls *.aab *.apk 2>/dev/null; then

@@ -102,26 +102,32 @@ jobs:
         run: npm install -g @nicolo-ribaudo/bubblewrap
 
       - name: Update TWA manifest versions
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          PROD_SITE_HOST: ${{ secrets.PROD_SITE_HOST }}
         run: |
           python3 -c "
-          import json
+          import json, os
           with open('twa-manifest.json', 'r') as f:
               manifest = json.load(f)
-          manifest['appVersionName'] = '${{ inputs.version_name }}'
-          manifest['appVersionCode'] = int('${{ inputs.version_code }}')
-          manifest['host'] = '${{ secrets.PROD_SITE_HOST || 'shoreexplorer.com' }}'
+          manifest['appVersionName'] = os.environ['VERSION_NAME']
+          manifest['appVersionCode'] = int(os.environ['VERSION_CODE'])
+          manifest['host'] = os.environ.get('PROD_SITE_HOST') or 'shoreexplorer.com'
           with open('twa-manifest.json', 'w') as f:
               json.dump(manifest, f, indent=2)
           print(f'Updated to v{manifest[\"appVersionName\"]} (code {manifest[\"appVersionCode\"]})')
           "
 
       - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+          if [ -z "${KEYSTORE_BASE64}" ]; then
             echo "❌ ANDROID_KEYSTORE_BASE64 secret is required for production builds"
             exit 1
           fi
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android.keystore
+          echo "${KEYSTORE_BASE64}" | base64 -d > android.keystore
           echo "✅ Keystore decoded"
 
       - name: Build signed TWA
@@ -160,9 +166,11 @@ jobs:
       - name: Calculate rollout fraction
         id: rollout
         if: ${{ inputs.track == 'production' }}
+        env:
+          ROLLOUT_PERCENTAGE: ${{ inputs.rollout_percentage }}
         run: |
           # Convert percentage (1-100) to fraction (0.01-1.0) for Google Play API
-          FRACTION=$(echo "scale=2; ${{ inputs.rollout_percentage }} / 100" | bc)
+          FRACTION=$(echo "scale=2; ${ROLLOUT_PERCENTAGE} / 100" | bc)
           echo "fraction=${FRACTION}" >> "$GITHUB_OUTPUT"
 
       - name: Upload AAB to Google Play
@@ -183,15 +191,20 @@ jobs:
 
       - name: Build summary
         if: always()
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          TRACK: ${{ inputs.track }}
+          ROLLOUT: ${{ inputs.rollout_percentage }}
         run: |
           echo "## 🚀 Android Production Build Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | ${{ inputs.version_name }} (code ${{ inputs.version_code }}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | ${VERSION_NAME} (code ${VERSION_CODE}) |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Package | com.shoreexplorer.app |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Track | ${{ inputs.track }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Rollout | ${{ inputs.rollout_percentage }}% |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Track | ${TRACK} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rollout | ${ROLLOUT}% |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           if find . -name "*.aab" | grep -q .; then
