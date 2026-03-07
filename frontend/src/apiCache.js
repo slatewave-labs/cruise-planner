@@ -23,6 +23,10 @@ const APP_CACHE_VERSION = '1';
 const CACHE_PREFIX = 'shoreexplorer_api_v';
 const CACHE_KEY = `${CACHE_PREFIX}${APP_CACHE_VERSION}`;
 
+// Keys for prefetched endpoints — keep in sync with the endpoints array in prefetchApiData
+const REGIONS_CACHE_KEY = '/api/ports/regions';
+const PORTS_CACHE_KEY = '/api/ports/search?limit=500&q=';
+
 // ------- Low-level helpers -------
 
 function readCache() {
@@ -106,14 +110,14 @@ export async function prefetchApiData(apiClient, baseUrl) {
   // Fresh data will still be fetched when the user navigates and the
   // service-worker's NetworkFirst strategy updates the cache transparently.
   const cache = readCache();
-  if (cache['/api/ports/regions'] && cache['/api/ports/search?limit=500&q=']) {
+  if (cache[REGIONS_CACHE_KEY] && cache[PORTS_CACHE_KEY]) {
     return;
   }
 
   const endpoints = [
-    { key: '/api/ports/regions', url: `${baseUrl}/api/ports/regions` },
+    { key: REGIONS_CACHE_KEY, url: `${baseUrl}/api/ports/regions` },
     {
-      key: '/api/ports/search?limit=500&q=',
+      key: PORTS_CACHE_KEY,
       url: `${baseUrl}/api/ports/search`,
       params: { q: '', limit: 500 },
     },

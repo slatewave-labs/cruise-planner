@@ -105,8 +105,9 @@ export default function PortPlanner() {
     // Pre-flight: check connectivity before making a request that requires the network
     if (isOffline()) {
       setError({
-        title: 'You\'re Offline',
+        title: 'You\u2019re Offline',
         message: 'Plan generation requires an internet connection. Please reconnect and try again.',
+        offline: true,
       });
       setGenerating(false);
       return;
@@ -130,10 +131,12 @@ export default function PortPlanner() {
       savePlan(res.data);
       navigate(`/plans/${res.data.plan_id}`);
     } catch (err) {
+      const offline = isNetworkError(err);
       const msg = getErrorMessage(err);
       setError({
-        title: isNetworkError(err) ? 'You\'re Offline' : 'Plan Generation Failed',
+        title: offline ? 'You\u2019re Offline' : 'Plan Generation Failed',
         message: msg,
+        offline,
       });
     } finally {
       setGenerating(false);
@@ -312,7 +315,7 @@ export default function PortPlanner() {
 
       {error && (
         <div className="mt-4 bg-red-50 border border-red-200 rounded-2xl p-5 flex items-start gap-3" data-testid="plan-error-message">
-          {error.title === 'You\'re Offline'
+          {error.offline
             ? <WifiOff className="w-5 h-5 text-red-500 shrink-0 mt-0.5" aria-hidden="true" />
             : <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" aria-hidden="true" />}
           <div>
