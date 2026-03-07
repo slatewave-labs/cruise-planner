@@ -157,14 +157,42 @@ export function getCachedPlanCountForTrip(tripId) {
 
 // --- Error Message Extraction ---
 
+const OFFLINE_MESSAGE =
+  'You appear to be offline. This feature requires an internet connection — ' +
+  'please reconnect and try again.';
+
+/**
+ * Returns true when the browser reports no network connectivity.
+ * Useful for pre-flight checks before API calls that cannot be served from cache.
+ */
+export function isOffline() {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+/**
+ * Returns true when an axios error looks like a network / connectivity failure
+ * rather than a server-side error with an HTTP status code.
+ */
+export function isNetworkError(error) {
+  // Axios sets error.response only when a response was received from the server.
+  // A missing response combined with a request means the request never reached the server.
+  return !error.response && Boolean(error.request || error.code === 'ERR_NETWORK');
+}
+
 /**
  * Extracts a user-friendly error message from an API error response.
  * Handles both structured error objects and plain string errors.
+ * Detects network/offline errors and returns a helpful connectivity message.
  * 
  * @param {Error} error - The error object from axios
  * @returns {string} - A user-friendly error message
  */
 export function getErrorMessage(error) {
+  // Network / connectivity failures — no response received at all
+  if (isNetworkError(error)) {
+    return OFFLINE_MESSAGE;
+  }
+
   const detail = error.response?.data?.detail;
   
   // If detail is a structured error object with a message field

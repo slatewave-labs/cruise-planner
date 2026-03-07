@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Users, Activity, Car, DollarSign, Sparkles, Loader2, ArrowLeft, MapPin, AlertTriangle, Coins, History, Clock } from 'lucide-react';
+import { Users, Activity, Car, DollarSign, Sparkles, Loader2, ArrowLeft, MapPin, AlertTriangle, WifiOff, Coins, History, Clock } from 'lucide-react';
 import api from '../api';
-import CURRENCIES, { getCurrencySymbol, getErrorMessage } from '../utils';
+import CURRENCIES, { getCurrencySymbol, getErrorMessage, isOffline, isNetworkError } from '../utils';
 import { getTrip, savePlan, getPlansForPort } from '../storage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -101,6 +101,18 @@ export default function PortPlanner() {
   const handleGenerate = async () => {
     setGenerating(true);
     setError(null);
+
+    // Pre-flight: check connectivity before making a request that requires the network
+    if (isOffline()) {
+      setError({
+        title: 'You\u2019re Offline',
+        message: 'Plan generation requires an internet connection. Please reconnect and try again.',
+        offline: true,
+      });
+      setGenerating(false);
+      return;
+    }
+
     try {
       const trip = getTrip(tripId);
       const res = await api.post(`${API}/api/plans/generate`, {
@@ -119,7 +131,13 @@ export default function PortPlanner() {
       savePlan(res.data);
       navigate(`/plans/${res.data.plan_id}`);
     } catch (err) {
-      setError(getErrorMessage(err));
+      const offline = isNetworkError(err);
+      const msg = getErrorMessage(err);
+      setError({
+        title: offline ? 'You\u2019re Offline' : 'Plan Generation Failed',
+        message: msg,
+        offline,
+      });
     } finally {
       setGenerating(false);
     }
@@ -297,10 +315,12 @@ export default function PortPlanner() {
 
       {error && (
         <div className="mt-4 bg-red-50 border border-red-200 rounded-2xl p-5 flex items-start gap-3" data-testid="plan-error-message">
-          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          {error.offline
+            ? <WifiOff className="w-5 h-5 text-red-500 shrink-0 mt-0.5" aria-hidden="true" />
+            : <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" aria-hidden="true" />}
           <div>
-            <p className="font-semibold text-red-700 mb-1">Plan Generation Failed</p>
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="font-semibold text-red-700 mb-1">{error.title || 'Plan Generation Failed'}</p>
+            <p className="text-sm text-red-600">{error.message || error}</p>
           </div>
         </div>
       )}
