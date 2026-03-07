@@ -75,11 +75,20 @@
   }
   </script>
 
-  <!-- Fonts -->
+  <!-- Preconnect to third-party origins for faster resource loading -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="preconnect" href="https://images.unsplash.com" />
+
+  <!-- Preload hero image so the browser fetches the LCP resource immediately -->
+  <link rel="preload" as="image" fetchpriority="high" href="https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1400&q=80" />
+
+  <!-- Fonts: load non-render-blocking (display=swap already ensures text is visible) -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+
+  <!-- Leaflet CSS: non-render-blocking (only needed on map pages, not landing) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" media="print" onload="this.media='all'" />
 
   <!-- Google Analytics (gtag.js) — loaded only when measurement ID is configured -->
   <script>
@@ -98,7 +107,11 @@
   </script>
 </head>
 <body>
-  <noscript>ShoreExplorer is an AI-powered cruise port day planner. Plan personalised shore excursion itineraries for every port of call with real-time weather, interactive maps, and optimised walking routes. Enable JavaScript for the full experience.</noscript>
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    ShoreExplorer is an AI-powered cruise port day planner. Plan personalised shore excursion itineraries for every port of call with real-time weather, interactive maps, and optimised walking routes. Enable JavaScript for the full experience.
+  </noscript>
   <div id="root"></div>
 </body>
 </html>
