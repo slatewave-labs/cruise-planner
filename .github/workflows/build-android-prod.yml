@@ -173,8 +173,19 @@ jobs:
           FRACTION=$(echo "scale=2; ${ROLLOUT_PERCENTAGE} / 100" | bc)
           echo "fraction=${FRACTION}" >> "$GITHUB_OUTPUT"
 
+      - name: Check secrets availability
+        id: check-secrets
+        env:
+          PLAY_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$PLAY_JSON" ]; then
+            echo "has_play_json=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_play_json=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload AAB to Google Play
-        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        if: steps.check-secrets.outputs.has_play_json == 'true'
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
