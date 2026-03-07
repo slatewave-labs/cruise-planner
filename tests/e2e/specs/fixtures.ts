@@ -299,6 +299,17 @@ export async function mockAllApiRoutes(page: Page, options: MockOptions = {}): P
   };
   if (!asAnyPage.__seedInstalled) {
     await page.addInitScript((seed) => {
+      // Always wipe the offline API-response cache that prefetchApiData writes to
+      // (shoreexplorer_api_v*) so stale prefetch data from one test can't affect
+      // route-mock behaviour in a later test.  Iterate backwards so that removing
+      // an entry doesn't shift the indices of keys we haven't visited yet.
+      try {
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith('shoreexplorer_api_v')) window.localStorage.removeItem(k);
+        }
+      } catch { /* ignore */ }
+
       if (window.sessionStorage.getItem('__shoreexplorer_e2e_seeded__')) {
         return;
       }

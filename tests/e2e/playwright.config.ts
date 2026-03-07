@@ -22,6 +22,9 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Block service workers so the SW registered by the offline-support feature
+    // doesn't intercept navigation requests or interfere with page.route() mocks.
+    serviceWorkers: 'block',
   },
 
   projects: [
