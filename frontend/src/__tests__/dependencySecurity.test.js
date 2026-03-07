@@ -1,10 +1,8 @@
 import path from 'path';
 import { EventEmitter } from 'events';
 
-const resolvePackage = (packageName) => require.resolve(`${packageName}/package.json`);
-
 const requireNestedPackage = (packageName, nestedPackageName) => {
-  const packageDir = path.dirname(resolvePackage(packageName));
+  const packageDir = path.dirname(require.resolve(`${packageName}/package.json`));
   return require(path.join(packageDir, 'node_modules', nestedPackageName, 'package.json'));
 };
 
