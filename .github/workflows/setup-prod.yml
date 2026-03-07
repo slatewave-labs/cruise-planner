@@ -430,11 +430,37 @@ jobs:
             # set may point to the green TG (after a successful Blue/Green deploy).
             # Blindly resetting the listener to backend-tg would break the next
             # CodeDeploy deploy with "Primary taskset target group must be behind
-            # listener". Use the service's active primary TG when available.
+            # listener". Use the service's active TG when available, with fallbacks.
             ACTIVE_TARGET_GROUP_ARN=$(aws ecs describe-services \
               --cluster "${APP_NAME}-cluster" --services "${APP_NAME}-backend" \
               --query "services[0].taskSets[?status=='PRIMARY'][0].loadBalancers[0].targetGroupArn" \
               --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            # Fallback: first task set TG regardless of status
+            if [[ -z "$ACTIVE_TARGET_GROUP_ARN" || "$ACTIVE_TARGET_GROUP_ARN" == "None" ]]; then
+              ACTIVE_TARGET_GROUP_ARN=$(aws ecs describe-services \
+                --cluster "${APP_NAME}-cluster" --services "${APP_NAME}-backend" \
+                --query "services[0].taskSets[0].loadBalancers[0].targetGroupArn" \
+                --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+            fi
+
+            # Fallback: find which deployment TG has healthy targets
+            if [[ -z "$ACTIVE_TARGET_GROUP_ARN" || "$ACTIVE_TARGET_GROUP_ARN" == "None" ]]; then
+              for TG_N in "${APP_NAME}-backend-tg" "${APP_NAME}-be-green-tg"; do
+                CANDIDATE=$(aws elbv2 describe-target-groups --names "$TG_N" \
+                  --query "TargetGroups[0].TargetGroupArn" --output text \
+                  --region "$AWS_REGION" 2>/dev/null || echo "")
+                if [[ -n "$CANDIDATE" && "$CANDIDATE" != "None" ]]; then
+                  HEALTHY=$(aws elbv2 describe-target-health --target-group-arn "$CANDIDATE" \
+                    --query "length(TargetHealthDescriptions[?TargetHealth.State=='healthy'])" \
+                    --output text --region "$AWS_REGION" 2>/dev/null || echo "0")
+                  if [[ "$HEALTHY" -gt 0 ]]; then
+                    ACTIVE_TARGET_GROUP_ARN="$CANDIDATE"
+                    break
+                  fi
+                fi
+              done
+            fi
 
             TARGET_GROUP_ARN="$BACKEND_TG_ARN"
             if [[ -n "$ACTIVE_TARGET_GROUP_ARN" && "$ACTIVE_TARGET_GROUP_ARN" != "None" ]]; then
@@ -514,6 +540,34 @@ jobs:
             --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" \
             --query "services[0].taskSets[?status=='PRIMARY'][0].loadBalancers[0].targetGroupArn" \
             --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          # Fallback: first task set TG regardless of status
+          if [[ -z "$ACTIVE_TARGET_GROUP_ARN" || "$ACTIVE_TARGET_GROUP_ARN" == "None" ]]; then
+            ACTIVE_TARGET_GROUP_ARN=$(aws ecs describe-services \
+              --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+              --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" \
+              --query "services[0].taskSets[0].loadBalancers[0].targetGroupArn" \
+              --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+          fi
+
+          # Fallback: find which TG has healthy targets
+          if [[ -z "$ACTIVE_TARGET_GROUP_ARN" || "$ACTIVE_TARGET_GROUP_ARN" == "None" ]]; then
+            APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+            for TG_N in "${APP_NAME}-backend-tg" "${APP_NAME}-be-green-tg"; do
+              CANDIDATE=$(aws elbv2 describe-target-groups --names "$TG_N" \
+                --query "TargetGroups[0].TargetGroupArn" --output text \
+                --region "$AWS_REGION" 2>/dev/null || echo "")
+              if [[ -n "$CANDIDATE" && "$CANDIDATE" != "None" ]]; then
+                HEALTHY=$(aws elbv2 describe-target-health --target-group-arn "$CANDIDATE" \
+                  --query "length(TargetHealthDescriptions[?TargetHealth.State=='healthy'])" \
+                  --output text --region "$AWS_REGION" 2>/dev/null || echo "0")
+                if [[ "$HEALTHY" -gt 0 ]]; then
+                  ACTIVE_TARGET_GROUP_ARN="$CANDIDATE"
+                  break
+                fi
+              fi
+            done
+          fi
 
           TARGET_GROUP_ARN="$BACKEND_TG_ARN"
           if [[ -n "$ACTIVE_TARGET_GROUP_ARN" && "$ACTIVE_TARGET_GROUP_ARN" != "None" ]]; then

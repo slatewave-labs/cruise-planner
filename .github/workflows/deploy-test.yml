@@ -335,17 +335,51 @@ jobs:
       # ── Sync ALB listener with ECS primary task set ───────────────
       # CodeDeploy requires the ECS service's primary task set TG to be a
       # forward target on the prodTrafficRoute listener before it will start
-      # a Blue/Green deployment. This step aligns the listener with the
-      # service's actual primary TG, guarding against drift caused by
-      # setup workflow re-runs that blindly reset the listener to the blue TG.
+      # a Blue/Green deployment. Sync both the default action and /api/* rule.
+      #
+      # Uses multiple fallback strategies because the ECS service may have no
+      # PRIMARY task set after repeated failed CodeDeploy deployments.
       - name: Sync ALB listener with ECS primary task set
         run: |
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+          CLUSTER="${APP_NAME}-cluster"
+          SERVICE="${APP_NAME}-backend"
+          CODEDEPLOY_APP="${APP_NAME}-codedeploy"
+          DG_NAME="${APP_NAME}-backend-dg"
 
-          # Get the prodTrafficRoute listener ARN from the CodeDeploy deployment group
+          sync_listener_to_target_group() {
+            # Syncs an ALB listener's default action and /api/* path rule to
+            # forward traffic to the given target group ARN.
+            # $1 = Listener ARN  $2 = Target Group ARN
+            local LISTENER_ARN="$1"
+            local TARGET_GROUP_ARN="$2"
+
+            aws elbv2 modify-listener \
+              --listener-arn "$LISTENER_ARN" \
+              --default-actions "Type=forward,TargetGroupArn=${TARGET_GROUP_ARN}" \
+              --region "$AWS_REGION" --no-cli-pager >/dev/null
+            echo "✅ Listener default action → ${TARGET_GROUP_ARN}"
+
+            API_RULE_ARN=$(aws elbv2 describe-rules \
+              --listener-arn "$LISTENER_ARN" \
+              --query "Rules[?Conditions[?Field=='path-pattern' && Values[0]=='/api/*']].RuleArn | [0]" \
+              --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            if [[ -n "$API_RULE_ARN" && "$API_RULE_ARN" != "None" ]]; then
+              aws elbv2 modify-rule \
+                --rule-arn "$API_RULE_ARN" \
+                --actions "Type=forward,TargetGroupArn=${TARGET_GROUP_ARN}" \
+                --region "$AWS_REGION" --no-cli-pager >/dev/null
+              echo "✅ Listener /api/* rule → ${TARGET_GROUP_ARN}"
+            else
+              echo "⏭️  No /api/* rule found — default action sync only"
+            fi
+          }
+
+          # ── Resolve the prodTrafficRoute listener ARN ─────────────────
           LISTENER_ARN=$(aws deploy get-deployment-group \
-            --application-name "${APP_NAME}-codedeploy" \
-            --deployment-group-name "${APP_NAME}-backend-dg" \
+            --application-name "$CODEDEPLOY_APP" \
+            --deployment-group-name "$DG_NAME" \
             --query "deploymentGroupInfo.loadBalancerInfo.targetGroupPairInfoList[0].prodTrafficRoute.listenerArns[0]" \
             --output text --region "$AWS_REGION" 2>/dev/null || echo "")
 
@@ -353,28 +387,95 @@ jobs:
             echo "⚠️  Could not retrieve CodeDeploy listener ARN — skipping sync"
             exit 0
           fi
+          echo "CodeDeploy prodTrafficRoute listener: ${LISTENER_ARN}"
 
-          # Get the ECS service's current primary task set target group ARN.
-          # After a successful Blue/Green deployment this will be the green TG,
-          # not the original blue TG.
+          # ── Resolve the active target group ARN (multi-strategy) ──────
+          PRIMARY_TG_ARN=""
+
+          # Strategy 1: PRIMARY task set TG from ECS service
           PRIMARY_TG_ARN=$(aws ecs describe-services \
-            --cluster "${APP_NAME}-cluster" --services "${APP_NAME}-backend" \
+            --cluster "$CLUSTER" --services "$SERVICE" \
             --query "services[0].taskSets[?status=='PRIMARY'][0].loadBalancers[0].targetGroupArn" \
             --output text --region "$AWS_REGION" 2>/dev/null || echo "")
 
-          if [[ -z "$PRIMARY_TG_ARN" || "$PRIMARY_TG_ARN" == "None" ]]; then
-            echo "⚠️  Could not retrieve primary task set TG ARN — skipping sync"
-            exit 0
+          if [[ -n "$PRIMARY_TG_ARN" && "$PRIMARY_TG_ARN" != "None" ]]; then
+            echo "✅ Strategy 1: Found PRIMARY task set TG: ${PRIMARY_TG_ARN}"
+          else
+            echo "⚠️  Strategy 1: No PRIMARY task set TG found"
+            PRIMARY_TG_ARN=""
+
+            # Strategy 2: First task set TG regardless of status
+            PRIMARY_TG_ARN=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --query "services[0].taskSets[0].loadBalancers[0].targetGroupArn" \
+              --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            if [[ -n "$PRIMARY_TG_ARN" && "$PRIMARY_TG_ARN" != "None" ]]; then
+              echo "✅ Strategy 2: Found task set TG (first available): ${PRIMARY_TG_ARN}"
+            else
+              echo "⚠️  Strategy 2: No task set TG found"
+              PRIMARY_TG_ARN=""
+
+              # Strategy 3: Find CodeDeploy deployment group TG with healthy targets
+              for IDX in 0 1; do
+                TG_NAME=$(aws deploy get-deployment-group \
+                  --application-name "$CODEDEPLOY_APP" \
+                  --deployment-group-name "$DG_NAME" \
+                  --query "deploymentGroupInfo.loadBalancerInfo.targetGroupPairInfoList[0].targetGroups[${IDX}].name" \
+                  --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+                if [[ -n "$TG_NAME" && "$TG_NAME" != "None" ]]; then
+                  TG_ARN=$(aws elbv2 describe-target-groups --names "$TG_NAME" \
+                    --query "TargetGroups[0].TargetGroupArn" --output text \
+                    --region "$AWS_REGION" 2>/dev/null || echo "")
+
+                  if [[ -n "$TG_ARN" && "$TG_ARN" != "None" ]]; then
+                    HEALTHY=$(aws elbv2 describe-target-health --target-group-arn "$TG_ARN" \
+                      --query "length(TargetHealthDescriptions[?TargetHealth.State=='healthy'])" \
+                      --output text --region "$AWS_REGION" 2>/dev/null || echo "0")
+
+                    if [[ "$HEALTHY" -gt 0 ]]; then
+                      PRIMARY_TG_ARN="$TG_ARN"
+                      echo "✅ Strategy 3: Found healthy targets in ${TG_NAME} (${HEALTHY} healthy): ${TG_ARN}"
+                      break
+                    fi
+                  fi
+                fi
+              done
+
+              if [[ -z "$PRIMARY_TG_ARN" ]]; then
+                echo "⚠️  Strategy 3: No TG with healthy targets found"
+
+                # Strategy 4: Use first deployment group TG as absolute fallback
+                FALLBACK_TG_NAME=$(aws deploy get-deployment-group \
+                  --application-name "$CODEDEPLOY_APP" \
+                  --deployment-group-name "$DG_NAME" \
+                  --query "deploymentGroupInfo.loadBalancerInfo.targetGroupPairInfoList[0].targetGroups[0].name" \
+                  --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+                if [[ -n "$FALLBACK_TG_NAME" && "$FALLBACK_TG_NAME" != "None" ]]; then
+                  PRIMARY_TG_ARN=$(aws elbv2 describe-target-groups --names "$FALLBACK_TG_NAME" \
+                    --query "TargetGroups[0].TargetGroupArn" --output text \
+                    --region "$AWS_REGION" 2>/dev/null || echo "")
+                fi
+
+                if [[ -n "$PRIMARY_TG_ARN" && "$PRIMARY_TG_ARN" != "None" ]]; then
+                  echo "✅ Strategy 4: Using first deployment group TG as fallback: ${PRIMARY_TG_ARN}"
+                else
+                  echo "❌ All strategies exhausted — cannot determine active target group"
+                  echo "   Aborting: CodeDeploy would fail with 'Primary taskset target group must be behind listener'"
+                  echo ""
+                  echo "   Troubleshooting:"
+                  echo "   1. Check ECS service status:  aws ecs describe-services --cluster ${CLUSTER} --services ${SERVICE} --region ${AWS_REGION}"
+                  echo "   2. Check target group health: aws elbv2 describe-target-health --target-group-arn <TG_ARN> --region ${AWS_REGION}"
+                  echo "   3. Re-run setup-test workflow to recreate ECS service and CodeDeploy deployment group"
+                  exit 1
+                fi
+              fi
+            fi
           fi
 
-          echo "ECS primary task set TG: ${PRIMARY_TG_ARN}"
-          echo "CodeDeploy prodTrafficRoute listener: ${LISTENER_ARN}"
-
-          aws elbv2 modify-listener \
-            --listener-arn "$LISTENER_ARN" \
-            --default-actions "Type=forward,TargetGroupArn=${PRIMARY_TG_ARN}" \
-            --region "$AWS_REGION" --no-cli-pager >/dev/null
-          echo "✅ ALB listener default action aligned with ECS primary task set TG"
+          sync_listener_to_target_group "$LISTENER_ARN" "$PRIMARY_TG_ARN"
 
       # ── Deploy backend via CodeDeploy Blue/Green ─────────────────
       - name: Deploy backend via CodeDeploy
