@@ -244,7 +244,7 @@ This document proposes **15 revenue streams** — 7 core and 8 additional high-p
 - When users create a trip, prompt them: *"Have you got travel insurance for your cruise? Compare quotes from top providers."*
 - Link to travel insurance comparison sites via affiliate programmes
 
-**Key affiliate programmes:**
+**Key affiliate programmes (rates verified March 2026 — confirm before implementation as rates change frequently):**
 
 | Provider | Commission | Cookie Duration | Notes |
 |---|---|---|---|
@@ -284,7 +284,7 @@ This document proposes **15 revenue streams** — 7 core and 8 additional high-p
 - Recommend eSIMs that work in the port's country
 - "Don't pay £10/MB roaming — get an eSIM for [Country] from £3/day"
 
-**Key affiliate programmes:**
+**Key affiliate programmes (rates verified March 2026 — confirm before implementation as rates change frequently):**
 
 | Provider | Commission | Cookie Duration | Notes |
 |---|---|---|---|
