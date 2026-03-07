@@ -348,6 +348,9 @@ jobs:
           DG_NAME="${APP_NAME}-backend-dg"
 
           sync_listener_to_target_group() {
+            # Syncs an ALB listener's default action and /api/* path rule to
+            # forward traffic to the given target group ARN.
+            # $1 = Listener ARN  $2 = Target Group ARN
             local LISTENER_ARN="$1"
             local TARGET_GROUP_ARN="$2"
 
@@ -461,6 +464,11 @@ jobs:
                 else
                   echo "❌ All strategies exhausted — cannot determine active target group"
                   echo "   Aborting: CodeDeploy would fail with 'Primary taskset target group must be behind listener'"
+                  echo ""
+                  echo "   Troubleshooting:"
+                  echo "   1. Check ECS service status:  aws ecs describe-services --cluster ${CLUSTER} --services ${SERVICE} --region ${AWS_REGION}"
+                  echo "   2. Check target group health: aws elbv2 describe-target-health --target-group-arn <TG_ARN> --region ${AWS_REGION}"
+                  echo "   3. Re-run setup-test workflow to recreate ECS service and CodeDeploy deployment group"
                   exit 1
                 fi
               fi
