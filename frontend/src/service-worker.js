@@ -103,6 +103,19 @@ registerRoute(
   ]})
 );
 
+// Offline fallback: serve /offline.html when navigation fails and index.html is
+// not cached (e.g. first visit with no network). The offline page is precached
+// automatically since it lives in the public/ directory.
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        caches.match(process.env.PUBLIC_URL + '/offline.html')
+      )
+    );
+  }
+});
+
 // Listen for skip-waiting message from the app
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {

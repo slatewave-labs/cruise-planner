@@ -1,0 +1,51 @@
+{
+  "packageId": "com.shoreexplorer.app",
+  "host": "shoreexplorer.com",
+  "name": "ShoreExplorer",
+  "launcherName": "ShoreExplorer",
+  "display": "standalone",
+  "themeColor": "#0F172A",
+  "themeColorDark": "#020617",
+  "navigationColor": "#0F172A",
+  "navigationColorDark": "#020617",
+  "navigationDividerColor": "#0F172A",
+  "navigationDividerColorDark": "#020617",
+  "backgroundColor": "#F5F5F4",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://shoreexplorer.com/icon-512.png",
+  "maskableIconUrl": "https://shoreexplorer.com/icon-maskable-512.png",
+  "shortcuts": [],
+  "signing": {
+    "keyPath": "./android.keystore",
+    "alias": "shoreexplorer"
+  },
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://shoreexplorer.com/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": false
+    },
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "orientation": "portrait",
+  "fingerprints": [
+    {
+      "name": "release",
+      "value": "__REPLACE_WITH_YOUR_SHA256_FINGERPRINT__"
+    }
+  ],
+  "minSdkVersion": 23,
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "splashScreenFadeOutDuration": 300
+}

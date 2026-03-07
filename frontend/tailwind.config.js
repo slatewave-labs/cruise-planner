@@ -6,7 +6,7 @@ module.exports = {
       colors: {
         primary: { DEFAULT: "#0F172A", foreground: "#F8FAFC" },
         secondary: { DEFAULT: "#F5F5F4", foreground: "#1C1917" },
-        accent: { DEFAULT: "#F43F5E", foreground: "#FFFFFF" },
+        accent: { DEFAULT: "#F43F5E", foreground: "#FFFFFF", dark: "#BE123C" },
         muted: { DEFAULT: "#E7E5E4", foreground: "#57534E" },
         success: { DEFAULT: "#0D9488", foreground: "#FFFFFF" },
         warning: { DEFAULT: "#D97706", foreground: "#FFFFFF" },

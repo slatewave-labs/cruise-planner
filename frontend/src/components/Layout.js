@@ -78,11 +78,11 @@ export default function Layout({ children }) {
                 to={item.path}
                 data-testid={`mobile-nav-${item.label.toLowerCase().replace(/\s/g, '-')}`}
                 className={`flex flex-col items-center gap-0.5 min-w-[48px] min-h-[48px] justify-center rounded-xl transition-all ${
-                  active ? 'text-accent' : 'text-stone-400 hover:text-stone-600'
+                  active ? 'text-accent-dark' : 'text-stone-400 hover:text-stone-600'
                 }`}
               >
                 <Icon className="w-5 h-5" strokeWidth={active ? 2.5 : 2} />
-                <span className="text-[10px] font-semibold">{item.label}</span>
+                <span className="text-[11px] font-semibold">{item.label}</span>
               </Link>
             );
           })}
