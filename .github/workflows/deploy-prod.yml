@@ -428,13 +428,13 @@ jobs:
         run: |
           APP_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
 
-          sync_listener_to_primary_tg() {
+          sync_listener_to_primary_target_group() {
             local LISTENER_ARN="$1"
-            local TARGET_TG_ARN="$2"
+            local TARGET_GROUP_ARN="$2"
 
             aws elbv2 modify-listener \
               --listener-arn "$LISTENER_ARN" \
-              --default-actions "Type=forward,TargetGroupArn=${TARGET_TG_ARN}" \
+              --default-actions "Type=forward,TargetGroupArn=${TARGET_GROUP_ARN}" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null
             echo "✅ Listener default action aligned with ECS primary task set TG"
 
@@ -446,7 +446,7 @@ jobs:
             if [[ -n "$API_RULE_ARN" && "$API_RULE_ARN" != "None" ]]; then
               aws elbv2 modify-rule \
                 --rule-arn "$API_RULE_ARN" \
-                --actions "Type=forward,TargetGroupArn=${TARGET_TG_ARN}" \
+                --actions "Type=forward,TargetGroupArn=${TARGET_GROUP_ARN}" \
                 --region "$AWS_REGION" --no-cli-pager >/dev/null
               echo "✅ Listener /api/* rule aligned with ECS primary task set TG"
             else
@@ -482,7 +482,7 @@ jobs:
           echo "ECS primary task set TG: ${PRIMARY_TG_ARN}"
           echo "CodeDeploy prodTrafficRoute listener: ${LISTENER_ARN}"
 
-          sync_listener_to_primary_tg "$LISTENER_ARN" "$PRIMARY_TG_ARN"
+          sync_listener_to_primary_target_group "$LISTENER_ARN" "$PRIMARY_TG_ARN"
 
       # ── Deploy backend via CodeDeploy Blue/Green ─────────────────
       - name: Deploy backend via CodeDeploy
