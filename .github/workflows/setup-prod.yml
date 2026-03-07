@@ -454,12 +454,15 @@ jobs:
           if [[ -z "$EXISTING_RULES" || "$EXISTING_RULES" == "None" ]]; then
             aws elbv2 create-rule --listener-arn "$LISTENER_ARN" --priority 10 \
               --conditions Field=path-pattern,Values='/api/*' \
-              --actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
+              --actions Type=forward,TargetGroupArn="$TARGET_TG" \
               --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null
             echo "  ✅ Created /api/* listener rule"
           else
-            echo "  ⏭️  /api/* rule exists"
+            aws elbv2 modify-rule --rule-arn "$EXISTING_RULES" \
+              --actions Type=forward,TargetGroupArn="$TARGET_TG" \
+              --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+            echo "  ⏭️  /api/* rule exists (updated → ${TARGET_TG})"
           fi
 
           echo "alb_arn=${ALB_ARN}" >> "$GITHUB_OUTPUT"
@@ -506,6 +509,17 @@ jobs:
           echo "  ✅ Found certificate: $CERT_ARN"
           echo "cert_arn=${CERT_ARN}" >> "$GITHUB_OUTPUT"
 
+          ACTIVE_TG=$(aws ecs describe-services \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}-cluster" \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-backend" \
+            --query "services[0].taskSets[?status=='PRIMARY'][0].loadBalancers[0].targetGroupArn" \
+            --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+          TARGET_TG="$BACKEND_TG_ARN"
+          if [[ -n "$ACTIVE_TG" && "$ACTIVE_TG" != "None" ]]; then
+            TARGET_TG="$ACTIVE_TG"
+          fi
+
           # HTTPS listener (port 443) — ALB serves backend API traffic only
           HTTPS_LISTENER=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
             --query "Listeners[?Port==\`443\`].ListenerArn" --output text \
@@ -515,7 +529,7 @@ jobs:
             HTTPS_LISTENER=$(aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" \
               --protocol HTTPS --port 443 --certificates CertificateArn="$CERT_ARN" \
               --ssl-policy ELBSecurityPolicy-TLS13-1-2-2021-06 \
-              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
+              --default-actions Type=forward,TargetGroupArn="$TARGET_TG" \
               --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
               --query "Listeners[0].ListenerArn" --output text --region "$AWS_REGION")
             echo "  ✅ Created HTTPS listener (default → backend)"
@@ -523,7 +537,7 @@ jobs:
             # Add /api/* rule to HTTPS listener
             aws elbv2 create-rule --listener-arn "$HTTPS_LISTENER" --priority 10 \
               --conditions Field=path-pattern,Values='/api/*' \
-              --actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
+              --actions Type=forward,TargetGroupArn="$TARGET_TG" \
               --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null
             echo "  ✅ Created HTTPS /api/* rule"
@@ -532,8 +546,26 @@ jobs:
             # Ensure correct certificate and default action → backend
             aws elbv2 modify-listener --listener-arn "$HTTPS_LISTENER" \
               --certificates CertificateArn="$CERT_ARN" \
-              --default-actions Type=forward,TargetGroupArn="$BACKEND_TG_ARN" \
+              --default-actions Type=forward,TargetGroupArn="$TARGET_TG" \
               --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+
+            HTTPS_API_RULE=$(aws elbv2 describe-rules --listener-arn "$HTTPS_LISTENER" \
+              --query "Rules[?Conditions[?Field=='path-pattern' && Values[0]=='/api/*']].RuleArn | [0]" \
+              --output text --region "$AWS_REGION" 2>/dev/null || echo "")
+
+            if [[ -z "$HTTPS_API_RULE" || "$HTTPS_API_RULE" == "None" ]]; then
+              aws elbv2 create-rule --listener-arn "$HTTPS_LISTENER" --priority 10 \
+                --conditions Field=path-pattern,Values='/api/*' \
+                --actions Type=forward,TargetGroupArn="$TARGET_TG" \
+                --tags Key=Project,Value="$PROJECT_NAME" Key=Environment,Value="$ENVIRONMENT" \
+                --region "$AWS_REGION" --no-cli-pager >/dev/null
+              echo "  ✅ Created HTTPS /api/* rule"
+            else
+              aws elbv2 modify-rule --rule-arn "$HTTPS_API_RULE" \
+                --actions Type=forward,TargetGroupArn="$TARGET_TG" \
+                --region "$AWS_REGION" --no-cli-pager >/dev/null 2>&1 || true
+              echo "  ⏭️  HTTPS /api/* rule exists (updated → ${TARGET_TG})"
+            fi
           fi
 
           # No HTTP→HTTPS redirect needed on ALB — CloudFront handles HTTPS termination
