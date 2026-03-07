@@ -78,7 +78,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: "17"
-          distribution: temuml
+          distribution: temurin
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -157,6 +157,14 @@ jobs:
             app/build/outputs/**/*.aab
           retention-days: 90
 
+      - name: Calculate rollout fraction
+        id: rollout
+        if: ${{ inputs.track == 'production' }}
+        run: |
+          # Convert percentage (1-100) to fraction (0.01-1.0) for Google Play API
+          FRACTION=$(echo "scale=2; ${{ inputs.rollout_percentage }} / 100" | bc)
+          echo "fraction=${FRACTION}" >> "$GITHUB_OUTPUT"
+
       - name: Upload AAB to Google Play
         if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
         uses: r0adkll/upload-google-play@v1
@@ -166,7 +174,7 @@ jobs:
           releaseFiles: "*.aab"
           track: ${{ inputs.track }}
           status: ${{ inputs.track == 'production' && 'inProgress' || 'completed' }}
-          userFraction: ${{ inputs.track == 'production' && format('{0}', fromJSON(format('[{0}]', inputs.rollout_percentage))[0] / 100) || '' }}
+          userFraction: ${{ steps.rollout.outputs.fraction || '' }}
           releaseName: "v${{ inputs.version_name }}"
 
       - name: Clean up keystore

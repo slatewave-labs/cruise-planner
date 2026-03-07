@@ -468,7 +468,7 @@ Create 6 screenshots showing:
 | Performance | 57 | ⚠️ Local only — production expected >80 with CDN/CloudFront |
 | Accessibility | 96 | ✅ Excellent |
 | Best Practices | 96 | ✅ Excellent |
-| SEO | 91* | ✅ Good (*69 locally due to localhost robots.txt blocking) |
+| SEO | 69 | ⚠️ Local only — 69 due to localhost robots.txt blocking; production expected >90 |
 
 **Key audit findings (addressed):**
 - ✅ Colour contrast fixed — accent text links now use `#BE123C` (5.8:1 ratio) on white backgrounds
