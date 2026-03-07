@@ -83,8 +83,7 @@
   <!-- Preload hero image so the browser fetches the LCP resource immediately -->
   <link rel="preload" as="image" fetchpriority="high" href="https://images.unsplash.com/photo-1639369480706-ffda22f88dec?w=1400&q=80" />
 
-  <!-- Fonts: load non-render-blocking (display=swap already ensures text is visible) -->
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <!-- Fonts: load non-render-blocking (display=swap already ensures text is visible with fallback font) -->
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
 
   <!-- Leaflet CSS: non-render-blocking (only needed on map pages, not landing) -->

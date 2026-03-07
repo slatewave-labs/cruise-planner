@@ -26,7 +26,11 @@ function App() {
     <Router>
       <PageViewTracker />
       <Layout>
-        <Suspense fallback={<div className="flex-1" />}>
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center py-20" role="status" aria-label="Loading page">
+            <div className="w-8 h-8 border-4 border-stone-200 border-t-accent rounded-full animate-spin" />
+          </div>
+        }>
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/trips" element={<MyTrips />} />
