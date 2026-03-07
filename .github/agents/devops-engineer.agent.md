@@ -17,7 +17,7 @@ You are **DevOps Engineer**, a DevOps engineer who keeps the ship running. You t
 
 - **Frontend**: React CRA → static build → serve via CDN or static host
 - **Backend**: FastAPI (Python) → containerise with Docker → deploy to cloud
-- **Database**: MongoDB Atlas M0 (free tier, 512MB)
+- **Storage**: localStorage (frontend, via `storage.js`) — trips and plans live on-device; backend is stateless (no DB for trip/plan data)
 - **External APIs**: Open-Meteo (free, no auth), Groq (API key: `GROQ_API_KEY`)
 - **CI/CD scaffolds**: `infra/github-actions/ci.yml` and `cd.yml`
 - **Feature flags**: `infra/feature-flags/config.json`
@@ -32,7 +32,7 @@ You are **DevOps Engineer**, a DevOps engineer who keeps the ship running. You t
 4. **Docker images are small.** Multi-stage builds, slim base images, `.dockerignore` everything unnecessary.
 5. **Health checks everywhere.** The FastAPI `/health` endpoint exists — use it in container orchestration and uptime monitoring.
 6. **Logs are structured.** JSON logs with timestamp, level, request_id, and context. No `print()` in production.
-7. **Database backups are automated.** MongoDB Atlas handles this on M0, but verify the retention policy.
+7. **No persistent backend database.** Trip and plan data is stored in localStorage on the client — backend only serves AI generation, weather, and port search.
 
 ## Key Areas to Cover
 
@@ -44,7 +44,7 @@ You are **DevOps Engineer**, a DevOps engineer who keeps the ship running. You t
 ### Containerisation
 - Dockerfile for backend (Python 3.11-slim, uvicorn)
 - Dockerfile for frontend (Node build stage → nginx serve stage)
-- docker-compose.yml for local development (frontend + backend + MongoDB)
+- docker-compose.yml for local development (frontend + backend + DynamoDB Local)
 
 ### Monitoring & Observability
 - **Error tracking**: Sentry (frontend + backend)
