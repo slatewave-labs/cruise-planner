@@ -348,3 +348,64 @@ GitHub environments are used for additional protection:
 **Cost:** $0 (uses GitHub-hosted runners)
 
 **Warning:** This is a destructive operation. All test environment data and infrastructure will be permanently deleted. Use with caution.
+
+---
+
+## Android Build Workflows
+
+### Build Android — Beta (`build-android-beta.yml`)
+
+**Triggers:** Manual only (workflow_dispatch)
+
+**Purpose:** Builds a signed APK/AAB for internal testing via the Bubblewrap TWA wrapper
+
+**Inputs:**
+- `version_name` — Semver version string (e.g. `1.0.0-beta.1`)
+- `version_code` — Integer that must increase on each upload to Google Play
+- `upload_to_play` — Whether to auto-upload to the Google Play internal test track
+
+**Jobs:**
+1. Checkout code and install dependencies (Node.js, JDK 17, Android SDK)
+2. Build the React frontend with test environment variables
+3. Install Bubblewrap CLI and update TWA manifest with version info
+4. Decode signing keystore from `ANDROID_KEYSTORE_BASE64` secret
+5. Build signed TWA APK/AAB (or unsigned if no keystore configured)
+6. Upload artifacts to GitHub Actions
+7. Optionally upload AAB to Google Play internal test track
+
+**Required Secrets:**
+- `ANDROID_KEYSTORE_BASE64` — Base64-encoded signing keystore
+- `ANDROID_KEYSTORE_PASSWORD` — Keystore password
+- `ANDROID_KEY_PASSWORD` — Key password
+- `ANDROID_KEY_ALIAS` — Key alias (default: `shoreexplorer`)
+
+**Optional Secrets:**
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` — For automated uploads to Google Play
+- `TEST_BACKEND_URL` / `TEST_SITE_URL` — Environment URLs for the beta build
+
+### Build Android — Production (`build-android-prod.yml`)
+
+**Triggers:** Manual only (workflow_dispatch)
+
+**Environment:** `production` (requires approval if configured)
+
+**Purpose:** Builds a signed AAB and uploads to Google Play for production release
+
+**Inputs:**
+- `version_name` — Semver version string (e.g. `1.0.0`)
+- `version_code` — Integer that must increase on each upload
+- `track` — Google Play release track (`internal`, `alpha`, `beta`, `production`)
+- `rollout_percentage` — Staged rollout percentage (1–100, production track only)
+
+**Jobs:**
+1. CI status check (advisory)
+2. Build signed AAB using production environment variables
+3. Upload AAB to Google Play on the selected track
+4. Generate build summary
+
+**Required Secrets:**
+- All `ANDROID_*` secrets (same as beta)
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` — For automated Play Store uploads
+- `PROD_BACKEND_URL` / `PROD_SITE_URL` — Production environment URLs
+
+**See also:** [`docs/GOOGLE-PLAY-PUBLISHING-GUIDE.md`](../../docs/GOOGLE-PLAY-PUBLISHING-GUIDE.md) for complete step-by-step instructions.

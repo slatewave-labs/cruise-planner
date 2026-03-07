@@ -213,6 +213,14 @@ jobs:
               --region "$AWS_REGION"
           fi
 
+          # Upload assetlinks.json with no-cache (Digital Asset Links for Android TWA)
+          if [[ -f frontend/build/.well-known/assetlinks.json ]]; then
+            aws s3 cp frontend/build/.well-known/assetlinks.json "s3://${S3_BUCKET}/.well-known/assetlinks.json" \
+              --cache-control "no-cache, no-store, must-revalidate" \
+              --content-type "application/json" \
+              --region "$AWS_REGION"
+          fi
+
           echo "✅ Frontend deployed to S3"
 
       - name: Invalidate CloudFront cache
@@ -221,7 +229,7 @@ jobs:
           if [[ -n "$CF_DIST_ID" && "$CF_DIST_ID" != "None" ]]; then
             INVALIDATION_ID=$(aws cloudfront create-invalidation \
               --distribution-id "$CF_DIST_ID" \
-              --paths "/index.html" "/asset-manifest.json" "/service-worker.js" \
+              --paths "/index.html" "/asset-manifest.json" "/service-worker.js" "/.well-known/assetlinks.json" \
               --query 'Invalidation.Id' --output text)
             echo "🔄 CloudFront invalidation created: ${INVALIDATION_ID}"
             echo "  Cached hashed assets (JS/CSS) are unaffected — new filenames ensure fresh content."
