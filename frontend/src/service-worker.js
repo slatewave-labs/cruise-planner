@@ -59,8 +59,14 @@ registerRoute(
 );
 
 // OpenStreetMap tiles — cache as user browses, capped to avoid storage bloat
+const OSM_TILE_HOSTS = new Set([
+  'tile.openstreetmap.org',
+  'a.tile.openstreetmap.org',
+  'b.tile.openstreetmap.org',
+  'c.tile.openstreetmap.org',
+]);
 registerRoute(
-  ({ url }) => url.hostname.includes('tile.openstreetmap.org'),
+  ({ url }) => OSM_TILE_HOSTS.has(url.hostname),
   new CacheFirst({
     cacheName: 'map-tiles',
     plugins: [
