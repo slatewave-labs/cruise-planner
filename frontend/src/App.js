@@ -1,15 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import Landing from './pages/Landing';
-import TripSetup from './pages/TripSetup';
-import TripDetail from './pages/TripDetail';
-import PortPlanner from './pages/PortPlanner';
-import DayPlanView from './pages/DayPlanView';
-import MyTrips from './pages/MyTrips';
-import TermsConditions from './pages/TermsConditions';
-import PrivacyPolicy from './pages/PrivacyPolicy';
 import { trackPageView } from './analytics';
+
+// Lazy-load non-landing pages to reduce the initial JS bundle
+const TripSetup = lazy(() => import('./pages/TripSetup'));
+const TripDetail = lazy(() => import('./pages/TripDetail'));
+const PortPlanner = lazy(() => import('./pages/PortPlanner'));
+const DayPlanView = lazy(() => import('./pages/DayPlanView'));
+const MyTrips = lazy(() => import('./pages/MyTrips'));
+const TermsConditions = lazy(() => import('./pages/TermsConditions'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 
 function PageViewTracker() {
   const location = useLocation();
@@ -24,17 +26,23 @@ function App() {
     <Router>
       <PageViewTracker />
       <Layout>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/trips" element={<MyTrips />} />
-          <Route path="/trips/new" element={<TripSetup />} />
-          <Route path="/trips/:tripId" element={<TripDetail />} />
-          <Route path="/trips/:tripId/edit" element={<TripSetup />} />
-          <Route path="/trips/:tripId/ports/:portId/plan" element={<PortPlanner />} />
-          <Route path="/plans/:planId" element={<DayPlanView />} />
-          <Route path="/terms" element={<TermsConditions />} />
-          <Route path="/privacy" element={<PrivacyPolicy />} />
-        </Routes>
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center py-20" role="status" aria-label="Loading page">
+            <div className="w-8 h-8 border-4 border-stone-200 border-t-accent rounded-full animate-spin" />
+          </div>
+        }>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/trips" element={<MyTrips />} />
+            <Route path="/trips/new" element={<TripSetup />} />
+            <Route path="/trips/:tripId" element={<TripDetail />} />
+            <Route path="/trips/:tripId/edit" element={<TripSetup />} />
+            <Route path="/trips/:tripId/ports/:portId/plan" element={<PortPlanner />} />
+            <Route path="/plans/:planId" element={<DayPlanView />} />
+            <Route path="/terms" element={<TermsConditions />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+          </Routes>
+        </Suspense>
       </Layout>
     </Router>
   );
